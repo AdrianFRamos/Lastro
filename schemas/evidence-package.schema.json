@@ -1,0 +1,75 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lastro.local/schemas/evidence-package.schema.json",
+  "title": "EvidencePackage",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "version",
+    "deploymentId",
+    "animalId",
+    "events"
+  ],
+  "properties": {
+    "version": {
+      "const": 1
+    },
+    "deploymentId": {
+      "$ref": "#/$defs/hex32"
+    },
+    "animalId": {
+      "$ref": "#/$defs/hex32"
+    },
+    "events": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "eventBytesBase64",
+          "observedRfidHex",
+          "stationPubkeyHex",
+          "stationSignatureHex",
+          "txSignature"
+        ],
+        "properties": {
+          "eventBytesBase64": {
+            "type": "string",
+            "contentEncoding": "base64",
+            "minLength": 368,
+            "maxLength": 368,
+            "pattern": "^[A-Za-z0-9+/]{368}$"
+          },
+          "observedRfidHex": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{16}$"
+          },
+          "stationPubkeyHex": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{66}$"
+          },
+          "stationSignatureHex": {
+            "type": "string",
+            "pattern": "^[0-9a-f]{128}$"
+          },
+          "txSignature": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "minLength": 64,
+            "maxLength": 88,
+            "pattern": "^[1-9A-HJ-NP-Za-km-z]+$"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "hex32": {
+      "type": "string",
+      "pattern": "^[0-9a-f]{64}$"
+    }
+  }
+}

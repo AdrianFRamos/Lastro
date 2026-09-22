@@ -1,0 +1,51 @@
+name: chain
+on:
+  push:
+    paths: ['chain/**','crates/lastro-protocol/**','rust-toolchain.toml','scripts/bootstrap_program_id.sh','.github/workflows/chain.yml']
+  pull_request:
+    paths: ['chain/**','crates/lastro-protocol/**','rust-toolchain.toml','scripts/bootstrap_program_id.sh','.github/workflows/chain.yml']
+
+permissions:
+  contents: read
+
+jobs:
+  anchor:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+        with:
+          toolchain: '1.98.1'
+          components: rustfmt,clippy
+      - name: Install pinned AVM, Anchor, and Solana toolchain
+        run: |
+          cargo install --git https://github.com/otter-sec/anchor --rev 84a63f9f7112b23581816436fbcf3f6c515779f9 avm --locked --force
+          avm install 1.2.0
+          avm use 1.2.0
+          cd chain
+          avm solana install
+          anchor --version
+          solana --version
+          anchor --version | grep -Fx 'anchor-cli 1.2.0'
+          solana --version | grep -E '^solana-cli 4\.1\.2([[:space:]]|$)'
+          echo "$(dirname "$(command -v anchor)")" >> "$GITHUB_PATH"
+          echo "$(dirname "$(command -v solana)")" >> "$GITHUB_PATH"
+      - name: Bootstrap ephemeral CI program identity when source is still uninitialized
+        run: |
+          if grep -q 'LASTRO_PROGRAM_ID_BOOTSTRAP_MARKER' chain/programs/lastro/src/lib.rs; then
+            scripts/bootstrap_program_id.sh --ephemeral-ci
+          fi
+      - name: Require committed nested Cargo lock
+        run: test -f chain/Cargo.lock
+      - name: Rust format
+        run: cargo fmt --manifest-path chain/Cargo.toml --all -- --check
+      - name: Rust clippy
+        run: cargo clippy --locked --manifest-path chain/Cargo.toml --workspace --all-targets --all-features -- -D warnings
+      - name: Build Anchor program
+        run: |
+          cd chain
+          anchor build --ignore-keys
+          git diff --exit-code -- Cargo.lock
+      - name: Run LiteSVM program tests
+        run: cargo test --locked --manifest-path chain/Cargo.toml --workspace

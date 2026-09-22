@@ -1,0 +1,48 @@
+# Rust / Anchor
+/target/
+**/target/
+.anchor/
+chain/.anchor/
+chain/target/
+chain/test-ledger/
+**/*-keypair.json
+
+# Node / Vite / Playwright
+node_modules/
+**/node_modules/
+apps/web/dist/
+apps/web/playwright-report/
+apps/web/test-results/
+coverage/
+
+# ESP-IDF
+firmware/station/build/
+firmware/station/sdkconfig
+firmware/station/sdkconfig.old
+firmware/station/managed_components/
+
+# Databases and local state
+*.db
+*.db-shm
+*.db-wal
+.pgdata/
+/.lastro-local/
+
+# Environment / secrets
+.env
+.env.*
+!.env.example
+
+# OS / editors
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+
+# Generated evidence / demo artifacts
+artifacts/
+
+# Python test/cache artifacts
+.pytest_cache/
+**/__pycache__/
+*.py[cod]

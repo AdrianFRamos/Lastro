@@ -1,0 +1,29 @@
+FROM node:24.21.0-bookworm-slim@sha256:2fe369e969550cde8e867afc3fe370b260140cab4a23d467074295b42163d553 AS builder
+WORKDIR /src
+
+COPY package.json package-lock.json .npmrc ./
+COPY apps/web/package.json apps/web/package.json
+RUN npm ci
+
+COPY apps/web ./apps/web
+
+# Vite exposes VITE_* in client code and replaces them at build time. They are public
+# deployment configuration, never secrets. Docker Compose/CI must pass all four.
+ARG VITE_API_BASE_URL
+ARG VITE_SOLANA_RPC_URL
+ARG VITE_SOLANA_CHAIN
+ARG VITE_LASTRO_PROGRAM_ID
+ENV VITE_API_BASE_URL=${VITE_API_BASE_URL} \
+    VITE_SOLANA_RPC_URL=${VITE_SOLANA_RPC_URL} \
+    VITE_SOLANA_CHAIN=${VITE_SOLANA_CHAIN} \
+    VITE_LASTRO_PROGRAM_ID=${VITE_LASTRO_PROGRAM_ID}
+
+RUN test -n "$VITE_API_BASE_URL" \
+ && test -n "$VITE_SOLANA_RPC_URL" \
+ && test -n "$VITE_SOLANA_CHAIN" \
+ && test -n "$VITE_LASTRO_PROGRAM_ID" \
+ && npm --workspace @lastro/web run build
+
+FROM caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
+COPY infra/Caddyfile /etc/caddy/Caddyfile
+COPY --from=builder /src/apps/web/dist /srv

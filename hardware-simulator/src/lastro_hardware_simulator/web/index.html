@@ -1,0 +1,209 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="color-scheme" content="dark" />
+  <title>Lastro Hardware Simulator</title>
+  <link rel="stylesheet" href="/styles.css" />
+</head>
+<body>
+  <main class="sim-shell">
+    <header class="topbar">
+      <div class="brand-block">
+        <span class="brand-mark" aria-hidden="true">L</span>
+        <div>
+          <strong>LASTRO</strong>
+          <span>Hardware Simulator</span>
+        </div>
+      </div>
+      <div class="topbar-status" aria-live="polite">
+        <span class="status-chip" id="wireChip" data-tone="muted"><i></i><span>Agent disconnected</span></span>
+        <span class="status-chip" id="stationChip" data-tone="muted"><i></i><span>Station idle</span></span>
+      </div>
+    </header>
+
+    <section class="intro-grid">
+      <div>
+        <p class="eyebrow">PHYSICAL BOUNDARY EMULATOR</p>
+        <h1>Exercise the real Station contract without pretending the reader is known.</h1>
+      </div>
+      <div class="intro-note">
+        <span>SIMULATION BOUNDARY</span>
+        <p>
+          This environment emulates the validated output of an ISO 11784/11785 FDX-B reader adapter,
+          the ESP32-C5 Station state machine, P-256 signing, and the exact LSTR wire protocol used by the Agent.
+        </p>
+        <strong>No manufacturer-specific read range, bus, frame format, or antenna behavior is fabricated.</strong>
+      </div>
+    </section>
+
+    <section class="bench" aria-label="Hardware simulation workbench">
+      <aside class="panel tags-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">01 / PHYSICAL IDENTIFIERS</p>
+            <h2>RFID ear tags</h2>
+          </div>
+          <span class="micro-label">FDX-B</span>
+        </div>
+
+        <p class="panel-copy">
+          Drag a tag into the reader field, or use the Read button. Values are Lastro's canonical 8-byte logical RFID representation, not raw reader telegrams.
+        </p>
+
+        <div id="tagList" class="tag-list" aria-label="RFID tags"></div>
+
+        <form id="tagForm" class="tag-form">
+          <div class="form-row">
+            <label>
+              Field label
+              <input id="tagLabel" autocomplete="off" maxlength="40" placeholder="Ear tag C" />
+            </label>
+            <label>
+              Canonical RFID · 8 bytes
+              <input id="tagHex" class="mono" autocomplete="off" maxlength="23" placeholder="8000130000000003" />
+            </label>
+          </div>
+          <button class="button secondary" type="submit">Add simulated tag</button>
+        </form>
+      </aside>
+
+      <section class="reader-column">
+        <div class="reader-frame" id="readerDropZone" tabindex="0" aria-label="RFID reader field drop zone">
+          <div class="reader-meta">
+            <span>GENERIC READER ADAPTER</span>
+            <strong>ISO 11784 / 11785 · FDX-B</strong>
+          </div>
+
+          <div class="antenna-field" aria-hidden="true">
+            <span class="field-ring ring-1"></span>
+            <span class="field-ring ring-2"></span>
+            <span class="field-ring ring-3"></span>
+            <div class="antenna-core">
+              <span>ANTENNA</span>
+              <strong>134.2 kHz</strong>
+            </div>
+          </div>
+
+          <div class="reader-instruction">
+            <strong id="readerInstruction">Waiting for a capture command</strong>
+            <span id="readerSubtext">RFID observations outside WAIT_RFID are ignored by design.</span>
+          </div>
+
+          <div class="reader-contract">
+            <div><span>Physical model</span><strong>Uncalibrated</strong></div>
+            <div><span>Adapter output</span><strong>8 bytes</strong></div>
+            <div><span>Raw reader framing</span><strong>Not assumed</strong></div>
+          </div>
+        </div>
+
+        <div class="reader-result" id="readerResult" data-tone="muted" aria-live="polite">
+          <span class="result-dot"></span>
+          <div>
+            <strong>No reader observation yet</strong>
+            <span>Drop a simulated tag only when the Station is waiting for RFID evidence.</span>
+          </div>
+        </div>
+      </section>
+
+      <aside class="panel station-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">02 / STATION</p>
+            <h2>ESP32-C5 boundary</h2>
+          </div>
+          <span class="micro-label">LSTR v1</span>
+        </div>
+
+        <div class="station-state-block">
+          <span>STATE</span>
+          <strong id="stationState">IDLE</strong>
+          <p id="stationStateDescription">Waiting for the Agent to dispatch a capture command.</p>
+        </div>
+
+        <dl class="fact-list">
+          <div><dt>USB boundary</dt><dd>Serial/JTAG CDC equivalent</dd></div>
+          <div><dt>Signer</dt><dd>P-256 / SHA-256 / low-S</dd></div>
+          <div><dt>Station key</dt><dd class="mono truncate" id="stationKey">—</dd></div>
+          <div><dt>Station ID</dt><dd class="mono truncate" id="stationId">—</dd></div>
+        </dl>
+
+        <div class="active-capture" id="activeCapture" hidden>
+          <p class="eyebrow">ACTIVE COMMAND</p>
+          <div class="capture-action"><strong id="captureAction">—</strong><span id="captureSequence">—</span></div>
+          <dl class="capture-grid">
+            <div><dt>AnimalID</dt><dd class="mono" id="captureAnimal">—</dd></div>
+            <div><dt>Revision</dt><dd id="captureRevision">—</dd></div>
+            <div><dt>Capture ID</dt><dd class="mono" id="captureId">—</dd></div>
+            <div><dt>Expected RFID hash</dt><dd class="mono" id="captureOldRfid">—</dd></div>
+          </dl>
+        </div>
+      </aside>
+    </section>
+
+    <section class="lower-grid">
+      <article class="panel flow-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">03 / LIVE CONTRACT</p>
+            <h2>What crosses each boundary</h2>
+          </div>
+        </div>
+        <div class="flow-line">
+          <div><span>RFID tag</span><strong>Physical identifier</strong></div>
+          <i>→</i>
+          <div><span>Reader adapter</span><strong>Canonical 8 bytes</strong></div>
+          <i>→</i>
+          <div><span>Station</span><strong>Signed StationEvent</strong></div>
+          <i>→</i>
+          <div><span>Agent wire</span><strong>LSTR binary frames</strong></div>
+        </div>
+        <p class="boundary-note">
+          The simulator stops here. API rules, custody authorization, transaction construction, and Solana remain the real Lastro system.
+        </p>
+      </article>
+
+      <article class="panel faults-panel">
+        <div class="panel-head">
+          <div>
+            <p class="eyebrow">ADVANCED</p>
+            <h2>Fault injection</h2>
+          </div>
+          <span class="micro-label warning">ONE-SHOT</span>
+        </div>
+        <p class="panel-copy">Exercise fail-closed behavior without inventing successful evidence.</p>
+        <div class="fault-grid">
+          <button class="fault-button" data-fault="reader_failure_next_observation"><span>Reader</span><strong>Fail next observation</strong></button>
+          <button class="fault-button" data-fault="busy_next_command"><span>Station</span><strong>Busy on next command</strong></button>
+          <button class="fault-button" data-fault="signing_failure_next_observation"><span>Signer</span><strong>Fail next signature</strong></button>
+          <button class="fault-button" data-fault="corrupt_next_event_ready_crc"><span>Transport</span><strong>Corrupt next CRC32C</strong></button>
+        </div>
+        <div class="fault-actions">
+          <button id="disconnectButton" class="button quiet" type="button">Disconnect Agent wire</button>
+          <button id="resetButton" class="button quiet" type="button">Reset simulator</button>
+        </div>
+      </article>
+    </section>
+
+    <section class="panel event-panel">
+      <div class="panel-head">
+        <div>
+          <p class="eyebrow">04 / OBSERVABILITY</p>
+          <h2>Station event log</h2>
+        </div>
+        <span class="micro-label">UTC</span>
+      </div>
+      <div id="eventLog" class="event-log" aria-live="polite"></div>
+    </section>
+
+    <footer class="footer-note">
+      <span>Development simulator only.</span>
+      <p>
+        The default key is the repository's frozen test-vector scalar 1 and must never be used as deployment key material.
+      </p>
+    </footer>
+  </main>
+  <script src="/app.js" defer></script>
+</body>
+</html>

@@ -1,0 +1,2 @@
+ALTER TABLE events
+ADD COLUMN capture_id UUID NOT NULL UNIQUE REFERENCES captures(capture_id) ON DELETE RESTRICT;

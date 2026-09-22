@@ -1,0 +1,238 @@
+name: e2e
+on:
+  push:
+    paths:
+      - 'apps/web/**'
+      - 'chain/**'
+      - 'crates/lastro-protocol/**'
+      - 'services/agent/**'
+      - 'services/api/**'
+      - 'tests/system/**'
+      - 'scripts/bootstrap_program_id.sh'
+      - 'scripts/bootstrap_dependencies.sh'
+      - 'scripts/initialize_protocol_config.py'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - 'requirements-dev.txt'
+      - '.github/workflows/e2e.yml'
+  pull_request:
+    paths:
+      - 'apps/web/**'
+      - 'chain/**'
+      - 'crates/lastro-protocol/**'
+      - 'services/agent/**'
+      - 'services/api/**'
+      - 'tests/system/**'
+      - 'scripts/bootstrap_program_id.sh'
+      - 'scripts/bootstrap_dependencies.sh'
+      - 'scripts/initialize_protocol_config.py'
+      - 'Cargo.toml'
+      - 'Cargo.lock'
+      - 'rust-toolchain.toml'
+      - 'package.json'
+      - 'package-lock.json'
+      - '.nvmrc'
+      - 'requirements-dev.txt'
+      - '.github/workflows/e2e.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  full-stack:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 60
+    services:
+      postgres:
+        image: postgres:18.6@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
+        env:
+          POSTGRES_USER: lastro
+          POSTGRES_PASSWORD: lastro
+          POSTGRES_DB: lastro
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U lastro -d lastro"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      LASTRO_DATABASE_URL: postgres://lastro:lastro@127.0.0.1:5432/lastro
+      LASTRO_SYSTEM_API_URL: http://127.0.0.1:8080
+      LASTRO_SYSTEM_SOLANA_RPC_URL: http://127.0.0.1:8899
+      LASTRO_SOLANA_RPC_URL: http://127.0.0.1:8899
+      LASTRO_DEPLOYMENT_ID_HEX: d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0d0
+      LASTRO_STATION_PUBKEY_HEX: 036b17d1f2e12c4247f8bce6e563a440f277037d812deb33a0f4a13945d898c296
+      LASTRO_SYSTEM_STATION_PRIVATE_SCALAR_HEX: '0000000000000000000000000000000000000000000000000000000000000001'
+      LASTRO_AGENT_TOKEN: ci-only-agent-token-0123456789abcdef
+      LASTRO_API_BIND: 127.0.0.1:8080
+      LASTRO_SYSTEM_TEST: '1'
+      LASTRO_E2E_SYSTEM: '1'
+      LASTRO_E2E_SOLANA_CHAIN: solana:localnet
+      VITE_API_BASE_URL: http://127.0.0.1:8080
+      VITE_SOLANA_RPC_URL: http://127.0.0.1:8899
+      VITE_SOLANA_CHAIN: solana:localnet
+
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
+        with:
+          toolchain: '1.98.1'
+
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.13.15'
+
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: '24.21.0'
+
+      - name: Install Python validation dependencies
+        run: |
+          python -m pip install -r requirements-dev.txt
+
+      - name: Verify pinned Node and npm
+        run: |
+          node --version | grep -Fx 'v24.21.0'
+          npm --version | grep -Fx '11.19.0'
+      - name: Install locked web dependencies
+        run: |
+          test -f package-lock.json
+          test -f chain/Cargo.lock
+          npm ci
+
+      - name: Install pinned AVM, Anchor, and Solana toolchain
+        run: |
+          cargo install --git https://github.com/otter-sec/anchor --rev 84a63f9f7112b23581816436fbcf3f6c515779f9 avm --locked --force
+          avm install 1.2.0
+          avm use 1.2.0
+          cd chain
+          avm solana install
+          anchor --version | grep -Fx 'anchor-cli 1.2.0'
+          solana --version | grep -E '^solana-cli 4\.1\.2([[:space:]]|$)'
+          echo "$(dirname "$(command -v anchor)")" >> "$GITHUB_PATH"
+          echo "$(dirname "$(command -v solana)")" >> "$GITHUB_PATH"
+
+      - name: Bootstrap ephemeral program identity
+        run: |
+          scripts/bootstrap_program_id.sh --ephemeral-ci
+          PROGRAM_ID="$(solana-keygen pubkey chain/target/deploy/lastro-keypair.json)"
+          echo "LASTRO_PROGRAM_ID=$PROGRAM_ID" >> "$GITHUB_ENV"
+          echo "VITE_LASTRO_PROGRAM_ID=$PROGRAM_ID" >> "$GITHUB_ENV"
+
+      - name: Build deterministic software components
+        run: |
+          cargo build --locked -p lastro-agent -p lastro-api
+          cargo metadata --locked --manifest-path chain/Cargo.toml --format-version 1 >/dev/null
+          cd chain
+          anchor build --ignore-keys
+          git diff --exit-code -- Cargo.lock
+
+      - name: Create deterministic test actors
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from pathlib import Path
+
+          from cryptography.hazmat.primitives import serialization
+          from cryptography.hazmat.primitives.asymmetric import ed25519
+
+          root = Path(os.environ["RUNNER_TEMP"])
+          for label, seed_byte in (("a", 0x11), ("b", 0x22), ("c", 0x33)):
+              seed = bytes([seed_byte]) * 32
+              private = ed25519.Ed25519PrivateKey.from_private_bytes(seed)
+              public = private.public_key().public_bytes(
+                  serialization.Encoding.Raw,
+                  serialization.PublicFormat.Raw,
+              )
+              path = root / f"lastro-wallet-{label}.json"
+              path.write_text(json.dumps(list(seed + public), separators=(",", ":")))
+              path.chmod(0o600)
+          PY
+          echo "LASTRO_SYSTEM_WALLET_A_KEYPAIR=$RUNNER_TEMP/lastro-wallet-a.json" >> "$GITHUB_ENV"
+          echo "LASTRO_SYSTEM_WALLET_B_KEYPAIR=$RUNNER_TEMP/lastro-wallet-b.json" >> "$GITHUB_ENV"
+          echo "LASTRO_SYSTEM_WALLET_C_KEYPAIR=$RUNNER_TEMP/lastro-wallet-c.json" >> "$GITHUB_ENV"
+          echo "LASTRO_SYSTEM_AGENT_BIN=$GITHUB_WORKSPACE/target/debug/lastro-agent" >> "$GITHUB_ENV"
+
+      - name: Start local Solana validator
+        run: |
+          solana-test-validator             --reset             --ledger "$RUNNER_TEMP/lastro-ledger"             --rpc-port 8899             >"$RUNNER_TEMP/lastro-validator.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/lastro-validator.pid"
+          for attempt in $(seq 1 60); do
+            if solana cluster-version --url "$LASTRO_SYSTEM_SOLANA_RPC_URL" >/dev/null 2>&1; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/lastro-validator.log"
+          exit 1
+
+      - name: Deploy program and initialize ProtocolConfig
+        run: |
+          for wallet in "$LASTRO_SYSTEM_WALLET_A_KEYPAIR" "$LASTRO_SYSTEM_WALLET_B_KEYPAIR" "$LASTRO_SYSTEM_WALLET_C_KEYPAIR"; do
+            solana airdrop 10 "$(solana-keygen pubkey "$wallet")" --url "$LASTRO_SYSTEM_SOLANA_RPC_URL"
+          done
+          solana program deploy             chain/target/deploy/lastro.so             --program-id chain/target/deploy/lastro-keypair.json             --keypair "$LASTRO_SYSTEM_WALLET_A_KEYPAIR"             --url "$LASTRO_SYSTEM_SOLANA_RPC_URL"
+          python scripts/initialize_protocol_config.py             --rpc-url "$LASTRO_SYSTEM_SOLANA_RPC_URL"             --program-id "$LASTRO_PROGRAM_ID"             --deployment-id-hex "$LASTRO_DEPLOYMENT_ID_HEX"             --station-pubkey-hex "$LASTRO_STATION_PUBKEY_HEX"             --authority-keypair "$LASTRO_SYSTEM_WALLET_A_KEYPAIR"
+
+      - name: Start API
+        run: |
+          target/debug/lastro-api >"$RUNNER_TEMP/lastro-api.log" 2>&1 &
+          echo "$!" > "$RUNNER_TEMP/lastro-api.pid"
+          for attempt in $(seq 1 60); do
+            if curl --fail --silent "$LASTRO_SYSTEM_API_URL/api/health" >/dev/null; then
+              exit 0
+            fi
+            sleep 1
+          done
+          cat "$RUNNER_TEMP/lastro-api.log"
+          exit 1
+
+      - name: Run full local system contracts
+        run: >-
+          python -m pytest -q
+          tests/system/test_full_local.py
+          tests/system/test_recovery.py
+          tests/system/test_tamper.py
+
+      - name: Run three-run software stability gate
+        env:
+          LASTRO_DEMO_STABILITY_TEST: '1'
+          LASTRO_DEMO_ARTIFACT_DIR: ${{ runner.temp }}/lastro-demo-stability
+        run: python -m pytest -q tests/system/test_demo_stability.py
+
+      - name: Install Playwright Chromium
+        run: npm --workspace @lastro/web run playwright:install
+
+      - name: Run browser full-stack E2E
+        run: npm run test:e2e
+        working-directory: apps/web
+
+      - name: Upload full-stack logs
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: lastro-e2e-logs
+          if-no-files-found: ignore
+          path: |
+            ${{ runner.temp }}/lastro-api.log
+            ${{ runner.temp }}/lastro-validator.log
+            apps/web/playwright-report
+            apps/web/test-results
+            ${{ runner.temp }}/lastro-demo-stability
+
+      - name: Stop local services
+        if: always()
+        run: |
+          for pid_file in "$RUNNER_TEMP/lastro-api.pid" "$RUNNER_TEMP/lastro-validator.pid"; do
+            if [[ -f "$pid_file" ]]; then
+              kill "$(cat "$pid_file")" 2>/dev/null || true
+            fi
+          done

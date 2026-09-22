@@ -1,0 +1,40 @@
+menu "Lastro Station"
+
+config LASTRO_STATION_USE_EFUSE_KEY
+    bool "Use eFuse-backed ECDSA key"
+    default n
+    depends on IDF_TARGET_ESP32C5 && MBEDTLS_HARDWARE_ECDSA_SIGN
+    help
+        Use a manually provisioned ESP32-C5 P-256 ECDSA key from an eFuse key block.
+        This firmware never burns or changes eFuse state. The configured block must
+        already have ECDSA_KEY_P256 purpose and read protection or the Station fails
+        closed. Keep this disabled during development-key validation.
+
+config LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX
+    int "eFuse ECDSA key block index (KEY0=0 through KEY5=5)"
+    default 0
+    range 0 5
+    depends on LASTRO_STATION_USE_EFUSE_KEY
+    help
+        Select the already provisioned physical key block. Index 0 maps to KEY0,
+        index 1 to KEY1, and so on through KEY5. Provisioning is a separate manual
+        operation and is never performed by Station firmware.
+
+config LASTRO_STATION_USE_TEST_VECTOR_KEY
+    bool "Use the public frozen test-vector P-256 key"
+    default n
+    depends on !LASTRO_STATION_USE_EFUSE_KEY
+    help
+        Test-only switch for Unity/interoperability runs. This key is public and MUST NOT
+        be used for a real deployment or a demonstration that claims key secrecy.
+
+config LASTRO_STATION_DEV_PRIVATE_KEY_HEX
+    string "Development P-256 private scalar (64 hexadecimal characters)"
+    default ""
+    depends on !LASTRO_STATION_USE_EFUSE_KEY && !LASTRO_STATION_USE_TEST_VECTOR_KEY
+    help
+        Explicit development-only software key. Leave empty to fail closed. Configure a
+        controlled non-zero scalar below the P-256 group order for a hackathon device.
+        Do not commit a private deployment key to this repository.
+
+endmenu

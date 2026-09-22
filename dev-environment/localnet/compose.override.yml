@@ -1,0 +1,6 @@
+services:
+  api:
+    # The real local validator runs on the host. Docker documents host-gateway as the
+    # portable Linux mapping for containers that must reach a host-local service.
+    extra_hosts:
+      - "host.docker.internal:host-gateway"

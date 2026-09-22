@@ -1,0 +1,2 @@
+# Runtime dependency is pinned to the same cryptography line used by repository validation.
+cryptography==50.0.1
