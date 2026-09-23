@@ -15,9 +15,13 @@ fn valid_values() -> HashMap<&'static str, String> {
         ("LASTRO_AGENT_SERIAL_PORT", "/dev/ttyUSB0".into()),
         ("LASTRO_AGENT_SERIAL_BAUD", "115200".into()),
         ("LASTRO_STATION_PUBKEY_HEX", STATION_PUBKEY_HEX.into()),
-        ("LASTRO_AGENT_SQLITE_URL", "sqlite://agent.db?mode=rwc".into()),
+        (
+            "LASTRO_AGENT_SQLITE_URL",
+            "sqlite://agent.db?mode=rwc".into(),
+        ),
         ("LASTRO_AGENT_POLL_INTERVAL_MS", "500".into()),
         ("LASTRO_AGENT_REQUEST_TIMEOUT_MS", "5000".into()),
+        ("LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS", "3000".into()),
     ])
 }
 
@@ -45,6 +49,7 @@ fn agent_requires_every_transport_identity_database_and_timing_value() {
         "LASTRO_AGENT_SQLITE_URL",
         "LASTRO_AGENT_POLL_INTERVAL_MS",
         "LASTRO_AGENT_REQUEST_TIMEOUT_MS",
+        "LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS",
     ];
 
     for key in required {
@@ -71,12 +76,16 @@ fn agent_rejects_invalid_transport_identity_database_and_timing_values() {
         ("LASTRO_AGENT_SQLITE_URL", "postgres://localhost/lastro"),
         ("LASTRO_AGENT_POLL_INTERVAL_MS", "0"),
         ("LASTRO_AGENT_REQUEST_TIMEOUT_MS", "0"),
+        ("LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS", "0"),
     ];
 
     for (key, value) in cases {
         let mut values = valid_values();
         values.insert(key, value.into());
-        assert!(parse(&values).is_err(), "{key}={value:?} unexpectedly passed");
+        assert!(
+            parse(&values).is_err(),
+            "{key}={value:?} unexpectedly passed"
+        );
     }
 
     for station_key in [
@@ -110,6 +119,26 @@ fn agent_rejects_short_token_without_leaking_it() {
 }
 
 #[test]
+fn agent_requires_explicit_positive_station_response_timeout() {
+    // PURPOSE: A stalled serial peer must have a bounded wait independent from HTTP request timing.
+    // ARRANGE: Start from valid configuration and remove or invalidate the Station response timeout.
+    // ACTION: Parse each configuration variant.
+    // ASSERT: Missing, zero, and non-numeric timeout values fail closed before the worker starts.
+    // FAILURE MEANS: transport.receive() can remain unbounded in production.
+    let mut missing = valid_values();
+    missing.remove("LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS");
+    assert!(config_message(parse(&missing)).contains("LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS"));
+
+    for value in ["0", "not-a-number"] {
+        let mut invalid = valid_values();
+        invalid.insert("LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS", value.into());
+        assert!(
+            config_message(parse(&invalid)).contains("LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS")
+        );
+    }
+}
+
+#[test]
 fn agent_valid_configuration_preserves_serial_and_retry_values_exactly() {
     // PURPOSE: prove operational transport and timing values are explicit and reproducible.
     let values = valid_values();
@@ -123,6 +152,7 @@ fn agent_valid_configuration_preserves_serial_and_retry_values_exactly() {
     assert_eq!(config.sqlite_url, "sqlite://agent.db?mode=rwc");
     assert_eq!(config.poll_interval, Duration::from_millis(500));
     assert_eq!(config.request_timeout, Duration::from_millis(5000));
+    assert_eq!(config.station_response_timeout, Duration::from_millis(3000));
 
     // ASSERT: typed fields equal the declared inputs with no hidden defaults or unit changes.
     // FAILURE MEANS: deployed bridge behavior can differ from documented configuration.

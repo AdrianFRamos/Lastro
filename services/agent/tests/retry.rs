@@ -5,12 +5,12 @@
 
 use std::{fs, path::PathBuf, time::Duration};
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_agent::{
     api_client::ApiClient,
     spool::{
-        model::{OutboxRow, OutboxState},
         Spool,
+        model::{OutboxRow, OutboxState},
     },
     worker::{retry_delay, retry_pending_once},
 };
@@ -68,7 +68,12 @@ fn cleanup_database(path: &PathBuf) {
 }
 
 fn api(base_url: String, timeout: Duration) -> ApiClient {
-    ApiClient::new(base_url, "test-agent-token-0123456789abcdef".into(), timeout).unwrap()
+    ApiClient::new(
+        base_url,
+        "test-agent-token-0123456789abcdef".into(),
+        timeout,
+    )
+    .unwrap()
 }
 
 async fn spawn_server(responses: Vec<ResponseSpec>) -> (String, JoinHandle<Vec<Vec<u8>>>) {
@@ -118,20 +123,28 @@ async fn read_http_request(socket: &mut tokio::net::TcpStream) -> Vec<u8> {
             let headers = String::from_utf8_lossy(&bytes[..header_end]);
             let content_length = headers
                 .lines()
-                .find_map(|line| line.strip_prefix("content-length: ").or_else(|| line.strip_prefix("Content-Length: ")))
+                .find_map(|line| {
+                    line.strip_prefix("content-length: ")
+                        .or_else(|| line.strip_prefix("Content-Length: "))
+                })
                 .and_then(|value| value.trim().parse::<usize>().ok())
                 .unwrap_or(0);
             if bytes.len() >= header_end + 4 + content_length {
                 break;
             }
         }
-        assert!(bytes.len() < 1_000_000, "test HTTP request exceeded safety bound");
+        assert!(
+            bytes.len() < 1_000_000,
+            "test HTTP request exceeded safety bound"
+        );
     }
     bytes
 }
 
 fn find_subslice(haystack: &[u8], needle: &[u8]) -> Option<usize> {
-    haystack.windows(needle.len()).position(|window| window == needle)
+    haystack
+        .windows(needle.len())
+        .position(|window| window == needle)
 }
 
 fn request_body(request: &[u8]) -> &[u8] {
@@ -154,9 +167,18 @@ async fn api_timeout_keeps_outbox_local() {
         status: 201,
         body: "",
         delay: Duration::from_millis(200),
-    }]).await;
+    }])
+    .await;
 
-    assert!(retry_pending_once(&spool, &api(base_url, Duration::from_millis(25)), Duration::ZERO).await.unwrap());
+    assert!(
+        retry_pending_once(
+            &spool,
+            &api(base_url, Duration::from_millis(25)),
+            Duration::ZERO
+        )
+        .await
+        .unwrap()
+    );
     let pending = spool.pending().await.unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].state, OutboxState::Local);
@@ -180,12 +202,9 @@ async fn api_transport_errors_do_not_persist_url_credentials() {
         status: 201,
         body: "",
         delay: Duration::from_millis(200),
-    }]).await;
-    let credentialed = base_url.replacen(
-        "http://",
-        "http://synthetic-user:synthetic-password@",
-        1,
-    );
+    }])
+    .await;
+    let credentialed = base_url.replacen("http://", "http://synthetic-user:synthetic-password@", 1);
 
     assert!(
         retry_pending_once(
@@ -225,25 +244,62 @@ async fn api_500_retries_with_bounded_backoff() {
     // ASSERT: One row remains; attempts advance deterministically; success moves it to SERVER; backoff caps at 30 seconds.
     // FAILURE MEANS: Agent can overload the API, duplicate evidence, or delay retries without a bound.
     assert_eq!(retry_delay(Duration::from_millis(100), 0), Duration::ZERO);
-    assert_eq!(retry_delay(Duration::from_millis(100), 1), Duration::from_millis(100));
-    assert_eq!(retry_delay(Duration::from_millis(100), 2), Duration::from_millis(200));
-    assert_eq!(retry_delay(Duration::from_millis(100), 3), Duration::from_millis(400));
-    assert_eq!(retry_delay(Duration::from_secs(20), 4), Duration::from_secs(30));
+    assert_eq!(
+        retry_delay(Duration::from_millis(100), 1),
+        Duration::from_millis(100)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_millis(100), 2),
+        Duration::from_millis(200)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_millis(100), 3),
+        Duration::from_millis(400)
+    );
+    assert_eq!(
+        retry_delay(Duration::from_secs(20), 4),
+        Duration::from_secs(30)
+    );
 
     let (url, path) = database_url();
     let spool = Spool::connect_and_migrate(&url).await.unwrap();
     let expected = row(Uuid::new_v4());
     spool.persist_local(&expected).await.unwrap();
     let (base_url, server) = spawn_server(vec![
-        ResponseSpec { status: 500, body: "", delay: Duration::ZERO },
-        ResponseSpec { status: 500, body: "", delay: Duration::ZERO },
-        ResponseSpec { status: 201, body: "", delay: Duration::ZERO },
-    ]).await;
+        ResponseSpec {
+            status: 500,
+            body: "",
+            delay: Duration::ZERO,
+        },
+        ResponseSpec {
+            status: 500,
+            body: "",
+            delay: Duration::ZERO,
+        },
+        ResponseSpec {
+            status: 201,
+            body: "",
+            delay: Duration::ZERO,
+        },
+    ])
+    .await;
     let client = api(base_url, Duration::from_secs(1));
 
-    assert!(retry_pending_once(&spool, &client, Duration::ZERO).await.unwrap());
-    assert!(retry_pending_once(&spool, &client, Duration::ZERO).await.unwrap());
-    assert!(!retry_pending_once(&spool, &client, Duration::ZERO).await.unwrap());
+    assert!(
+        retry_pending_once(&spool, &client, Duration::ZERO)
+            .await
+            .unwrap()
+    );
+    assert!(
+        retry_pending_once(&spool, &client, Duration::ZERO)
+            .await
+            .unwrap()
+    );
+    assert!(
+        !retry_pending_once(&spool, &client, Duration::ZERO)
+            .await
+            .unwrap()
+    );
     let pending = spool.pending().await.unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].state, OutboxState::Server);
@@ -271,8 +327,21 @@ async fn restart_resumes_local_rows() {
     let before = reopened.pending().await.unwrap();
     assert_eq!(before.len(), 1);
     assert_eq!(before[0].event_bytes, expected.event_bytes);
-    let (base_url, server) = spawn_server(vec![ResponseSpec { status: 201, body: "", delay: Duration::ZERO }]).await;
-    assert!(!retry_pending_once(&reopened, &api(base_url, Duration::from_secs(1)), Duration::ZERO).await.unwrap());
+    let (base_url, server) = spawn_server(vec![ResponseSpec {
+        status: 201,
+        body: "",
+        delay: Duration::ZERO,
+    }])
+    .await;
+    assert!(
+        !retry_pending_once(
+            &reopened,
+            &api(base_url, Duration::from_secs(1)),
+            Duration::ZERO
+        )
+        .await
+        .unwrap()
+    );
     let after = reopened.pending().await.unwrap();
     assert_eq!(after.len(), 1);
     assert_eq!(after[0].state, OutboxState::Server);
@@ -293,9 +362,22 @@ async fn server_ack_moves_local_to_server() {
     let spool = Spool::connect_and_migrate(&url).await.unwrap();
     let expected = row(Uuid::new_v4());
     spool.persist_local(&expected).await.unwrap();
-    let (base_url, server) = spawn_server(vec![ResponseSpec { status: 200, body: "", delay: Duration::ZERO }]).await;
+    let (base_url, server) = spawn_server(vec![ResponseSpec {
+        status: 200,
+        body: "",
+        delay: Duration::ZERO,
+    }])
+    .await;
 
-    assert!(!retry_pending_once(&spool, &api(base_url, Duration::from_secs(1)), Duration::ZERO).await.unwrap());
+    assert!(
+        !retry_pending_once(
+            &spool,
+            &api(base_url, Duration::from_secs(1)),
+            Duration::ZERO
+        )
+        .await
+        .unwrap()
+    );
     let pending = spool.pending().await.unwrap();
     assert_eq!(pending.len(), 1);
     assert_eq!(pending[0].state, OutboxState::Server);
@@ -307,10 +389,19 @@ async fn server_ack_moves_local_to_server() {
     let requests = server.await.unwrap();
     let body: Value = serde_json::from_slice(request_body(&requests[0])).unwrap();
     assert_eq!(body["captureId"], expected.capture_id.to_string());
-    assert_eq!(body["eventBytesBase64"], BASE64.encode(expected.event_bytes));
+    assert_eq!(
+        body["eventBytesBase64"],
+        BASE64.encode(expected.event_bytes)
+    );
     assert_eq!(body["observedRfidHex"], hex::encode(expected.observed_rfid));
-    assert_eq!(body["stationPubkeyHex"], hex::encode(expected.station_pubkey));
-    assert_eq!(body["stationSignatureHex"], hex::encode(expected.station_signature));
+    assert_eq!(
+        body["stationPubkeyHex"],
+        hex::encode(expected.station_pubkey)
+    );
+    assert_eq!(
+        body["stationSignatureHex"],
+        hex::encode(expected.station_signature)
+    );
     drop(spool);
     cleanup_database(&path);
 }
@@ -326,19 +417,38 @@ async fn finalization_moves_server_to_finalized() {
     let spool = Spool::connect_and_migrate(&url).await.unwrap();
     let expected = row(Uuid::new_v4());
     spool.persist_local(&expected).await.unwrap();
-    spool.advance(expected.capture_id, OutboxState::Server).await.unwrap();
+    spool
+        .advance(expected.capture_id, OutboxState::Server)
+        .await
+        .unwrap();
     let (base_url, server) = spawn_server(vec![ResponseSpec {
         status: 200,
         body: "{\"status\":\"FINALIZED\"}",
         delay: Duration::ZERO,
-    }]).await;
+    }])
+    .await;
 
-    assert!(!retry_pending_once(&spool, &api(base_url, Duration::from_secs(1)), Duration::ZERO).await.unwrap());
+    assert!(
+        !retry_pending_once(
+            &spool,
+            &api(base_url, Duration::from_secs(1)),
+            Duration::ZERO
+        )
+        .await
+        .unwrap()
+    );
     assert!(spool.pending().await.unwrap().is_empty());
-    assert!(spool.advance(expected.capture_id, OutboxState::Server).await.is_err());
+    assert!(
+        spool
+            .advance(expected.capture_id, OutboxState::Server)
+            .await
+            .is_err()
+    );
     let requests = server.await.unwrap();
     let request_text = String::from_utf8_lossy(&requests[0]);
-    assert!(request_text.starts_with("GET /api/agent/evidence/5845dc20fd6b266ec98399f0aa93c736ec9aa778bf038af5291e5df81334b531 "));
+    assert!(request_text.starts_with(
+        "GET /api/agent/evidence/5845dc20fd6b266ec98399f0aa93c736ec9aa778bf038af5291e5df81334b531 "
+    ));
     drop(spool);
     cleanup_database(&path);
 }

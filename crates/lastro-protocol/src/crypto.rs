@@ -4,7 +4,7 @@
 //! Public key = SEC1 compressed 33 bytes.
 //! Signature = compact r||s 64 bytes with low-S canonicalization.
 
-use p256::ecdsa::{signature::Verifier, Signature, VerifyingKey};
+use p256::ecdsa::{Signature, VerifyingKey, signature::Verifier};
 use sha2::{Digest, Sha256};
 
 use crate::{
@@ -33,8 +33,8 @@ pub fn verify_station_signature(
 ) -> Result<(), ProtocolError> {
     let verifying_key = VerifyingKey::from_sec1_bytes(compressed_pubkey)
         .map_err(|_| ProtocolError::InvalidStationKey)?;
-    let signature = Signature::from_slice(signature_rs)
-        .map_err(|_| ProtocolError::InvalidStationSignature)?;
+    let signature =
+        Signature::from_slice(signature_rs).map_err(|_| ProtocolError::InvalidStationSignature)?;
 
     if signature.normalize_s().is_some() {
         return Err(ProtocolError::HighSSignature);

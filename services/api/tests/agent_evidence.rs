@@ -5,26 +5,21 @@ mod common;
 use std::{fs, path::PathBuf, sync::Arc};
 
 use axum::{
-    body::Body,
-    http::{header, Request, StatusCode},
     Router,
+    body::Body,
+    http::{Request, StatusCode, header},
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_api::{
     repository::{animals, captures, events},
     routes,
 };
-use lastro_protocol::{
-    crypto::derive_station_id,
-    rfid::hash_canonical_rfid,
-    StationEvent,
-};
+use lastro_protocol::{StationEvent, crypto::derive_station_id, rfid::hash_canonical_rfid};
 use serde_json::json;
 use tower::ServiceExt;
 
 use common::{
-    app_state, sign_station_event_with_test_scalar, TestDb, TestRpc, AGENT_TOKEN,
-    STATION_PUBKEY,
+    AGENT_TOKEN, STATION_PUBKEY, TestDb, TestRpc, app_state, sign_station_event_with_test_scalar,
 };
 
 const ANIMAL_ID: [u8; 32] = [0x11; 32];
@@ -278,7 +273,8 @@ async fn rejects_pubkey_not_registered_for_deployment() {
 
     let (_, other_public_key, _) = sign_station_event_with_test_scalar(&original, 2);
     let mut other_event = original;
-    other_event.station_id = derive_station_id(&other_public_key).expect("derive alternate StationID");
+    other_event.station_id =
+        derive_station_id(&other_public_key).expect("derive alternate StationID");
     let (event_bytes, other_public_key, other_signature) =
         sign_station_event_with_test_scalar(&other_event, 2);
     assert_ne!(other_public_key, STATION_PUBKEY);

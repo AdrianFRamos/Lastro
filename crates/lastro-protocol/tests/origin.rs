@@ -4,10 +4,16 @@ mod common;
 
 use lastro_protocol::{ProtocolError, StationEvent};
 
-fn invalid(mut event: StationEvent) {
-    assert_eq!(event.validate_semantics(), Err(ProtocolError::InvalidSemantics));
+fn invalid(event: StationEvent) {
+    assert_eq!(
+        event.validate_semantics(),
+        Err(ProtocolError::InvalidSemantics)
+    );
     let bytes = event.encode();
-    assert_eq!(StationEvent::decode(&bytes), Err(ProtocolError::InvalidSemantics));
+    assert_eq!(
+        StationEvent::decode(&bytes),
+        Err(ProtocolError::InvalidSemantics)
+    );
 }
 
 #[test]

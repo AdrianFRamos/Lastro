@@ -3,8 +3,6 @@ import LastroTrustStack from '../components/story/LastroTrustStack.vue'
 import StoryHeader from '../components/story/StoryHeader.vue'
 import StoryPageFooter from '../components/story/StoryPageFooter.vue'
 import StorySectionHeading from '../components/story/StorySectionHeading.vue'
-
-
 </script>
 
 <template>
@@ -19,7 +17,10 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
         </div>
         <div class="future-hero__thesis">
           <span>LASTRO THESIS</span>
-          <p>You cannot build trusted financial infrastructure around a physical asset before you can prove what it is, who controls it, and what happened to it.</p>
+          <p>
+            You cannot build trusted financial infrastructure around a physical asset before you can
+            prove what it is, who controls it, and what happened to it.
+          </p>
           <strong>Lastro starts with identity and custody.</strong>
         </div>
       </section>
@@ -99,12 +100,19 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
         </div>
         <div class="boundary__columns">
           <article>
-            <span class="boundary__label boundary__label--proven">PROVEN TODAY</span>
-            <p>Signed physical evidence, persistent AnimalID, custody authorization, re-identification, canonical Solana state and independent verification.</p>
+            <span class="boundary__label boundary__label--proven">SOFTWARE DEMONSTRATED</span>
+            <p>
+              Signed StationEvent processing, persistent AnimalID, custody authorization,
+              re-identification, canonical Solana state and independent verification in the software
+              demo. Physical reader validation remains a separate hardware gate.
+            </p>
           </article>
           <article>
             <span class="boundary__label">EXPANSION PATH</span>
-            <p>Traceability, compliance interoperability, risk and financial infrastructure built around verifiable physical history.</p>
+            <p>
+              Traceability, compliance interoperability, risk and financial infrastructure built
+              around verifiable physical history.
+            </p>
           </article>
         </div>
       </section>
@@ -122,7 +130,11 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 .future-page {
   min-height: 100vh;
   background:
-    radial-gradient(circle at 78% 12%, color-mix(in srgb, var(--primary) 8%, transparent), transparent 26rem),
+    radial-gradient(
+      circle at 78% 12%,
+      color-mix(in srgb, var(--primary) 8%, transparent),
+      transparent 26rem
+    ),
     var(--canvas);
   color: var(--text);
 }
@@ -136,12 +148,12 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
   margin: 0 0 12px;
   color: var(--proof);
   font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: .16em;
+  letter-spacing: 0.16em;
 }
 
 .future-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.05fr) minmax(320px, .72fr);
+  grid-template-columns: minmax(0, 1.05fr) minmax(320px, 0.72fr);
   gap: 8vw;
   align-items: end;
   padding: 72px 0 64px;
@@ -154,20 +166,24 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
   font-size: clamp(44px, 4.6vw, 68px);
   font-weight: 580;
   line-height: 1;
-  letter-spacing: -.052em;
+  letter-spacing: -0.052em;
 }
 
 .future-hero__thesis {
   padding: 24px;
   border-left: 2px solid var(--primary);
-  background: linear-gradient(90deg, color-mix(in srgb, var(--primary) 8%, transparent), transparent);
+  background: linear-gradient(
+    90deg,
+    color-mix(in srgb, var(--primary) 8%, transparent),
+    transparent
+  );
 }
 
 .future-hero__thesis span,
 .expansion-stage__head,
 .boundary__label {
   font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: .12em;
+  letter-spacing: 0.12em;
 }
 
 .future-hero__thesis span {
@@ -269,7 +285,7 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
 .boundary {
   display: grid;
-  grid-template-columns: minmax(0, .8fr) minmax(0, 1.2fr);
+  grid-template-columns: minmax(0, 0.8fr) minmax(0, 1.2fr);
   gap: 8vw;
 }
 
@@ -308,7 +324,6 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
     gap: 28px;
   }
 
-
   .expansion__flow {
     grid-template-columns: 1fr;
   }
@@ -342,12 +357,9 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
     padding: 48px 0;
   }
 
-
-
   .boundary__columns {
     grid-template-columns: 1fr;
   }
-
 }
 
 @media (min-width: 1200px) and (min-aspect-ratio: 16 / 10) {

@@ -81,7 +81,7 @@ const layers = [
 
 .trust-stack-diagram__layer {
   display: grid;
-  grid-template-columns: 170px minmax(280px, .8fr) minmax(0, 1fr);
+  grid-template-columns: 170px minmax(280px, 0.8fr) minmax(0, 1fr);
   gap: 28px;
   align-items: center;
   min-height: 132px;
@@ -113,7 +113,7 @@ const layers = [
 .trust-stack-diagram__phase {
   color: var(--muted);
   font: 700 9px/1.3 var(--font-mono);
-  letter-spacing: .12em;
+  letter-spacing: 0.12em;
 }
 
 .trust-stack-diagram__layer[data-tone='proof'] .trust-stack-diagram__phase {
@@ -132,7 +132,7 @@ const layers = [
 .trust-stack-diagram__body h3 {
   margin: 0;
   font: 700 14px/1.3 var(--font-mono);
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
 }
 
 .trust-stack-diagram__body p {
@@ -162,7 +162,7 @@ const layers = [
 .trust-stack-diagram__layer li::before {
   content: '';
   position: absolute;
-  top: .55em;
+  top: 0.55em;
   left: 0;
   width: 4px;
   height: 4px;

@@ -3,7 +3,8 @@ import validFixture from '../../../../test-vectors/evidence-package.valid.json'
 import { api, ApiClientError } from '../../src/api/client'
 
 const CAPTURE_ID = '00112233-4455-6677-8899-aabbccddeeff'
-const TX_SIGNATURE = '2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2'
+const TX_SIGNATURE =
+  '2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2'
 
 const animal = {
   animalId: '11'.repeat(32),
@@ -16,7 +17,10 @@ const animal = {
 }
 
 function jsonResponse(value: unknown, status = 200): Response {
-  return new Response(JSON.stringify(value), { status, headers: { 'content-type': 'application/json' } })
+  return new Response(JSON.stringify(value), {
+    status,
+    headers: { 'content-type': 'application/json' },
+  })
 }
 
 afterEach(() => {
@@ -74,13 +78,83 @@ describe('api/client', () => {
    */
   it('network timeout or abort never produces an optimistic success result', async () => {
     vi.useFakeTimers()
-    vi.spyOn(globalThis, 'fetch').mockImplementation((_input, init) => new Promise((_resolve, reject) => {
-      init?.signal?.addEventListener('abort', () => reject(init.signal?.reason ?? new DOMException('aborted', 'AbortError')), { once: true })
-    }))
-    const expectation = expect(api.getAnimal('11'.repeat(32))).rejects.toMatchObject({ name: 'ApiClientError', status: null, message: 'API request timed out' })
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      (_input, init) =>
+        new Promise((_resolve, reject) => {
+          init?.signal?.addEventListener(
+            'abort',
+            () => reject(init.signal?.reason ?? new DOMException('aborted', 'AbortError')),
+            { once: true },
+          )
+        }),
+    )
+    const expectation = expect(api.getAnimal('11'.repeat(32))).rejects.toMatchObject({
+      name: 'ApiClientError',
+      status: null,
+      message: 'API request timed out',
+    })
     await vi.advanceTimersByTimeAsync(10_000)
     await expectation
   })
+
+  /**
+   * PURPOSE: Separate wallet proof issuance from physical Station reservation.
+   * ARRANGE: The API returns one capture-authorization challenge, then one capture after receiving its proof.
+   * ACTION: Request the challenge and submit the signed proof through the typed browser client.
+   * ASSERT: The challenge request carries only intent; capture creation carries the exact one-time authorization object.
+   * FAILURE MEANS: the browser can reserve Station work before proving wallet control or can sign a different intent than it submits.
+   */
+  it('requests capture authorization before sending the signed one-time proof', async () => {
+    const challenge = {
+      challengeId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      deploymentId: 'd0'.repeat(32),
+      requiredSigner: 'Vote111111111111111111111111111111111111111',
+      messageBase64: btoa('Lastro capture authorization v1'),
+      expiresAtUnix: 2_000_000_000,
+    }
+    const capture = {
+      captureId: CAPTURE_ID,
+      action: 'TRANSFER',
+      animalId: '11'.repeat(32),
+      status: 'PENDING',
+      eventHash: null,
+      eventStatus: null,
+      txSignature: null,
+    }
+    const fetchMock = vi
+      .spyOn(globalThis, 'fetch')
+      .mockResolvedValueOnce(jsonResponse(challenge, 201))
+      .mockResolvedValueOnce(jsonResponse(capture, 201))
+
+    await expect(
+      api.getCaptureAuthorizationChallenge('TRANSFER', '11'.repeat(32), '22'.repeat(32)),
+    ).resolves.toEqual(challenge)
+
+    const proof = {
+      challengeId: challenge.challengeId,
+      signatureBase64: btoa(String.fromCharCode(...new Uint8Array(64).fill(7))),
+    }
+    await expect(
+      api.createCapture('TRANSFER', '11'.repeat(32), '22'.repeat(32), proof),
+    ).resolves.toEqual(capture)
+
+    const [, challengeInit] = fetchMock.mock.calls[0]!
+    expect(JSON.parse(String(challengeInit?.body))).toEqual({
+      action: 'TRANSFER',
+      animalId: '11'.repeat(32),
+      nextCustodian: '22'.repeat(32),
+      supersedeCaptureId: null,
+    })
+    const [, createInit] = fetchMock.mock.calls[1]!
+    expect(JSON.parse(String(createInit?.body))).toEqual({
+      action: 'TRANSFER',
+      animalId: '11'.repeat(32),
+      nextCustodian: '22'.repeat(32),
+      authorization: proof,
+      supersedeCaptureId: null,
+    })
+  })
+
   /**
    * PURPOSE: Preserve the separate physical-capture and event-submission lifecycles exposed by the API.
    * ARRANGE: Return one accepted capture whose exact transaction was already verified at confirmed commitment.
@@ -110,10 +184,12 @@ describe('api/client', () => {
    * FAILURE MEANS: browser recovery can bypass or misread the server-side confirmed-commitment trust boundary.
    */
   it('submits only the transaction signature to the confirmed-verification endpoint', async () => {
-    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
-      status: 'SUBMITTED',
-      txSignature: TX_SIGNATURE,
-    }))
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        status: 'SUBMITTED',
+        txSignature: TX_SIGNATURE,
+      }),
+    )
     await expect(api.submit('22'.repeat(32), TX_SIGNATURE)).resolves.toEqual({
       status: 'SUBMITTED',
       txSignature: TX_SIGNATURE,
@@ -158,11 +234,15 @@ describe('api/client', () => {
    * FAILURE MEANS: the page could advance to finalized polling without a server-verified SUBMITTED state.
    */
   it('rejects non-submitted statuses from the transaction submission endpoint', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValue(jsonResponse({
-      status: 'EVIDENCE_ACCEPTED',
-      txSignature: TX_SIGNATURE,
-    }))
-    await expect(api.submit('22'.repeat(32), TX_SIGNATURE)).rejects.toMatchObject({ name: 'ApiClientError' })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValue(
+      jsonResponse({
+        status: 'EVIDENCE_ACCEPTED',
+        txSignature: TX_SIGNATURE,
+      }),
+    )
+    await expect(api.submit('22'.repeat(32), TX_SIGNATURE)).rejects.toMatchObject({
+      name: 'ApiClientError',
+    })
   })
 
   /**
@@ -173,22 +253,27 @@ describe('api/client', () => {
    * FAILURE MEANS: hostile API metadata can create oversized or ambiguous browser recovery state.
    */
   it('rejects malformed or oversized durable identifiers', async () => {
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
-      captureId: 'x'.repeat(4096),
-      action: 'TRANSFER',
-      animalId: '11'.repeat(32),
-      status: 'EVIDENCE_ACCEPTED',
-      eventHash: null,
-      eventStatus: null,
-      txSignature: null,
-    }))
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      jsonResponse({
+        captureId: 'x'.repeat(4096),
+        action: 'TRANSFER',
+        animalId: '11'.repeat(32),
+        status: 'EVIDENCE_ACCEPTED',
+        eventHash: null,
+        eventStatus: null,
+        txSignature: null,
+      }),
+    )
     await expect(api.getCapture(CAPTURE_ID)).rejects.toMatchObject({ name: 'ApiClientError' })
 
-    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(jsonResponse({
-      status: 'SUBMITTED',
-      txSignature: '1'.repeat(89),
-    }))
-    await expect(api.submit('22'.repeat(32), TX_SIGNATURE)).rejects.toMatchObject({ name: 'ApiClientError' })
+    vi.spyOn(globalThis, 'fetch').mockResolvedValueOnce(
+      jsonResponse({
+        status: 'SUBMITTED',
+        txSignature: '1'.repeat(89),
+      }),
+    )
+    await expect(api.submit('22'.repeat(32), TX_SIGNATURE)).rejects.toMatchObject({
+      name: 'ApiClientError',
+    })
   })
-
 })

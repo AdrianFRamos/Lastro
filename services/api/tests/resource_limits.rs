@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use axum::{
     body::Body,
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
 };
 use lastro_api::{
     config::AppConfig,
@@ -68,10 +68,7 @@ fn test_app() -> axum::Router {
         .acquire_timeout(Duration::from_millis(25))
         .connect_lazy("postgres://127.0.0.1:1/lastro")
         .expect("valid lazy PostgreSQL URL");
-    let station_pubkey33: [u8; 33] = hex::decode(STATION_PUBKEY_HEX)
-        .unwrap()
-        .try_into()
-        .unwrap();
+    let station_pubkey33: [u8; 33] = hex::decode(STATION_PUBKEY_HEX).unwrap().try_into().unwrap();
     routes::router(AppState {
         db: pool,
         config: Arc::new(AppConfig {
@@ -163,6 +160,10 @@ async fn field_bounds_and_malformed_encodings_fail_before_dependencies() {
         "action": "TRANSFER",
         "animalId": "zz",
         "nextCustodian": "11".repeat(32),
+        "authorization": {
+            "challengeId": "00000000-0000-0000-0000-000000000000",
+            "signatureBase64": "AA".repeat(44),
+        },
     })
     .to_string();
     assert_eq!(

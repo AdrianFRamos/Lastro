@@ -5,35 +5,51 @@ on:
   pull_request:
     paths: ['firmware/**','.github/workflows/firmware.yml']
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   build:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
-    container:
-      image: espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c
     steps:
+      - name: Reset self-hosted workspace
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE"
+          uid="$(id -u)"
+          gid="$(id -g)"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 \
+            sh -c "chown -R ${uid}:${gid} /workspace"
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: Verify ESP-IDF toolchain
-        run: idf.py --version
-      - name: Configure ESP32-C5 target
-        run: idf.py -C firmware/station set-target esp32c5
-      - name: Build ESP32-C5 firmware
+      - name: Build and verify ESP32-C5 firmware in isolated ESP-IDF container
         run: |
-          grep -Fx '# CONFIG_LASTRO_STATION_USE_EFUSE_KEY is not set' firmware/station/sdkconfig
-          idf.py -C firmware/station build
-      - name: Compile eFuse-backed signer configuration without provisioning
-        env:
-          SDKCONFIG_DEFAULTS: sdkconfig.defaults;sdkconfig.efuse.defaults
-        run: |
-          rm -rf firmware/station/build
-          rm -f firmware/station/sdkconfig firmware/station/sdkconfig.old
-          idf.py -C firmware/station set-target esp32c5
-          grep -Fx 'CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN=y' firmware/station/sdkconfig
-          grep -Fx 'CONFIG_LASTRO_STATION_USE_EFUSE_KEY=y' firmware/station/sdkconfig
-          grep -Fx 'CONFIG_LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX=0' firmware/station/sdkconfig
-          idf.py -C firmware/station build
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/source:ro" \
+            espressif/idf:v6.1@sha256:81893c71bb5e570088901f21def8684c25cd2a9020281bd01b843a7655edb18c \
+            bash -lc '
+              set -euo pipefail
+              . "$IDF_PATH/export.sh"
+              idf.py --version
+              cp -a /source/firmware/station /tmp/station
+              idf.py -C /tmp/station set-target esp32c5
+              grep -Fx "# CONFIG_LASTRO_STATION_USE_EFUSE_KEY is not set" /tmp/station/sdkconfig
+              idf.py -C /tmp/station build
+
+              rm -rf /tmp/station/build
+              rm -f /tmp/station/sdkconfig /tmp/station/sdkconfig.old
+              idf.py -C /tmp/station -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.efuse.defaults" set-target esp32c5
+              grep -Fx "CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN=y" /tmp/station/sdkconfig
+              grep -Fx "CONFIG_LASTRO_STATION_USE_EFUSE_KEY=y" /tmp/station/sdkconfig
+              grep -Fx "CONFIG_LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX=0" /tmp/station/sdkconfig
+              idf.py -C /tmp/station -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.efuse.defaults" build
+            '
       - name: Hardware tests are intentionally not simulated
         run: echo "Unity target tests, physical RFID reader integration, and eFuse gates require declared ESP32-C5 hardware."

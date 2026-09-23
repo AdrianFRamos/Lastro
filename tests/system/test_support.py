@@ -6,11 +6,12 @@ import json
 import struct
 
 from cryptography.hazmat.primitives import serialization
-from cryptography.hazmat.primitives.asymmetric import ec
+from cryptography.hazmat.primitives.asymmetric import ec, ed25519
 
 from .support import (
     P256_ORDER,
     StationHarness,
+    WalletActor,
     SystemContractError,
     build_station_event,
     b58decode_exact,
@@ -92,6 +93,70 @@ def test_system_p256_signer_emits_compact_low_s_signature():
     assert 1 <= int.from_bytes(signature[32:], "big") <= P256_ORDER // 2
     verify_p256_compact_low_s(public, signature, message)
 
+
+
+def test_system_wallet_authorizes_only_the_exact_capture_challenge():
+    """
+    PURPOSE: Keep the black-box system harness subject to the same pre-capture wallet-intent binding as the browser.
+    ARRANGE: Build one deterministic Ed25519 wallet and a canonical TRANSFER authorization message.
+    ACTION: Sign the exact challenge, then alter only the intended destination while reusing the server message.
+    ASSERT: The exact intent yields one verifiable 64-byte signature; altered intent fails before a signature is returned.
+    FAILURE MEANS: full-system tests could bypass the production capture-authorization boundary.
+    """
+    private = ed25519.Ed25519PrivateKey.from_private_bytes(bytes([0x51]) * 32)
+    public = private.public_key().public_bytes(serialization.Encoding.Raw, serialization.PublicFormat.Raw)
+    wallet = WalletActor(private_key=private, public_key=public, address=b58encode(public))
+    challenge_id = "aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee"
+    deployment_id = bytes([0xD0]) * 32
+    program_id = "Vote111111111111111111111111111111111111111"
+    animal_id = "11" * 32
+    next_custodian = "22" * 32
+    expires_at = 2_000_000_000
+    message = (
+        "Lastro capture authorization v1\n"
+        f"challengeId={challenge_id}\n"
+        f"deploymentId={deployment_id.hex()}\n"
+        f"programId={program_id}\n"
+        "action=TRANSFER\n"
+        f"animalId={animal_id}\n"
+        f"nextCustodian={next_custodian}\n"
+        f"requiredSigner={wallet.address}\n"
+        f"expiresAtUnix={expires_at}\n"
+    ).encode()
+    challenge = {
+        "challengeId": challenge_id,
+        "deploymentId": deployment_id.hex(),
+        "requiredSigner": wallet.address,
+        "messageBase64": base64.b64encode(message).decode(),
+        "expiresAtUnix": expires_at,
+    }
+
+    proof = wallet.sign_capture_authorization(
+        challenge,
+        deployment_id=deployment_id,
+        program_id=program_id,
+        action="TRANSFER",
+        animal_id=animal_id,
+        next_custodian=next_custodian,
+    )
+    signature = base64.b64decode(proof["signatureBase64"], validate=True)
+    wallet.private_key.public_key().verify(signature, message)
+    assert proof["challengeId"] == challenge_id
+    assert len(signature) == 64
+
+    try:
+        wallet.sign_capture_authorization(
+            challenge,
+            deployment_id=deployment_id,
+            program_id=program_id,
+            action="TRANSFER",
+            animal_id=animal_id,
+            next_custodian="33" * 32,
+        )
+    except SystemContractError as error:
+        assert "authorization message" in str(error)
+    else:
+        raise AssertionError("altered capture intent unexpectedly reused an authorization challenge")
 
 def test_system_pda_derivation_uses_canonical_off_curve_bump():
     """

@@ -1,9 +1,9 @@
 //! Canonical RFID contracts.
 
 use lastro_protocol::{
+    ProtocolError,
     constants::RFID_DOMAIN,
     rfid::{canonical_rfid_from_slice, canonical_rfid_from_u64, hash_canonical_rfid},
-    ProtocolError,
 };
 use sha2::{Digest, Sha256};
 
@@ -44,7 +44,10 @@ fn formatted_display_text_is_not_silently_canonical() {
     // PURPOSE: Prevent display strings from becoming alternate RFID identities.
     // ASSERT: ASCII text for the same displayed value is rejected by the canonical byte API.
     // FAILURE MEANS: One physical tag can gain multiple hash representations.
-    assert_eq!(canonical_rfid_from_slice(b"8000130000000001"), Err(ProtocolError::InvalidRfidLength));
+    assert_eq!(
+        canonical_rfid_from_slice(b"8000130000000001"),
+        Err(ProtocolError::InvalidRfidLength)
+    );
 }
 
 #[test]
@@ -52,7 +55,13 @@ fn canonical_rfid_is_exactly_8_bytes() {
     // PURPOSE: Freeze canonical RFID representation to one unsigned 64-bit value.
     // ASSERT: Seven and nine bytes fail while eight bytes succeed.
     // FAILURE MEANS: Reader adapters can hash different widths for the same logical identifier.
-    assert_eq!(canonical_rfid_from_slice(&[0; 7]), Err(ProtocolError::InvalidRfidLength));
+    assert_eq!(
+        canonical_rfid_from_slice(&[0; 7]),
+        Err(ProtocolError::InvalidRfidLength)
+    );
     assert!(canonical_rfid_from_slice(&[0; 8]).is_ok());
-    assert_eq!(canonical_rfid_from_slice(&[0; 9]), Err(ProtocolError::InvalidRfidLength));
+    assert_eq!(
+        canonical_rfid_from_slice(&[0; 9]),
+        Err(ProtocolError::InvalidRfidLength)
+    );
 }

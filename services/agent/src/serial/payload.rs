@@ -37,6 +37,7 @@ pub enum StationErrorCode {
     InvalidEventContext = 3,
     SigningFailed = 4,
     Busy = 5,
+    RfidTimeout = 6,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -65,10 +66,14 @@ pub fn encode_command(command: &StationCommand) -> Result<[u8; COMMAND_PAYLOAD_L
 
 pub fn decode_command(bytes: &[u8]) -> Result<StationCommand, AgentError> {
     if bytes.len() != COMMAND_PAYLOAD_LEN {
-        return Err(AgentError::Contract(format!("COMMAND payload must be {COMMAND_PAYLOAD_LEN} bytes")));
+        return Err(AgentError::Contract(format!(
+            "COMMAND payload must be {COMMAND_PAYLOAD_LEN} bytes"
+        )));
     }
     if bytes[17..20] != [0, 0, 0] {
-        return Err(AgentError::Contract("COMMAND reserved bytes must be zero".into()));
+        return Err(AgentError::Contract(
+            "COMMAND reserved bytes must be zero".into(),
+        ));
     }
     let command = StationCommand {
         capture_id: Uuid::from_bytes(bytes[0..16].try_into().expect("fixed slice")),
@@ -98,7 +103,9 @@ pub fn encode_event_ready(payload: &EventReadyPayload) -> [u8; EVENT_READY_PAYLO
 
 pub fn decode_event_ready(bytes: &[u8]) -> Result<EventReadyPayload, AgentError> {
     if bytes.len() != EVENT_READY_PAYLOAD_LEN {
-        return Err(AgentError::Contract(format!("EVENT_READY payload must be {EVENT_READY_PAYLOAD_LEN} bytes")));
+        return Err(AgentError::Contract(format!(
+            "EVENT_READY payload must be {EVENT_READY_PAYLOAD_LEN} bytes"
+        )));
     }
     Ok(EventReadyPayload {
         capture_id: Uuid::from_bytes(bytes[0..16].try_into().expect("fixed slice")),
@@ -118,7 +125,9 @@ pub fn encode_ack(payload: &AckPayload) -> [u8; ACK_PAYLOAD_LEN] {
 
 pub fn decode_ack(bytes: &[u8]) -> Result<AckPayload, AgentError> {
     if bytes.len() != ACK_PAYLOAD_LEN {
-        return Err(AgentError::Contract(format!("ACK payload must be {ACK_PAYLOAD_LEN} bytes")));
+        return Err(AgentError::Contract(format!(
+            "ACK payload must be {ACK_PAYLOAD_LEN} bytes"
+        )));
     }
     Ok(AckPayload {
         capture_id: Uuid::from_bytes(bytes[0..16].try_into().expect("fixed slice")),
@@ -136,10 +145,14 @@ pub fn encode_error(payload: &ErrorPayload) -> [u8; ERROR_PAYLOAD_LEN] {
 
 pub fn decode_error(bytes: &[u8]) -> Result<ErrorPayload, AgentError> {
     if bytes.len() != ERROR_PAYLOAD_LEN {
-        return Err(AgentError::Contract(format!("ERROR payload must be {ERROR_PAYLOAD_LEN} bytes")));
+        return Err(AgentError::Contract(format!(
+            "ERROR payload must be {ERROR_PAYLOAD_LEN} bytes"
+        )));
     }
     if bytes[18..20] != [0, 0] {
-        return Err(AgentError::Contract("ERROR reserved bytes must be zero".into()));
+        return Err(AgentError::Contract(
+            "ERROR reserved bytes must be zero".into(),
+        ));
     }
     let code = match u16::from_le_bytes(bytes[16..18].try_into().expect("fixed slice")) {
         1 => StationErrorCode::InvalidCommand,
@@ -147,7 +160,12 @@ pub fn decode_error(bytes: &[u8]) -> Result<ErrorPayload, AgentError> {
         3 => StationErrorCode::InvalidEventContext,
         4 => StationErrorCode::SigningFailed,
         5 => StationErrorCode::Busy,
-        value => return Err(AgentError::Contract(format!("unknown Station error code {value}"))),
+        6 => StationErrorCode::RfidTimeout,
+        value => {
+            return Err(AgentError::Contract(format!(
+                "unknown Station error code {value}"
+            )));
+        }
     };
     Ok(ErrorPayload {
         capture_id: Uuid::from_bytes(bytes[0..16].try_into().expect("fixed slice")),

@@ -5,7 +5,7 @@ use std::{sync::Arc, time::Duration};
 use async_trait::async_trait;
 use axum::{
     body::Body,
-    http::{header, Request, StatusCode},
+    http::{Request, StatusCode, header},
 };
 use lastro_api::{
     config::AppConfig,
@@ -21,9 +21,9 @@ use tower::ServiceExt;
 
 const TOKEN: &str = "0123456789abcdef0123456789abcdef";
 const STATION_PUBKEY: [u8; 33] = [
-    0x03, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63,
-    0xa4, 0x40, 0xf2, 0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39,
-    0x45, 0xd8, 0x98, 0xc2, 0x96,
+    0x03, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40,
+    0xf2, 0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2,
+    0x96,
 ];
 
 struct UnusedRpc;
@@ -173,16 +173,20 @@ fn wallet_private_key_fields_are_rejected_by_request_schemas() {
         "action": "TRANSFER",
         "animalId": "11".repeat(32),
         "nextCustodian": "22".repeat(32),
+        "authorization": {
+            "challengeId": "00000000-0000-0000-0000-000000000000",
+            "signatureBase64": "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA=="
+        },
         "privateKey": "do-not-accept"
     });
     assert!(serde_json::from_value::<CreateCaptureRequest>(capture).is_err());
 
     for field in ["privateKey", "secretKey", "seed", "mnemonic"] {
         let mut value = serde_json::json!({"txSignature": "signature"});
-        value
-            .as_object_mut()
-            .unwrap()
-            .insert(field.into(), serde_json::Value::String("do-not-accept".into()));
+        value.as_object_mut().unwrap().insert(
+            field.into(),
+            serde_json::Value::String("do-not-accept".into()),
+        );
         assert!(serde_json::from_value::<ConfirmEventRequest>(value).is_err());
     }
 

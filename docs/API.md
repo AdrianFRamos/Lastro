@@ -6,8 +6,8 @@ Machine-readable contract: `schemas/openapi.yaml`.
 
 ## Capture flow
 
-1. Web calls `POST /api/captures` with action/animal/next custodian when applicable.
-2. API reads its projection, rejects obvious conflicts, and creates an immutable/expiring context.
+1. Web requests `POST /api/captures/authorization-challenge` for the exact action, animal and optional destination or recapture ID.
+2. The required custodian signs the deployment-bound, single-use challenge; Web supplies that signature to `POST /api/captures`, and the API creates an immutable/expiring context.
 3. Agent polls authenticated `GET /api/agent/commands`.
 4. Station receives the expected context, observes RFID, computes the new hash when applicable, and signs `StationEvent`.
 5. Agent persists `LOCAL` before `POST /api/agent/evidence`.
@@ -19,7 +19,7 @@ Machine-readable contract: `schemas/openapi.yaml`.
 
 ## Capture authority boundary
 
-`POST /api/captures` has no wallet authentication and does not claim custody authorization. The route only freezes the context the Station may sign. For ORIGIN, `nextCustodian` is required; for TRANSFER it is required and must differ from the current custodian; for REIDENTIFY it must be absent and the API derives `from==to` from current state. The required signer appears in `transaction-data`; definitive authority proof occurs through the wallet signature and on-chain validation.
+`POST /api/captures` requires a current-custodian Ed25519 signature over a two-minute, single-use capture challenge. For ORIGIN, the intended initial custodian signs. The challenge binds the action, animal, destination, deployment, program, expiry, and (for explicit same-action recapture) the prior capture ID. The API consumes it transactionally before reserving Station work. For TRANSFER, `nextCustodian` must differ from the current custodian; REIDENTIFY derives `from==to` from canonical state. On-chain custody authority remains a separate wallet-signature check on the actual transaction.
 
 ## RFID lookup
 
@@ -28,7 +28,7 @@ Machine-readable contract: `schemas/openapi.yaml`.
 ## Idempotency
 
 - Identical evidence may be resent and receives an idempotent result.
-- Repeating `POST /api/captures` for the same action/destination while that animal has `EVIDENCE_ACCEPTED` or `SUBMITTED` evidence returns the original capture; a different intent returns `409 Conflict`.
+- Repeating `POST /api/captures` for the same action/destination normally returns the existing accepted/submitted capture. An explicitly signed `supersedeCaptureId` can request a fresh REIDENTIFY observation only before a transaction signature is registered. This is a demo recovery path: an old transaction signed elsewhere but not reported to the API can still race on-chain. Operators must reconcile canonical Solana state before relying on the replacement as final.
 - The same capture/event identifier with divergent bytes returns `409 Conflict`.
 - Repeating `submit` with the same RPC-verified transaction signature is idempotent; a different signature cannot replace it.
 - Repeating `confirm` for the same finalized transaction returns the same terminal state without duplicating the event.
@@ -39,12 +39,12 @@ The application rejects JSON request bodies larger than **1024 bytes** before ro
 
 Fixed identifiers are validated before cryptographic or persistence work: AnimalID/event/RFID hashes are 64 lowercase hexadecimal characters, Station public keys are 66 lowercase hexadecimal characters, compact Station signatures are 128 lowercase hexadecimal characters, visual recovery identifiers are 1..64 characters, capture identifiers are UUIDs, and Solana transaction signatures are 64..88 Base58 characters and must decode canonically to 64 bytes before submission.
 
-Backend Solana RPC calls have a 10-second request timeout. The independent browser verifier uses the same 10-second RPC deadline and reports RPC/network timeout as `NOT_CHECKED`, never as `VALID` or contradictory `INVALID` evidence.
+Backend Solana RPC calls have a 10-second request timeout. The independent browser verifier uses a 10-second per-request deadline and a 30-second total RPC budget, returning `NOT_CHECKED` on network timeout.
 
-EvidencePackage event history has no application-imposed count cap because the canonical protocol permits history to grow with successive valid transitions. The transport instead bounds every fixed-size event field before decoding. There are currently no client-supplied JSON arrays on mutation endpoints; if deployment-scale history requires pagination later, that must preserve complete verification semantics rather than silently truncate canonical history.
+EvidencePackage export and browser parsing reject histories longer than 128 events. The API loads at most 129 records to detect overflow and never silently truncates a valid history. Deployments that expect longer animal lifetimes need a versioned streaming proof format before increasing the limit.
 
-Application-level request-rate limiting is not part of the hackathon protocol. With fixed body sizes, a bounded PostgreSQL pool, and RPC deadlines, deployment-wide request frequency controls belong at the external ingress/reverse-proxy boundary where client identity and topology are known. That deployment boundary must be validated separately for any public exposure.
+The database serializes and limits anonymous challenge issuance to 8 per signer and 240 globally per minute, retaining only a bounded period of expired challenges. Public animal registration permits at most 60 new unoriginated animals per minute and 5,000 pending ORIGIN. External ingress should additionally enforce per-client limits for a public deployment.
 
 ## Errors
 
-`400` invalid input/format; `401` Agent token; `404` resource; `409` state/immutability conflict; `5xx` internal/RPC/DB failure. Responses never include tokens, credential-bearing URLs, or secret material.
+`400` invalid input/format; `401` missing/invalid authorization; `404` resource; `409` state/immutability conflict; `429` persistence or challenge rate limit; `5xx` internal/RPC/DB failure. Responses never include tokens, credential-bearing URLs, or secret material.

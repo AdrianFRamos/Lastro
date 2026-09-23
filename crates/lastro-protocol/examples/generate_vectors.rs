@@ -11,12 +11,11 @@ use lastro_protocol::{
     crypto::derive_station_id,
     rfid::{canonical_rfid_from_u64, hash_canonical_rfid},
 };
-use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+use p256::ecdsa::{Signature, SigningKey, signature::Signer};
 use serde_json::json;
 
 const TEST_PRIVATE_SCALAR: [u8; 32] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
 ];
 
 fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -148,7 +147,10 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         serde_json::to_vec_pretty(&vectors)?,
     )?;
 
-    println!("generated deterministic test fixtures at {}", generated.display());
+    println!(
+        "generated deterministic test fixtures at {}",
+        generated.display()
+    );
     Ok(())
 }
 

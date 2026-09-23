@@ -5,11 +5,11 @@ mod common;
 use std::{fs, path::PathBuf, sync::Arc};
 
 use axum::{
-    body::{to_bytes, Body},
-    http::{header, Request, StatusCode},
     Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
 };
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_api::{
     crypto::verify_agent_evidence,
     model::AgentEvidenceRequest,
@@ -22,7 +22,7 @@ use serde_json::json;
 use sqlx::Row;
 use tower::ServiceExt;
 
-use common::{app_state, TestDb, TestRpc, STATION_PUBKEY};
+use common::{STATION_PUBKEY, TestDb, TestRpc, app_state};
 
 const ANIMAL_ID: [u8; 32] = [0x11; 32];
 const OBSERVED_RFID_A: [u8; 8] = [0x80, 0x00, 0x13, 0x00, 0x00, 0x00, 0x00, 0x01];
@@ -79,11 +79,14 @@ async fn seed_origin_event(db: &TestDb) -> StationEvent {
         station_pubkey_hex: hex::encode(STATION_PUBKEY),
         station_signature_hex: ORIGIN_SIGNATURE_HEX.into(),
     };
-    let verified = verify_agent_evidence(&request, &STATION_PUBKEY).expect("verify fixture evidence");
+    let verified =
+        verify_agent_evidence(&request, &STATION_PUBKEY).expect("verify fixture evidence");
     let mut tx = db.pool.begin().await.expect("begin evidence transaction");
-    assert!(events::insert_or_match_exact(&mut tx, pending.capture_id, &verified)
-        .await
-        .expect("insert event"));
+    assert!(
+        events::insert_or_match_exact(&mut tx, pending.capture_id, &verified)
+            .await
+            .expect("insert event")
+    );
     captures::mark_evidence_accepted(&mut tx, pending.capture_id)
         .await
         .expect("advance capture");
@@ -114,7 +117,10 @@ async fn submit(app: Router, event: &StationEvent, signature: &str) -> StatusCod
     app.oneshot(
         Request::builder()
             .method("POST")
-            .uri(format!("/api/events/{}/submit", hex::encode(event.event_hash())))
+            .uri(format!(
+                "/api/events/{}/submit",
+                hex::encode(event.event_hash())
+            ))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(json!({"txSignature": signature}).to_string()))
             .expect("build submission request"),
@@ -125,11 +131,14 @@ async fn submit(app: Router, event: &StationEvent, signature: &str) -> StatusCod
 }
 
 async fn get_json(app: Router, uri: String) -> (StatusCode, serde_json::Value) {
-    let response = app.oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+    let response = app
+        .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
         .await
         .expect("GET response");
     let status = response.status();
-    let bytes = to_bytes(response.into_body(), 1024 * 1024).await.expect("read JSON body");
+    let bytes = to_bytes(response.into_body(), 1024 * 1024)
+        .await
+        .expect("read JSON body");
     let body = serde_json::from_slice(&bytes).expect("JSON response body");
     (status, body)
 }
@@ -138,7 +147,10 @@ async fn confirm(app: Router, event: &StationEvent, signature: &str) -> StatusCo
     app.oneshot(
         Request::builder()
             .method("POST")
-            .uri(format!("/api/events/{}/confirm", hex::encode(event.event_hash())))
+            .uri(format!(
+                "/api/events/{}/confirm",
+                hex::encode(event.event_hash())
+            ))
             .header(header::CONTENT_TYPE, "application/json")
             .body(Body::from(json!({"txSignature": signature}).to_string()))
             .expect("build confirmation request"),
@@ -197,7 +209,10 @@ async fn submit_requires_exact_transaction_at_confirmed_commitment() {
     rpc.set_confirmed_transaction_match(false);
     let signature = tx_signature();
 
-    assert_eq!(submit(app(&db, rpc), &event, &signature).await, StatusCode::CONFLICT);
+    assert_eq!(
+        submit(app(&db, rpc), &event, &signature).await,
+        StatusCode::CONFLICT
+    );
     assert_unconfirmed(&db, &event).await;
     db.cleanup().await;
 }
@@ -214,7 +229,10 @@ async fn submit_persists_verified_signature_without_advancing_projection() {
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
     let signature = tx_signature();
 
-    assert_eq!(submit(app(&db, rpc), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc), &event, &signature).await,
+        StatusCode::OK
+    );
     assert_submitted(&db, &event, &signature).await;
     db.cleanup().await;
 }
@@ -231,16 +249,29 @@ async fn submitted_transaction_is_idempotent_recoverable_and_cannot_be_reprepare
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
     let signature = tx_signature();
 
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
     let different_signature = bs58::encode([0x56u8; 64]).into_string();
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &different_signature).await, StatusCode::CONFLICT);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &different_signature).await,
+        StatusCode::CONFLICT
+    );
 
-    let stored = events::find_by_hash(&db.pool, event.event_hash()).await.unwrap().unwrap();
+    let stored = events::find_by_hash(&db.pool, event.event_hash())
+        .await
+        .unwrap()
+        .unwrap();
     let (capture_status, capture) = get_json(
         app(&db, rpc.clone()),
         format!("/api/captures/{}", stored.capture_id),
-    ).await;
+    )
+    .await;
     assert_eq!(capture_status, StatusCode::OK);
     assert_eq!(capture["eventStatus"], "SUBMITTED");
     assert_eq!(capture["txSignature"], signature);
@@ -248,8 +279,12 @@ async fn submitted_transaction_is_idempotent_recoverable_and_cannot_be_reprepare
 
     let (prepare_status, _) = get_json(
         app(&db, rpc),
-        format!("/api/events/{}/transaction-data", hex::encode(event.event_hash())),
-    ).await;
+        format!(
+            "/api/events/{}/transaction-data",
+            hex::encode(event.event_hash())
+        ),
+    )
+    .await;
     assert_eq!(prepare_status, StatusCode::CONFLICT);
     assert_submitted(&db, &event, &signature).await;
     db.cleanup().await;
@@ -266,7 +301,10 @@ async fn confirm_rejects_transaction_not_preverified_at_confirmed_commitment() {
     let event = seed_origin_event(&db).await;
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
 
-    assert_eq!(confirm(app(&db, rpc), &event, &tx_signature()).await, StatusCode::CONFLICT);
+    assert_eq!(
+        confirm(app(&db, rpc), &event, &tx_signature()).await,
+        StatusCode::CONFLICT
+    );
     assert_unconfirmed(&db, &event).await;
     db.cleanup().await;
 }
@@ -282,7 +320,10 @@ async fn confirm_requires_transaction_to_exist_on_finalized_rpc() {
     let event = seed_origin_event(&db).await;
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
     let signature = tx_signature();
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
     rpc.set_transaction_match(false);
     rpc.set_animal(terminal_state(&event));
     rpc.set_binding(active_binding(&event));
@@ -303,7 +344,10 @@ async fn confirm_reads_animal_state_and_rfid_binding_from_rpc() {
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
     rpc.set_animal(terminal_state(&event));
     let signature = tx_signature();
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
 
     let missing_binding = confirm(app(&db, rpc.clone()), &event, &signature).await;
     assert_eq!(missing_binding, StatusCode::CONFLICT);
@@ -343,7 +387,10 @@ async fn confirm_rejects_rpc_state_not_matching_event_terminal() {
     rpc.set_animal(wrong);
     rpc.set_binding(active_binding(&event));
     let signature = tx_signature();
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
 
     let status = confirm(app(&db, rpc), &event, &signature).await;
     assert_eq!(status, StatusCode::CONFLICT);
@@ -362,9 +409,15 @@ async fn confirm_is_idempotent_for_same_finalized_transaction() {
     rpc.set_animal(terminal_state(&event));
     rpc.set_binding(active_binding(&event));
     let signature = tx_signature();
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
 
-    assert_eq!(confirm(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        confirm(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
     let before = sqlx::query("SELECT event_sequence,identity_revision,updated_at::text AS updated_at FROM animals WHERE animal_id=$1")
         .bind(event.animal_id.to_vec())
         .fetch_one(&db.pool)
@@ -374,7 +427,10 @@ async fn confirm_is_idempotent_for_same_finalized_transaction() {
     let before_revision: i32 = before.get("identity_revision");
     let before_updated_at: String = before.get("updated_at");
 
-    assert_eq!(confirm(app(&db, rpc), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        confirm(app(&db, rpc), &event, &signature).await,
+        StatusCode::OK
+    );
     let after = sqlx::query("SELECT event_sequence,identity_revision,updated_at::text AS updated_at FROM animals WHERE animal_id=$1")
         .bind(event.animal_id.to_vec())
         .fetch_one(&db.pool)
@@ -404,7 +460,10 @@ async fn confirm_does_not_accept_wrong_program_id() {
     rpc.set_animal(terminal_state(&event));
     rpc.set_binding(active_binding(&event));
     let signature = tx_signature();
-    assert_eq!(submit(app(&db, rpc.clone()), &event, &signature).await, StatusCode::OK);
+    assert_eq!(
+        submit(app(&db, rpc.clone()), &event, &signature).await,
+        StatusCode::OK
+    );
 
     let status = confirm(app(&db, rpc), &event, &signature).await;
     assert_eq!(status, StatusCode::CONFLICT);

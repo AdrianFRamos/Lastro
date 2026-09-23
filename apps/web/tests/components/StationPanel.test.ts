@@ -10,7 +10,9 @@ describe('StationPanel', () => {
    * FAILURE MEANS: UI could present hardware capability not represented by the protocol state.
    */
   it('renders only hardware facts actually represented by the hackathon Station contract', () => {
-    const wrapper = mount(StationPanel, { props: { reader: 'reader-a', signer: 'p256-key-a', capture: 'PENDING: cap-1' } })
+    const wrapper = mount(StationPanel, {
+      props: { reader: 'reader-a', signer: 'p256-key-a', capture: 'PENDING: cap-1' },
+    })
     expect(wrapper.text()).toContain('reader-a')
     expect(wrapper.text()).toContain('p256-key-a')
     expect(wrapper.text()).toContain('PENDING: cap-1')

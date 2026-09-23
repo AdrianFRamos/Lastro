@@ -1,19 +1,30 @@
 //! ORIGIN creates the canonical AnimalState and first ACTIVE RfidBinding atomically.
 
-use anchor_lang::{prelude::*, solana_program::sysvar};
+use anchor_lang::prelude::*;
+use solana_instructions_sysvar as instructions_sysvar;
 
 use crate::{
     constants::{ANIMAL_STATE_SEED, PROTOCOL_CONFIG_SEED, RFID_BINDING_SEED, RFID_STATUS_ACTIVE},
     error::LastroError,
     state::{AnimalState, ProtocolConfig, RfidBinding},
-    verify::{event::{parse_event, station_id_from_pubkey, ACTION_ORIGIN}, secp256r1::verify_station_precompile_binding},
+    verify::{
+        event::{ACTION_ORIGIN, parse_event, station_id_from_pubkey},
+        secp256r1::verify_station_precompile_binding,
+    },
 };
 
-pub fn handler(ctx: Context<'_, '_, '_, '_, Origin<'_>>, event: [u8; 276]) -> Result<()> {
+pub fn handler(ctx: Context<Origin>, event: [u8; 276]) -> Result<()> {
     let parsed = parse_event(&event)?;
     require!(parsed.action() == ACTION_ORIGIN, LastroError::InvalidEvent);
-    require!(parsed.deployment_id() == ctx.accounts.protocol_config.deployment_id, LastroError::InvalidEvent);
-    require!(parsed.station_id() == station_id_from_pubkey(&ctx.accounts.protocol_config.station_pubkey33), LastroError::InvalidStationProof);
+    require!(
+        parsed.deployment_id() == ctx.accounts.protocol_config.deployment_id,
+        LastroError::InvalidEvent
+    );
+    require!(
+        parsed.station_id()
+            == station_id_from_pubkey(&ctx.accounts.protocol_config.station_pubkey33),
+        LastroError::InvalidStationProof
+    );
     verify_station_precompile_binding(
         &ctx.accounts.instructions.to_account_info(),
         &ctx.accounts.protocol_config.station_pubkey33,
@@ -21,7 +32,10 @@ pub fn handler(ctx: Context<'_, '_, '_, '_, Origin<'_>>, event: [u8; 276]) -> Re
     )?;
 
     let custodian = Pubkey::new_from_array(parsed.to_custodian());
-    require!(ctx.accounts.custodian.key() == custodian, LastroError::InvalidCustodian);
+    require!(
+        ctx.accounts.custodian.key() == custodian,
+        LastroError::InvalidCustodian
+    );
 
     let animal = &mut ctx.accounts.animal_state;
     animal.animal_id = parsed.animal_id();
@@ -67,7 +81,7 @@ pub struct Origin<'info> {
     )]
     pub rfid_binding: Account<'info, RfidBinding>,
     /// CHECK: address constraint fixes this account to the Instructions sysvar.
-    #[account(address = sysvar::instructions::ID)]
+    #[account(address = instructions_sysvar::ID)]
     pub instructions: UncheckedAccount<'info>,
     pub system_program: Program<'info, System>,
 }

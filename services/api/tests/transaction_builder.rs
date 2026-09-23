@@ -2,15 +2,15 @@
 
 use std::{fs, path::PathBuf};
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_api::{
     repository::events::EventRecord,
     solana::{
         secp256r1::{
-            build_secp256r1_instruction_data, Secp256r1Descriptor, LASTRO_INSTRUCTION_INDEX,
-            LASTRO_SECP_INSTRUCTION_DATA_LEN, LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX,
-            LASTRO_SECP_PUBKEY_OFFSET, LASTRO_SECP_SIGNATURE_OFFSET, LASTRO_SIGNED_MESSAGE_LEN,
-            SECP256R1_PROGRAM_ID,
+            LASTRO_INSTRUCTION_INDEX, LASTRO_SECP_INSTRUCTION_DATA_LEN,
+            LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX, LASTRO_SECP_PUBKEY_OFFSET,
+            LASTRO_SECP_SIGNATURE_OFFSET, LASTRO_SIGNED_MESSAGE_LEN, SECP256R1_PROGRAM_ID,
+            Secp256r1Descriptor, build_secp256r1_instruction_data,
         },
         transaction_builder::{
             build_transaction_data, lastro_instruction_discriminator, parse_program_id,
@@ -44,7 +44,9 @@ fn record(name: &str) -> EventRecord {
     let event_bytes: [u8; 276] = decode_hex(fixture["event_bytes_hex"].as_str().unwrap());
     let event = StationEvent::decode(&event_bytes).unwrap();
     let observed_rfid = match event.action {
-        Action::Origin | Action::Transfer => decode_hex(vectors["rfid"]["a_canonical_hex"].as_str().unwrap()),
+        Action::Origin | Action::Transfer => {
+            decode_hex(vectors["rfid"]["a_canonical_hex"].as_str().unwrap())
+        }
         Action::Reidentify => decode_hex(vectors["rfid"]["b_canonical_hex"].as_str().unwrap()),
     };
     EventRecord {
@@ -53,15 +55,24 @@ fn record(name: &str) -> EventRecord {
         event,
         event_bytes,
         observed_rfid,
-        station_pubkey: decode_hex(vectors["station"]["pubkey_compressed_hex"].as_str().unwrap()),
+        station_pubkey: decode_hex(
+            vectors["station"]["pubkey_compressed_hex"]
+                .as_str()
+                .unwrap(),
+        ),
         station_signature: decode_hex(fixture["station_signature_hex"].as_str().unwrap()),
         tx_signature: None,
         status: "EVIDENCE_ACCEPTED".into(),
     }
 }
 
-fn instruction_data(response: &lastro_api::model::TransactionDataResponse, index: usize) -> Vec<u8> {
-    BASE64.decode(&response.instructions[index].data_base64).unwrap()
+fn instruction_data(
+    response: &lastro_api::model::TransactionDataResponse,
+    index: usize,
+) -> Vec<u8> {
+    BASE64
+        .decode(&response.instructions[index].data_base64)
+        .unwrap()
 }
 
 fn descriptor_u16(data: &[u8], offset: usize) -> u16 {
@@ -77,7 +88,10 @@ fn origin_transaction_places_secp_before_lastro() {
     assert_eq!(response.instructions.len(), 2);
     assert_eq!(response.instructions[0].program_id, SECP256R1_PROGRAM_ID);
     assert_eq!(response.instructions[1].program_id, PROGRAM_ID);
-    assert_eq!(instruction_data(&response, 1)[..8], lastro_instruction_discriminator(Action::Origin));
+    assert_eq!(
+        instruction_data(&response, 1)[..8],
+        lastro_instruction_discriminator(Action::Origin)
+    );
 }
 
 #[test]
@@ -89,9 +103,18 @@ fn transfer_transaction_places_secp_before_lastro() {
     let response = build_transaction_data(PROGRAM_ID, &record).unwrap();
     assert_eq!(response.instructions.len(), 2);
     assert_eq!(response.instructions[0].program_id, SECP256R1_PROGRAM_ID);
-    assert_eq!(instruction_data(&response, 1)[..8], lastro_instruction_discriminator(Action::Transfer));
-    assert_eq!(response.required_signer, solana_pubkey::Pubkey::new_from_array(record.event.from_custodian).to_string());
-    assert_eq!(response.instructions[1].accounts[0].address, response.required_signer);
+    assert_eq!(
+        instruction_data(&response, 1)[..8],
+        lastro_instruction_discriminator(Action::Transfer)
+    );
+    assert_eq!(
+        response.required_signer,
+        solana_pubkey::Pubkey::new_from_array(record.event.from_custodian).to_string()
+    );
+    assert_eq!(
+        response.instructions[1].accounts[0].address,
+        response.required_signer
+    );
     assert!(response.instructions[1].accounts[0].is_signer);
 }
 
@@ -103,12 +126,29 @@ fn reidentify_transaction_places_secp_before_lastro() {
     let record = record("reidentify");
     let response = build_transaction_data(PROGRAM_ID, &record).unwrap();
     let program_id = parse_program_id(PROGRAM_ID).unwrap();
-    let (old_binding, _) = rfid_binding_address(&program_id, &record.event.deployment_id, &record.event.old_rfid_hash);
-    let (new_binding, _) = rfid_binding_address(&program_id, &record.event.deployment_id, &record.event.new_rfid_hash);
+    let (old_binding, _) = rfid_binding_address(
+        &program_id,
+        &record.event.deployment_id,
+        &record.event.old_rfid_hash,
+    );
+    let (new_binding, _) = rfid_binding_address(
+        &program_id,
+        &record.event.deployment_id,
+        &record.event.new_rfid_hash,
+    );
     assert_eq!(response.instructions[0].program_id, SECP256R1_PROGRAM_ID);
-    assert_eq!(instruction_data(&response, 1)[..8], lastro_instruction_discriminator(Action::Reidentify));
-    assert_eq!(response.instructions[1].accounts[3].address, old_binding.to_string());
-    assert_eq!(response.instructions[1].accounts[4].address, new_binding.to_string());
+    assert_eq!(
+        instruction_data(&response, 1)[..8],
+        lastro_instruction_discriminator(Action::Reidentify)
+    );
+    assert_eq!(
+        response.instructions[1].accounts[3].address,
+        old_binding.to_string()
+    );
+    assert_eq!(
+        response.instructions[1].accounts[4].address,
+        new_binding.to_string()
+    );
     assert_ne!(old_binding, new_binding);
 }
 
@@ -123,7 +163,13 @@ fn secp_message_offset_is_derived_from_serialized_lastro_instruction() {
     let lastro = instruction_data(&response, 1);
     let offset = usize::from(descriptor_u16(&secp, 10));
     assert_eq!(&lastro[offset..offset + 276], record.event_bytes.as_slice());
-    assert_eq!(lastro.windows(276).filter(|window| *window == record.event_bytes).count(), 1);
+    assert_eq!(
+        lastro
+            .windows(276)
+            .filter(|window| *window == record.event_bytes)
+            .count(),
+        1
+    );
 }
 
 #[test]
@@ -158,15 +204,21 @@ fn transaction_uses_current_custodian_as_required_signer() {
     let transfer = record("transfer");
     let reidentify = record("reidentify");
     assert_eq!(
-        build_transaction_data(PROGRAM_ID, &origin).unwrap().required_signer,
+        build_transaction_data(PROGRAM_ID, &origin)
+            .unwrap()
+            .required_signer,
         solana_pubkey::Pubkey::new_from_array(origin.event.to_custodian).to_string()
     );
     assert_eq!(
-        build_transaction_data(PROGRAM_ID, &transfer).unwrap().required_signer,
+        build_transaction_data(PROGRAM_ID, &transfer)
+            .unwrap()
+            .required_signer,
         solana_pubkey::Pubkey::new_from_array(transfer.event.from_custodian).to_string()
     );
     assert_eq!(
-        build_transaction_data(PROGRAM_ID, &reidentify).unwrap().required_signer,
+        build_transaction_data(PROGRAM_ID, &reidentify)
+            .unwrap()
+            .required_signer,
         solana_pubkey::Pubkey::new_from_array(reidentify.event.from_custodian).to_string()
     );
 }
@@ -195,7 +247,10 @@ fn secp_message_is_raw_station_event_not_event_hash() {
     let offset = usize::from(descriptor_u16(&secp, 10));
     let length = usize::from(descriptor_u16(&secp, 12));
     assert_eq!(length, 276);
-    assert_eq!(&lastro[offset..offset + length], record.event_bytes.as_slice());
+    assert_eq!(
+        &lastro[offset..offset + length],
+        record.event_bytes.as_slice()
+    );
     assert_ne!(&lastro[offset..offset + 32], record.event_hash.as_slice());
 }
 
@@ -219,9 +274,15 @@ fn secp_instruction_data_uses_official_u16_offset_layout_and_is_113_bytes() {
     assert_eq!(data[0], 1);
     assert_eq!(data[1], 0);
     assert_eq!(descriptor_u16(&data, 2), LASTRO_SECP_SIGNATURE_OFFSET);
-    assert_eq!(descriptor_u16(&data, 4), LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX);
+    assert_eq!(
+        descriptor_u16(&data, 4),
+        LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX
+    );
     assert_eq!(descriptor_u16(&data, 6), LASTRO_SECP_PUBKEY_OFFSET);
-    assert_eq!(descriptor_u16(&data, 8), LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX);
+    assert_eq!(
+        descriptor_u16(&data, 8),
+        LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX
+    );
     assert_eq!(descriptor_u16(&data, 10), message_offset);
     assert_eq!(descriptor_u16(&data, 12), LASTRO_SIGNED_MESSAGE_LEN);
     assert_eq!(descriptor_u16(&data, 14), LASTRO_INSTRUCTION_INDEX);
@@ -236,15 +297,30 @@ fn action_account_sets_are_minimal_and_explicit() {
     // FAILURE MEANS: A compromised builder could smuggle unrelated writable accounts into a custodian signature request.
     let origin = build_transaction_data(PROGRAM_ID, &record("origin")).unwrap();
     assert_eq!(origin.instructions[1].accounts.len(), 6);
-    assert_eq!(origin.instructions[1].accounts[4].address, INSTRUCTIONS_SYSVAR_ID);
-    assert_eq!(origin.instructions[1].accounts[5].address, SYSTEM_PROGRAM_ID);
+    assert_eq!(
+        origin.instructions[1].accounts[4].address,
+        INSTRUCTIONS_SYSVAR_ID
+    );
+    assert_eq!(
+        origin.instructions[1].accounts[5].address,
+        SYSTEM_PROGRAM_ID
+    );
 
     let transfer = build_transaction_data(PROGRAM_ID, &record("transfer")).unwrap();
     assert_eq!(transfer.instructions[1].accounts.len(), 5);
-    assert_eq!(transfer.instructions[1].accounts[4].address, INSTRUCTIONS_SYSVAR_ID);
+    assert_eq!(
+        transfer.instructions[1].accounts[4].address,
+        INSTRUCTIONS_SYSVAR_ID
+    );
 
     let reidentify = build_transaction_data(PROGRAM_ID, &record("reidentify")).unwrap();
     assert_eq!(reidentify.instructions[1].accounts.len(), 7);
-    assert_eq!(reidentify.instructions[1].accounts[5].address, INSTRUCTIONS_SYSVAR_ID);
-    assert_eq!(reidentify.instructions[1].accounts[6].address, SYSTEM_PROGRAM_ID);
+    assert_eq!(
+        reidentify.instructions[1].accounts[5].address,
+        INSTRUCTIONS_SYSVAR_ID
+    );
+    assert_eq!(
+        reidentify.instructions[1].accounts[6].address,
+        SYSTEM_PROGRAM_ID
+    );
 }

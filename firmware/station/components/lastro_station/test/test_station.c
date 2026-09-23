@@ -60,6 +60,29 @@ TEST_CASE("station does not sign without valid RFID", "[lastro][contract]")
     TEST_ASSERT_EQUAL(LASTRO_STATION_WAIT_RFID, lastro_station_state());
 }
 
+TEST_CASE("station releases an RFID wait after its monotonic deadline", "[lastro][recovery]")
+{
+    /* PURPOSE: A timed-out or restarted Agent must not leave the Station BUSY indefinitely.
+     * ASSERT: only WAIT_RFID expires; a new valid command can proceed after the timeout.
+     * FAILURE: one abandoned capture can make every later command BUSY until a reboot. */
+    TEST_ASSERT_TRUE(lastro_station_init());
+    lastro_command_payload_t old_command = origin_command();
+    TEST_ASSERT_TRUE(lastro_station_submit_command(&old_command, NULL));
+    lastro_station_elapse(179999u);
+    TEST_ASSERT_EQUAL(LASTRO_STATION_WAIT_RFID, lastro_station_state());
+    lastro_station_elapse(1u);
+    TEST_ASSERT_EQUAL(LASTRO_STATION_IDLE, lastro_station_state());
+    lastro_error_payload_t error = {0};
+    TEST_ASSERT_TRUE(lastro_station_take_error(&error));
+    TEST_ASSERT_EQUAL(LASTRO_STATION_ERROR_RFID_TIMEOUT, error.code);
+    TEST_ASSERT_EQUAL_UINT8_ARRAY(old_command.capture_id, error.capture_id, sizeof(error.capture_id));
+
+    lastro_command_payload_t next_command = origin_command();
+    next_command.capture_id[0] ^= 1u;
+    TEST_ASSERT_TRUE(lastro_station_submit_command(&next_command, NULL));
+    TEST_ASSERT_EQUAL(LASTRO_STATION_WAIT_RFID, lastro_station_state());
+}
+
 TEST_CASE("station rejects second command while busy", "[lastro][contract]")
 {
     /* PURPOSE: exactly one capture context may own the next physical RFID observation.

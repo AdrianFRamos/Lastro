@@ -201,8 +201,22 @@ onBeforeUnmount(() => {
   inset: 0;
   opacity: 0;
   transition: opacity 180ms ease;
-  -webkit-mask-image: radial-gradient(circle 28rem at var(--reveal-x) var(--reveal-y), #000 0%, #000 28%, rgb(0 0 0 / 0.85) 52%, rgb(0 0 0 / 0.3) 76%, transparent 100%);
-  mask-image: radial-gradient(circle 28rem at var(--reveal-x) var(--reveal-y), #000 0%, #000 28%, rgb(0 0 0 / 0.85) 52%, rgb(0 0 0 / 0.3) 76%, transparent 100%);
+  -webkit-mask-image: radial-gradient(
+    circle 28rem at var(--reveal-x) var(--reveal-y),
+    #000 0%,
+    #000 28%,
+    rgb(0 0 0 / 0.85) 52%,
+    rgb(0 0 0 / 0.3) 76%,
+    transparent 100%
+  );
+  mask-image: radial-gradient(
+    circle 28rem at var(--reveal-x) var(--reveal-y),
+    #000 0%,
+    #000 28%,
+    rgb(0 0 0 / 0.85) 52%,
+    rgb(0 0 0 / 0.3) 76%,
+    transparent 100%
+  );
 }
 
 .reveal[data-active='true'] .reveal__illuminated {
@@ -216,7 +230,11 @@ onBeforeUnmount(() => {
 .reveal__tint {
   position: absolute;
   inset: 0;
-  background: radial-gradient(circle 24rem at var(--reveal-x) var(--reveal-y), color-mix(in srgb, var(--proof) 14%, transparent) 0%, transparent 75%);
+  background: radial-gradient(
+    circle 24rem at var(--reveal-x) var(--reveal-y),
+    color-mix(in srgb, var(--proof) 14%, transparent) 0%,
+    transparent 75%
+  );
   mix-blend-mode: screen;
   opacity: 0.7;
 }
@@ -225,18 +243,45 @@ onBeforeUnmount(() => {
   position: absolute;
   inset: 0;
   background:
-    linear-gradient(90deg, var(--canvas) 0%, rgb(11 15 20 / 0.98) 28%, rgb(11 15 20 / 0.75) 48%, rgb(11 15 20 / 0.15) 75%, transparent 100%),
-    linear-gradient(180deg, rgb(11 15 20 / 0.35) 0%, transparent 18%, transparent 78%, var(--canvas) 100%);
+    linear-gradient(
+      90deg,
+      var(--canvas) 0%,
+      rgb(11 15 20 / 0.98) 28%,
+      rgb(11 15 20 / 0.75) 48%,
+      rgb(11 15 20 / 0.15) 75%,
+      transparent 100%
+    ),
+    linear-gradient(
+      180deg,
+      rgb(11 15 20 / 0.35) 0%,
+      transparent 18%,
+      transparent 78%,
+      var(--canvas) 100%
+    );
 }
 
 .reveal__grid {
   position: absolute;
   inset: 0;
   background-image:
-    linear-gradient(to right, color-mix(in srgb, var(--border) 18%, transparent) 1px, transparent 1px),
-    linear-gradient(to bottom, color-mix(in srgb, var(--border) 18%, transparent) 1px, transparent 1px);
+    linear-gradient(
+      to right,
+      color-mix(in srgb, var(--border) 18%, transparent) 1px,
+      transparent 1px
+    ),
+    linear-gradient(
+      to bottom,
+      color-mix(in srgb, var(--border) 18%, transparent) 1px,
+      transparent 1px
+    );
   background-size: 4rem 4rem;
-  -webkit-mask-image: linear-gradient(90deg, transparent 0%, transparent 35%, #000 75%, transparent 100%);
+  -webkit-mask-image: linear-gradient(
+    90deg,
+    transparent 0%,
+    transparent 35%,
+    #000 75%,
+    transparent 100%
+  );
   mask-image: linear-gradient(90deg, transparent 0%, transparent 35%, #000 75%, transparent 100%);
   opacity: 0.14;
 }
@@ -272,7 +317,13 @@ onBeforeUnmount(() => {
 
   .reveal__shade {
     background:
-      linear-gradient(180deg, var(--canvas) 0%, rgb(11 15 20 / 0.94) 26%, rgb(11 15 20 / 0.45) 58%, var(--canvas) 100%),
+      linear-gradient(
+        180deg,
+        var(--canvas) 0%,
+        rgb(11 15 20 / 0.94) 26%,
+        rgb(11 15 20 / 0.45) 58%,
+        var(--canvas) 100%
+      ),
       linear-gradient(90deg, rgb(11 15 20 / 0.72), transparent 72%);
   }
 

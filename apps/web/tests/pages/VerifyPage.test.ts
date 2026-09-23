@@ -2,6 +2,7 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import validFixture from '../../../../test-vectors/evidence-package.valid.json'
 import VerifyPage from '../../src/pages/VerifyPage.vue'
+import { parseEvidencePackage } from '../../src/protocol/evidence'
 import type { VerificationLayerResult } from '../../src/verify/types'
 
 const mocks = vi.hoisted(() => ({
@@ -35,7 +36,7 @@ const finalizedSignatures = [
 ]
 
 function finalizedFixture() {
-  const fixture = structuredClone(validFixture)
+  const fixture = structuredClone(parseEvidencePackage(validFixture))
   fixture.events.forEach((entry, index) => {
     entry.txSignature = finalizedSignatures[index]!
   })
@@ -76,10 +77,14 @@ describe('pages/VerifyPage independent verification UX', () => {
 
     expect(mocks.getEvidencePackage).not.toHaveBeenCalled()
     expect(mocks.verifyCanonicalChainState).toHaveBeenCalledTimes(1)
-    expect(mocks.verifyCanonicalChainState).toHaveBeenCalledWith(expect.objectContaining({
-      animalId: validFixture.animalId,
-      events: expect.arrayContaining([expect.objectContaining({ txSignature: finalizedSignatures[0] })]),
-    }))
+    expect(mocks.verifyCanonicalChainState).toHaveBeenCalledWith(
+      expect.objectContaining({
+        animalId: validFixture.animalId,
+        events: expect.arrayContaining([
+          expect.objectContaining({ txSignature: finalizedSignatures[0] }),
+        ]),
+      }),
+    )
     expect(wrapper.text()).toContain('Evidence and canonical Solana state agree.')
     expect(wrapper.text()).toContain('Overall: VALID')
     wrapper.unmount()
@@ -115,7 +120,11 @@ describe('pages/VerifyPage independent verification UX', () => {
     malformed.unmount()
 
     const unsupported = mountPage()
-    await selectFile(unsupported, 'unsupported.json', JSON.stringify({ ...validFixture, version: 2 }))
+    await selectFile(
+      unsupported,
+      'unsupported.json',
+      JSON.stringify({ ...validFixture, version: 2 }),
+    )
     expect(unsupported.text()).toContain('unsupported EvidencePackage version')
     expect(unsupported.text()).not.toContain('Overall: VALID')
     expect(mocks.verifyCanonicalChainState).not.toHaveBeenCalled()

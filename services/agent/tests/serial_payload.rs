@@ -3,9 +3,9 @@
 use std::{fs, path::PathBuf};
 
 use lastro_agent::serial::payload::{
-    decode_ack, decode_command, decode_error, decode_event_ready, encode_ack, encode_command,
-    encode_error, encode_event_ready, StationErrorCode, ACK_PAYLOAD_LEN, COMMAND_PAYLOAD_LEN,
-    ERROR_PAYLOAD_LEN, EVENT_READY_PAYLOAD_LEN,
+    ACK_PAYLOAD_LEN, COMMAND_PAYLOAD_LEN, ERROR_PAYLOAD_LEN, EVENT_READY_PAYLOAD_LEN,
+    StationErrorCode, decode_ack, decode_command, decode_error, decode_event_ready, encode_ack,
+    encode_command, encode_error, encode_event_ready,
 };
 use uuid::Uuid;
 
@@ -22,7 +22,10 @@ fn command_fixture_is_exactly_224_bytes_and_roundtrips_every_field() {
     let bytes = fixture("serial-command.bin");
     assert_eq!(bytes.len(), COMMAND_PAYLOAD_LEN);
     let command = decode_command(&bytes).expect("valid command fixture");
-    assert_eq!(command.capture_id, Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap());
+    assert_eq!(
+        command.capture_id,
+        Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap()
+    );
     assert_eq!(command.action, 1);
     assert_eq!(command.deployment_id, [0xd0; 32]);
     assert_eq!(command.animal_id, [0x11; 32]);
@@ -62,7 +65,10 @@ fn event_ready_fixture_is_exactly_397_bytes_and_preserves_signed_event() {
     let origin = fixture("origin.bin");
     assert_eq!(bytes.len(), EVENT_READY_PAYLOAD_LEN);
     let payload = decode_event_ready(&bytes).expect("valid event fixture");
-    assert_eq!(payload.capture_id, Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap());
+    assert_eq!(
+        payload.capture_id,
+        Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap()
+    );
     assert_eq!(payload.event_bytes.as_slice(), origin);
     assert_eq!(payload.observed_rfid, [0x80, 0x00, 0x13, 0, 0, 0, 0, 1]);
     assert_eq!(payload.station_pubkey33.len(), 33);
@@ -78,14 +84,24 @@ fn ack_fixture_binds_capture_id_to_exact_event_hash() {
     let bytes = fixture("serial-ack.bin");
     assert_eq!(bytes.len(), ACK_PAYLOAD_LEN);
     let payload = decode_ack(&bytes).expect("valid ACK fixture");
-    assert_eq!(payload.capture_id, Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap());
-    assert_eq!(payload.event_hash, [0x58,0x45,0xdc,0x20,0xfd,0x6b,0x26,0x6e,0xc9,0x83,0x99,0xf0,0xaa,0x93,0xc7,0x36,0xec,0x9a,0xa7,0x78,0xbf,0x03,0x8a,0xf5,0x29,0x1e,0x5d,0xf8,0x13,0x34,0xb5,0x31]);
+    assert_eq!(
+        payload.capture_id,
+        Uuid::parse_str("00112233-4455-6677-8899-aabbccddeeff").unwrap()
+    );
+    assert_eq!(
+        payload.event_hash,
+        [
+            0x58, 0x45, 0xdc, 0x20, 0xfd, 0x6b, 0x26, 0x6e, 0xc9, 0x83, 0x99, 0xf0, 0xaa, 0x93,
+            0xc7, 0x36, 0xec, 0x9a, 0xa7, 0x78, 0xbf, 0x03, 0x8a, 0xf5, 0x29, 0x1e, 0x5d, 0xf8,
+            0x13, 0x34, 0xb5, 0x31
+        ]
+    );
     assert_eq!(encode_ack(&payload).as_slice(), bytes);
 }
 
 #[test]
 fn error_payload_accepts_only_defined_codes_and_zero_reserved_bytes() {
-    // PURPOSE: Freeze Station ERROR semantics to the five documented codes and zero reserved bytes.
+    // PURPOSE: Freeze Station ERROR semantics to the six documented codes and zero reserved bytes.
     // ASSERT: The fixture decodes, while undefined codes and reserved-byte mutations fail.
     // FAILURE MEANS: Firmware and Agent can disagree about Station error semantics.
     let fixture = fixture("serial-error.bin");
@@ -94,7 +110,13 @@ fn error_payload_accepts_only_defined_codes_and_zero_reserved_bytes() {
     assert_eq!(payload.code, StationErrorCode::RfidReadFailed);
     assert_eq!(encode_error(&payload).as_slice(), fixture);
 
-    for code in [0u16, 6, u16::MAX] {
+    let mut timeout = fixture.clone();
+    timeout[16..18].copy_from_slice(&6u16.to_le_bytes());
+    assert_eq!(
+        decode_error(&timeout).unwrap().code,
+        StationErrorCode::RfidTimeout
+    );
+    for code in [0u16, 7, u16::MAX] {
         let mut bytes = fixture.clone();
         bytes[16..18].copy_from_slice(&code.to_le_bytes());
         assert!(decode_error(&bytes).is_err());

@@ -1,11 +1,12 @@
+#![allow(dead_code)]
+
 use std::{fs, path::PathBuf};
 
 use lastro_protocol::StationEvent;
 use serde_json::Value;
 
 pub fn fixture_json() -> Value {
-    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .join("../../test-vectors/vectors.json");
+    let path = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../test-vectors/vectors.json");
     serde_json::from_slice(&fs::read(path).expect("read vectors.json")).expect("parse vectors.json")
 }
 

@@ -46,6 +46,9 @@ bool lastro_station_observe_rfid(const lastro_canonical_rfid_t *rfid);
 /** Advance non-blocking BUILD_EVENT/SIGN work. Call repeatedly from the firmware loop. */
 void lastro_station_poll(void);
 
+/** Advance the monotonic WAIT_RFID deadline; never discard already signed evidence. */
+void lastro_station_elapse(uint32_t elapsed_ms);
+
 /** Retrieve the newly signed evidence once. The signed payload remains bound internally to ACK. */
 bool lastro_station_take_event_ready(lastro_event_ready_payload_t *out);
 

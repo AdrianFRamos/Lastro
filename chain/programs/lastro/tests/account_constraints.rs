@@ -18,7 +18,13 @@ fn animal_state_pda_uses_deployment_and_animal_id() {
     // ASSERT: Wrong PDA fails; canonical ["animal",D,A] succeeds.
     assert_failure(result);
     h.svm.expire_blockhash();
-    assert_success(send_event(&mut h.svm, &flow.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     // FAILURE MEANS: An account from another animal/deployment could be mutated.
 }
 
@@ -35,7 +41,13 @@ fn rfid_binding_pda_uses_deployment_and_rfid_hash() {
     let result = send_event_with_envelope(&mut h.svm, wrong, &h.wallet_a);
     // ASSERT: It fails; no AnimalState or binding is created.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     assert!(account_data(&h.svm, &rfid_binding_pda(&h.deployment_id, &flow.rfid_a).0).is_none());
     // FAILURE MEANS: A binding for another RFID could be marked ACTIVE/RETIRED.
 }
@@ -53,7 +65,13 @@ fn protocol_config_pda_uses_deployment_id() {
     let result = send_event_with_envelope(&mut h.svm, wrong, &h.wallet_a);
     // ASSERT: It fails before state transition and D1 animal state does not exist.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: A Station authorized in another deployment could sign here.
 }
 
@@ -71,6 +89,12 @@ fn wrong_pda_accounts_are_rejected() {
     let result = send_event_with_envelope(&mut h.svm, wrong, &h.wallet_a);
     // ASSERT: Anchor seed constraints fail and canonical state remains absent.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: A malicious client could redirect writes to arbitrary accounts.
 }

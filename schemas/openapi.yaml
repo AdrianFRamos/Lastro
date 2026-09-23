@@ -103,12 +103,37 @@ paths:
           $ref: '#/components/responses/NotFound'
         '409':
           $ref: '#/components/responses/Conflict'
+  /api/captures/authorization-challenge:
+    post:
+      operationId: createCaptureAuthorizationChallenge
+      description: Creates a short-lived one-time message bound to the exact capture
+        intent and canonical wallet authority. The returned message must be signed
+        before physical Station work can be reserved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureIntentRequest'
+      responses:
+        '201':
+          description: One-time capture authorization challenge issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureAuthorizationChallenge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /api/captures:
     post:
       operationId: createCapture
-      description: Freezes a Station observation context. This endpoint does not authenticate
-        or authorize a wallet; signer authority is enforced by transaction construction
-        and Solana.
+      description: Verifies and consumes one short-lived wallet authorization for the
+        exact capture intent before reserving physical Station work. Final custody
+        authority is still enforced independently by the Lastro Solana transaction.
       requestBody:
         required: true
         content:
@@ -131,6 +156,8 @@ paths:
                 $ref: '#/components/schemas/Capture'
         '400':
           $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
         '404':
           $ref: '#/components/responses/NotFound'
         '409':
@@ -385,7 +412,7 @@ components:
           oneOf:
           - $ref: '#/components/schemas/Hex32'
           - type: 'null'
-    CreateCaptureRequest:
+    CaptureIntentRequest:
       type: object
       additionalProperties: false
       required:
@@ -404,9 +431,82 @@ components:
           oneOf:
           - $ref: '#/components/schemas/Hex32'
           - type: 'null'
+        supersedeCaptureId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
       description: ORIGIN and TRANSFER require nextCustodian. TRANSFER destination
         must differ from current custodian. REIDENTIFY requires nextCustodian absent/null;
         API derives current custodian.
+    CaptureAuthorizationProof:
+      type: object
+      additionalProperties: false
+      required:
+      - challengeId
+      - signatureBase64
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        signatureBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 88
+          maxLength: 88
+          pattern: ^[A-Za-z0-9+/]{86}==$
+    CaptureAuthorizationChallenge:
+      type: object
+      additionalProperties: false
+      required:
+      - challengeId
+      - deploymentId
+      - requiredSigner
+      - messageBase64
+      - expiresAtUnix
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        requiredSigner:
+          $ref: '#/components/schemas/Base58Address'
+        messageBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 4
+          maxLength: 1368
+        expiresAtUnix:
+          type: integer
+          minimum: 1
+    CreateCaptureRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - action
+      - animalId
+      - authorization
+      properties:
+        action:
+          type: string
+          enum:
+          - ORIGIN
+          - TRANSFER
+          - REIDENTIFY
+        animalId:
+          $ref: '#/components/schemas/Hex32'
+        nextCustodian:
+          oneOf:
+          - $ref: '#/components/schemas/Hex32'
+          - type: 'null'
+        supersedeCaptureId:
+          oneOf:
+          - type: string
+            format: uuid
+          - type: 'null'
+        authorization:
+          $ref: '#/components/schemas/CaptureAuthorizationProof'
     Capture:
       type: object
       additionalProperties: false

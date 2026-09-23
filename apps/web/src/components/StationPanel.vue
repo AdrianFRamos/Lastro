@@ -16,12 +16,15 @@ const captureState = computed(() => {
   if (value.includes('EXPIRED') || value.includes('CANCELLED') || value.includes('REJECTED')) {
     return { label: 'ERROR', tone: 'danger' }
   }
-  if (value.includes('PENDING') || value.includes('DISPATCHED')) return { label: 'WAITING', tone: 'warning' }
+  if (value.includes('PENDING') || value.includes('DISPATCHED'))
+    return { label: 'WAITING', tone: 'warning' }
   return { label: 'UNAVAILABLE', tone: undefined }
 })
 
 function factState(value: string): { label: string; tone: 'proof' | undefined } {
-  return value === 'unknown' ? { label: 'UNAVAILABLE', tone: undefined } : { label: 'READY', tone: 'proof' }
+  return value === 'unknown'
+    ? { label: 'UNAVAILABLE', tone: undefined }
+    : { label: 'READY', tone: 'proof' }
 }
 </script>
 
@@ -31,7 +34,9 @@ function factState(value: string): { label: string; tone: 'proof' | undefined } 
       <div>
         <p class="eyebrow">STATION</p>
         <h2>Physical evidence</h2>
-        <p class="app-card__description">Reader observation and P-256 signature state exposed by the current capture.</p>
+        <p class="app-card__description">
+          Reader observation and P-256 signature state exposed by the current capture.
+        </p>
       </div>
       <span class="status-badge" :data-tone="captureState.tone">{{ captureState.label }}</span>
     </header>
@@ -40,12 +45,16 @@ function factState(value: string): { label: string; tone: 'proof' | undefined } 
       <div class="station-row">
         <dt>Reader</dt>
         <dd>{{ reader }}</dd>
-        <span class="status-badge" :data-tone="factState(reader).tone">{{ factState(reader).label }}</span>
+        <span class="status-badge" :data-tone="factState(reader).tone">{{
+          factState(reader).label
+        }}</span>
       </div>
       <div class="station-row">
         <dt>P-256 signer</dt>
         <dd>{{ signer }}</dd>
-        <span class="status-badge" :data-tone="factState(signer).tone">{{ factState(signer).label }}</span>
+        <span class="status-badge" :data-tone="factState(signer).tone">{{
+          factState(signer).label
+        }}</span>
       </div>
       <div class="station-row">
         <dt>Capture</dt>

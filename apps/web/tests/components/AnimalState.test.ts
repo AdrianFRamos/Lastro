@@ -21,7 +21,14 @@ describe('AnimalState', () => {
    */
   it('renders every canonical/projection field required by the demo state contract', () => {
     const wrapper = mount(AnimalState, { props: { animal } })
-    for (const value of [animal.animalId, animal.visualRecoveryId, animal.currentRfidHash, animal.currentCustodian, '2', '4']) {
+    for (const value of [
+      animal.animalId,
+      animal.visualRecoveryId,
+      animal.currentRfidHash,
+      animal.currentCustodian,
+      '2',
+      '4',
+    ]) {
       expect(wrapper.text()).toContain(value)
     }
     wrapper.unmount()
@@ -34,7 +41,18 @@ describe('AnimalState', () => {
    * FAILURE MEANS: pre-ORIGIN projection could look like canonical identity/custody already exists.
    */
   it('renders pre-ORIGIN absence explicitly without inventing canonical values', () => {
-    const wrapper = mount(AnimalState, { props: { animal: { ...animal, currentRfidHash: null, currentCustodian: null, identityRevision: 0, eventSequence: 0, lastEventHash: null } } })
+    const wrapper = mount(AnimalState, {
+      props: {
+        animal: {
+          ...animal,
+          currentRfidHash: null,
+          currentCustodian: null,
+          identityRevision: 0,
+          eventSequence: 0,
+          lastEventHash: null,
+        },
+      },
+    })
     expect(wrapper.text().match(/Not originated/g)).toHaveLength(2)
     wrapper.unmount()
   })

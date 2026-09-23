@@ -1,6 +1,10 @@
 //! Authenticated Agent transport endpoints. Bearer authentication does not grant custody authority.
 
-use axum::{extract::{Path, State}, http::{HeaderMap, StatusCode}, Json};
+use axum::{
+    Json,
+    extract::{Path, State},
+    http::{HeaderMap, StatusCode},
+};
 use lastro_protocol::crypto::derive_station_id;
 use sha2::{Digest, Sha256};
 use subtle::ConstantTimeEq;
@@ -8,8 +12,14 @@ use subtle::ConstantTimeEq;
 use crate::{
     crypto::verify_agent_evidence_locally,
     error::ApiError,
-    model::{parse_hex32, AgentCommandResponse, AgentEvidenceRequest, AgentEvidenceStatus, AgentEvidenceStatusResponse, CaptureAction},
-    repository::{captures::{self, CaptureState}, events},
+    model::{
+        AgentCommandResponse, AgentEvidenceRequest, AgentEvidenceStatus,
+        AgentEvidenceStatusResponse, CaptureAction, parse_hex32,
+    },
+    repository::{
+        captures::{self, CaptureState},
+        events,
+    },
     state::AppState,
 };
 
@@ -23,7 +33,12 @@ pub async fn poll_command(
     let command = captures::claim_next_for_station(&state.db, station_id).await?;
     Ok(Json(command.map(|capture| AgentCommandResponse {
         capture_id: capture.capture_id,
-        action: match capture.action { 1 => CaptureAction::Origin, 2 => CaptureAction::Transfer, 3 => CaptureAction::Reidentify, _ => unreachable!("database CHECK") },
+        action: match capture.action {
+            1 => CaptureAction::Origin,
+            2 => CaptureAction::Transfer,
+            3 => CaptureAction::Reidentify,
+            _ => unreachable!("database CHECK"),
+        },
         deployment_id: hex::encode(state.config.deployment_id),
         animal_id: hex::encode(capture.animal_id),
         event_sequence: capture.event_sequence,
@@ -42,15 +57,26 @@ pub async fn submit_evidence(
 ) -> Result<StatusCode, ApiError> {
     authorize(&headers, &state.config.agent_token)?;
     let evidence = verify_agent_evidence_locally(&body)?;
-    let capture = captures::load_for_evidence(&state.db, body.capture_id).await?
+    let capture = captures::load_for_evidence(&state.db, body.capture_id)
+        .await?
         .ok_or_else(|| ApiError::NotFound("capture not found".into()))?;
-    if !matches!(capture.status, CaptureState::Dispatched | CaptureState::EvidenceAccepted) {
-        return Err(ApiError::Conflict("capture is not active for evidence admission".into()));
+    if !matches!(
+        capture.status,
+        CaptureState::Dispatched | CaptureState::EvidenceAccepted
+    ) {
+        return Err(ApiError::Conflict(
+            "capture is not active for evidence admission".into(),
+        ));
     }
 
-    let canonical_station_key = state.rpc.protocol_station_pubkey(state.config.deployment_id).await?;
+    let canonical_station_key = state
+        .rpc
+        .protocol_station_pubkey(state.config.deployment_id)
+        .await?;
     if canonical_station_key != state.config.station_pubkey33 {
-        return Err(ApiError::Conflict("configured Station key disagrees with canonical ProtocolConfig".into()));
+        return Err(ApiError::Conflict(
+            "configured Station key disagrees with canonical ProtocolConfig".into(),
+        ));
     }
     if evidence.station_pubkey33 != canonical_station_key {
         return Err(ApiError::Conflict(
@@ -68,14 +94,26 @@ pub async fn submit_evidence(
         || evidence.event.to_custodian != capture.to_custodian
         || evidence.event.station_id != capture.station_id
     {
-        return Err(ApiError::Conflict("StationEvent does not match immutable capture context".into()));
+        return Err(ApiError::Conflict(
+            "StationEvent does not match immutable capture context".into(),
+        ));
     }
 
-    let mut tx = state.db.begin().await.map_err(|_| ApiError::Unavailable("postgres transaction failed".into()))?;
+    let mut tx = state
+        .db
+        .begin()
+        .await
+        .map_err(|_| ApiError::Unavailable("postgres transaction failed".into()))?;
     let inserted = events::insert_or_match_exact(&mut tx, body.capture_id, &evidence).await?;
     captures::mark_evidence_accepted(&mut tx, body.capture_id).await?;
-    tx.commit().await.map_err(|_| ApiError::Unavailable("postgres commit failed".into()))?;
-    Ok(if inserted { StatusCode::CREATED } else { StatusCode::OK })
+    tx.commit()
+        .await
+        .map_err(|_| ApiError::Unavailable("postgres commit failed".into()))?;
+    Ok(if inserted {
+        StatusCode::CREATED
+    } else {
+        StatusCode::OK
+    })
 }
 
 pub async fn evidence_status(
@@ -98,10 +136,20 @@ pub async fn evidence_status(
 }
 
 fn authorize(headers: &HeaderMap, expected_token: &str) -> Result<(), ApiError> {
-    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else { return Err(ApiError::Unauthorized); };
-    let Ok(value) = value.to_str() else { return Err(ApiError::Unauthorized); };
-    let Some(token) = value.strip_prefix("Bearer ") else { return Err(ApiError::Unauthorized); };
-    if constant_time_eq(token.as_bytes(), expected_token.as_bytes()) { Ok(()) } else { Err(ApiError::Unauthorized) }
+    let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
+        return Err(ApiError::Unauthorized);
+    };
+    let Ok(value) = value.to_str() else {
+        return Err(ApiError::Unauthorized);
+    };
+    let Some(token) = value.strip_prefix("Bearer ") else {
+        return Err(ApiError::Unauthorized);
+    };
+    if constant_time_eq(token.as_bytes(), expected_token.as_bytes()) {
+        Ok(())
+    } else {
+        Err(ApiError::Unauthorized)
+    }
 }
 
 fn constant_time_eq(left: &[u8], right: &[u8]) -> bool {

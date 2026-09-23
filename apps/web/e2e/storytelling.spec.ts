@@ -7,7 +7,9 @@ test.describe('Product storytelling routes', () => {
    * ASSERT: marketing value proposition, regulatory citations, and roadmap stages are visible.
    * FAILURE MEANS: product narrative or regulatory justification is broken or missing copy.
    */
-  test('landing, problem and future routes render the intended product narrative', async ({ page }) => {
+  test('landing, problem and future routes render the intended product narrative', async ({
+    page,
+  }) => {
     await page.goto('/')
     await expect(
       page.getByRole('heading', {

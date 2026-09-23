@@ -2,7 +2,10 @@
 
 mod common;
 
-use lastro_protocol::{constants::{offset, MAGIC, RESERVED, STATION_EVENT_LEN, VERSION}, StationEvent};
+use lastro_protocol::{
+    StationEvent,
+    constants::{MAGIC, RESERVED, STATION_EVENT_LEN, VERSION, offset},
+};
 
 #[test]
 fn station_event_is_exactly_276_bytes() {
@@ -55,6 +58,9 @@ fn integers_are_little_endian() {
     event.event_sequence = 0x0102_0304_0506_0708;
     event.identity_revision = 0x1122_3344;
     let bytes = event.encode();
-    assert_eq!(&bytes[104..112], &[0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]);
+    assert_eq!(
+        &bytes[104..112],
+        &[0x08, 0x07, 0x06, 0x05, 0x04, 0x03, 0x02, 0x01]
+    );
     assert_eq!(&bytes[112..116], &[0x44, 0x33, 0x22, 0x11]);
 }

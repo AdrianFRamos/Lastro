@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import binascii
 import hashlib
 import json
 import os
@@ -250,6 +251,61 @@ class WalletActor:
     def custodian_hex(self) -> str:
         return self.public_key.hex()
 
+
+    def sign_capture_authorization(
+        self,
+        challenge: dict[str, Any],
+        *,
+        deployment_id: bytes,
+        program_id: str,
+        action: str,
+        animal_id: str,
+        next_custodian: str | None,
+    ) -> dict[str, str]:
+        challenge_id = challenge.get("challengeId")
+        if not isinstance(challenge_id, str):
+            raise SystemContractError("capture authorization challenge is missing challengeId")
+        try:
+            uuid.UUID(challenge_id)
+        except ValueError as error:
+            raise SystemContractError("capture authorization challengeId is not a UUID") from error
+        if challenge.get("deploymentId") != deployment_id.hex():
+            raise SystemContractError("capture authorization deployment does not match system configuration")
+        if challenge.get("requiredSigner") != self.address:
+            raise SystemContractError("capture authorization requiredSigner does not match selected wallet actor")
+        expires_at = challenge.get("expiresAtUnix")
+        if not isinstance(expires_at, int) or expires_at <= int(time.time()):
+            raise SystemContractError("capture authorization challenge is expired or invalid")
+        message_base64 = challenge.get("messageBase64")
+        if not isinstance(message_base64, str):
+            raise SystemContractError("capture authorization challenge is missing messageBase64")
+        try:
+            message = base64.b64decode(message_base64, validate=True)
+        except (ValueError, binascii.Error) as error:
+            raise SystemContractError("capture authorization message is not canonical base64") from error
+        if base64.b64encode(message).decode() != message_base64:
+            raise SystemContractError("capture authorization message is not canonical base64")
+        expected = (
+            "Lastro capture authorization v1\n"
+            f"challengeId={challenge_id}\n"
+            f"deploymentId={deployment_id.hex()}\n"
+            f"programId={program_id}\n"
+            f"action={action}\n"
+            f"animalId={animal_id}\n"
+            f"nextCustodian={next_custodian if next_custodian is not None else 'none'}\n"
+            f"requiredSigner={self.address}\n"
+            f"expiresAtUnix={expires_at}\n"
+        ).encode()
+        if message != expected:
+            raise SystemContractError("capture authorization message does not match the exact trusted system intent")
+        signature = self.private_key.sign(message)
+        if len(signature) != 64:
+            raise SystemContractError("capture authorization signature is not 64 bytes")
+        return {
+            "challengeId": challenge_id,
+            "signatureBase64": base64.b64encode(signature).decode(),
+        }
+
     def sign_transaction_data(self, rpc: SolanaRpcClient, transaction_data: dict[str, Any]) -> tuple[str, bytes]:
         if transaction_data.get("transactionVersion") != "legacy":
             raise SystemContractError("system wallet harness only accepts the API's required legacy Lastro transaction")
@@ -412,6 +468,7 @@ class AgentProcess:
             "LASTRO_AGENT_SQLITE_URL": f"sqlite://{sqlite_path}",
             "LASTRO_AGENT_POLL_INTERVAL_MS": "50",
             "LASTRO_AGENT_REQUEST_TIMEOUT_MS": "5000",
+            "LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS": "3000",
             "RUST_LOG": os.getenv("RUST_LOG", "lastro_agent=info"),
         })
         self.process = subprocess.Popen(
@@ -573,6 +630,39 @@ class FullLocalHarness:
             rfid_b_hash=rfid_b_hash,
         )
 
+
+    def reserve_capture(
+        self,
+        *,
+        action: str,
+        animal_id: str,
+        wallet: WalletActor,
+        next_custodian: str | None,
+    ) -> dict[str, Any]:
+        intent = {
+            "action": action,
+            "animalId": animal_id,
+            "nextCustodian": next_custodian,
+        }
+        challenge = self.api.post("/api/captures/authorization-challenge", intent)
+        if not isinstance(challenge, dict):
+            raise SystemContractError("capture authorization endpoint did not return an object")
+        authorization = wallet.sign_capture_authorization(
+            challenge,
+            deployment_id=self.env.deployment_id,
+            program_id=self.env.program_id,
+            action=action,
+            animal_id=animal_id,
+            next_custodian=next_custodian,
+        )
+        capture = self.api.post("/api/captures", {
+            **intent,
+            "authorization": authorization,
+        })
+        if not isinstance(capture, dict):
+            raise SystemContractError("capture endpoint did not return an object")
+        return capture
+
     def _transition(
         self,
         *,
@@ -584,11 +674,12 @@ class FullLocalHarness:
         next_custodian: str | None,
     ) -> tuple[dict[str, Any], dict[str, Any], str]:
         self.station.queue_observation(action_code, rfid_hex)
-        capture = self.api.post("/api/captures", {
-            "action": action,
-            "animalId": animal_id,
-            "nextCustodian": next_custodian,
-        })
+        capture = self.reserve_capture(
+            action=action,
+            animal_id=animal_id,
+            wallet=wallet,
+            next_custodian=next_custodian,
+        )
         capture_id = capture.get("captureId")
         if not isinstance(capture_id, str):
             raise SystemContractError("capture response is missing captureId")

@@ -8,6 +8,8 @@ pub enum AgentError {
     Config(String),
     #[error("serial protocol error: {0}")]
     Serial(String),
+    #[error("station capture failed: {0}")]
+    Station(String),
     #[error("station command/evidence contract violation: {0}")]
     Contract(String),
     #[error("local outbox failure: {0}")]

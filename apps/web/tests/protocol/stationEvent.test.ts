@@ -45,7 +45,12 @@ describe('protocol/stationEvent', () => {
    * FAILURE MEANS: unsupported wire formats can be misinterpreted as evidence.
    */
   it('rejects wrong magic version action and non-zero reserved bytes', () => {
-    for (const [offset, value] of [[0, 0], [4, 2], [5, 4], [6, 1]] as const) {
+    for (const [offset, value] of [
+      [0, 0],
+      [4, 2],
+      [5, 4],
+      [6, 1],
+    ] as const) {
       const raw = bytes(vectors.events.origin.event_bytes_hex)
       raw[offset] = value
       expect(() => decodeStationEvent(raw)).toThrow()
@@ -75,7 +80,7 @@ describe('protocol/stationEvent', () => {
     origin[116] = 1
     expect(() => decodeStationEvent(origin)).toThrow('invalid ORIGIN semantics')
     const transfer = bytes(vectors.events.transfer.event_bytes_hex)
-    transfer[180] ^= 1
+    transfer[180] = transfer[180]! ^ 1
     expect(() => decodeStationEvent(transfer)).toThrow('invalid TRANSFER semantics')
     const reidentify = bytes(vectors.events.reidentify.event_bytes_hex)
     reidentify.set(reidentify.slice(148, 180), 180)

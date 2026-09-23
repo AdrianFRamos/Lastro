@@ -4,7 +4,7 @@
 //! validity field; every verifier must recompute validity from bytes, signatures, history,
 //! and canonical Solana state.
 
-use base64::{engine::general_purpose::STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD};
 use serde::{Deserialize, Serialize};
 
 use crate::{
@@ -57,7 +57,10 @@ impl EvidencePackage {
                 || !is_lower_hex(&evidence.observed_rfid_hex, 8)
                 || !is_lower_hex(&evidence.station_pubkey_hex, 33)
                 || !is_lower_hex(&evidence.station_signature_hex, 64)
-                || evidence.tx_signature.as_ref().is_some_and(|value| !is_solana_signature_text(value))
+                || evidence
+                    .tx_signature
+                    .as_ref()
+                    .is_some_and(|value| !is_solana_signature_text(value))
             {
                 return Err(ProtocolError::InvalidEvidencePackage);
             }
@@ -84,7 +87,8 @@ impl EvidencePackage {
             }
 
             let observed = decode_hex_array::<8>(&evidence.observed_rfid_hex)?;
-            let expected_observed_hash = hash_canonical_rfid(&canonical_rfid_from_slice(&observed)?);
+            let expected_observed_hash =
+                hash_canonical_rfid(&canonical_rfid_from_slice(&observed)?);
             if event.new_rfid_hash != expected_observed_hash {
                 return Err(ProtocolError::InvalidEvidencePackage);
             }
@@ -129,6 +133,7 @@ fn is_solana_signature_text(value: &str) -> bool {
         })
 }
 
+#[allow(clippy::chunks_exact_to_as_chunks)]
 fn decode_hex_array<const N: usize>(value: &str) -> Result<[u8; N], ProtocolError> {
     if !is_lower_hex(value, N) {
         return Err(ProtocolError::InvalidEvidencePackage);

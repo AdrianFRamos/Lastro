@@ -52,7 +52,11 @@ function validateSemantics(event: StationEvent): void {
     return
   }
 
-  if (event.eventSequence < 2n || event.identityRevision === 0 || allZero(event.previousEventHash)) {
+  if (
+    event.eventSequence < 2n ||
+    event.identityRevision === 0 ||
+    allZero(event.previousEventHash)
+  ) {
     throw new Error('invalid transition sequence or predecessor')
   }
 

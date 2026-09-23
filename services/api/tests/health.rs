@@ -4,15 +4,24 @@ mod common;
 
 use std::sync::Arc;
 
-use axum::{body::{to_bytes, Body}, http::{Request, StatusCode}, Router};
+use axum::{
+    Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode},
+};
 use serde_json::Value;
 use tower::ServiceExt;
 
-use common::{app_state, TestDb, TestRpc, STATION_PUBKEY};
+use common::{STATION_PUBKEY, TestDb, TestRpc, app_state};
 
 async fn get_health(app: Router) -> (StatusCode, Value) {
     let response = app
-        .oneshot(Request::builder().uri("/api/health").body(Body::empty()).unwrap())
+        .oneshot(
+            Request::builder()
+                .uri("/api/health")
+                .body(Body::empty())
+                .unwrap(),
+        )
         .await
         .expect("health response");
     let status = response.status();

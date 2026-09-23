@@ -5,6 +5,7 @@ mod common;
 use common::*;
 use lastro::constants::RFID_STATUS_ACTIVE;
 use lastro_protocol::rfid::{canonical_rfid_from_u64, hash_canonical_rfid};
+use solana_signer::Signer;
 
 #[test]
 fn origin_creates_animal_state_and_active_rfid_binding() {
@@ -14,12 +15,21 @@ fn origin_creates_animal_state_and_active_rfid_binding() {
     h.initialize();
     let flow = h.flow([0x11; 32]);
     // ACTION: Submit the Secp+origin envelope with Wallet A signer.
-    assert_success(send_event(&mut h.svm, &flow.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     // ASSERT: AnimalState and RfidBinding(A) match the signed evidence exactly.
     let animal = animal_state(&h.svm, &h.deployment_id, &flow.animal_id);
     assert_eq!(animal.animal_id, flow.animal_id);
     assert_eq!(animal.current_rfid_hash, flow.rfid_a);
-    assert_eq!(animal.current_custodian.to_bytes(), flow.origin.to_custodian);
+    assert_eq!(
+        animal.current_custodian.to_bytes(),
+        flow.origin.to_custodian
+    );
     assert_eq!(animal.identity_revision, 1);
     assert_eq!(animal.event_sequence, 1);
     assert_eq!(animal.last_event_hash, flow.origin.event_hash());
@@ -33,26 +43,40 @@ fn origin_creates_animal_state_and_active_rfid_binding() {
 #[test]
 fn origin_requires_sequence_one_revision_one_zero_predecessor() {
     // PURPOSE: History must start at one unique canonical position.
-    // ARRANGE: Signed variants with one invalid origin field at a time.
-    let mut variants = Vec::new();
-    let base_h = Harness::new();
-    let base = base_h.flow([0x21; 32]).origin;
-    let mut wrong_sequence = base.clone(); wrong_sequence.event_sequence = 2; variants.push(wrong_sequence);
-    let mut wrong_revision = base.clone(); wrong_revision.identity_revision = 2; variants.push(wrong_revision);
-    let mut wrong_predecessor = base.clone(); wrong_predecessor.previous_event_hash = [7; 32]; variants.push(wrong_predecessor);
-    let mut wrong_old_rfid = base.clone(); wrong_old_rfid.old_rfid_hash = [8; 32]; variants.push(wrong_old_rfid);
-
-    for (index, event) in variants.into_iter().enumerate() {
+    // ARRANGE: For each case, derive the invalid ORIGIN from the same harness whose Wallet A signs it.
+    for variant in 0..4 {
         let mut h = Harness::new();
         h.initialize();
+        let mut event = h.flow([0x21; 32]).origin;
+        match variant {
+            0 => event.event_sequence = 2,
+            1 => event.identity_revision = 2,
+            2 => event.previous_event_hash = [7; 32],
+            3 => event.old_rfid_hash = [8; 32],
+            _ => unreachable!("fixed invalid ORIGIN variant set"),
+        }
         let (animal, _) = animal_state_pda(&h.deployment_id, &event.animal_id);
         let (binding, _) = rfid_binding_pda(&h.deployment_id, &event.new_rfid_hash);
+
         // ACTION: Execute each cryptographically valid but semantically invalid ORIGIN.
-        let result = send_event(&mut h.svm, &event, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
-        // ASSERT: Every variant fails atomically without creating either state account.
+        let result = send_event(
+            &mut h.svm,
+            &event,
+            &h.station_signing_key,
+            &h.station_pubkey33,
+            &h.wallet_a,
+        );
+
+        // ASSERT: Every variant reaches Lastro, fails atomically, and creates neither state account.
         assert_failure(result);
-        assert!(account_data(&h.svm, &animal).is_none(), "variant {index} created AnimalState");
-        assert!(account_data(&h.svm, &binding).is_none(), "variant {index} created RfidBinding");
+        assert!(
+            account_data(&h.svm, &animal).is_none(),
+            "variant {variant} created AnimalState"
+        );
+        assert!(
+            account_data(&h.svm, &binding).is_none(),
+            "variant {variant} created RfidBinding"
+        );
     }
     // FAILURE MEANS: History could start in the middle or carry a fictitious predecessor.
 }
@@ -71,7 +95,13 @@ fn origin_requires_to_custodian_signer() {
     // ASSERT: Wrong signer fails; Wallet A succeeds.
     assert_failure_contains(bad, "InvalidCustodian");
     h.svm.expire_blockhash();
-    assert_success(send_event(&mut h.svm, &flow.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     // FAILURE MEANS: Backend/Station could assign custody without the corresponding wallet.
 }
 
@@ -82,14 +112,26 @@ fn origin_rejects_existing_animal_state() {
     let mut h = Harness::new();
     h.initialize();
     let flow = h.flow([0x41; 32]);
-    assert_success(send_event(&mut h.svm, &flow.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     let (animal_address, _) = animal_state_pda(&h.deployment_id, &flow.animal_id);
     let before = account_data(&h.svm, &animal_address).unwrap();
     let mut second = flow.origin.clone();
     second.new_rfid_hash = hash_canonical_rfid(&canonical_rfid_from_u64(0x8000_1300_0000_0099));
     h.svm.expire_blockhash();
     // ACTION: Submit a second signed ORIGIN for X with another RFID.
-    let result = send_event(&mut h.svm, &second, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &second,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails and the original canonical account is byte-for-byte unchanged.
     assert_failure(result);
     assert_eq!(account_data(&h.svm, &animal_address).unwrap(), before);
@@ -103,16 +145,31 @@ fn origin_rejects_rfid_ever_bound_to_another_history() {
     let mut h = Harness::new();
     h.initialize();
     let flow_a = h.flow([0x51; 32]);
-    assert_success(send_event(&mut h.svm, &flow_a.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow_a.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     let mut flow_b = h.flow([0x52; 32]);
     flow_b.origin.new_rfid_hash = flow_a.rfid_a;
     let (animal_b, _) = animal_state_pda(&h.deployment_id, &flow_b.animal_id);
     h.svm.expire_blockhash();
     // ACTION: Attempt ORIGIN Animal B using X.
-    let result = send_event(&mut h.svm, &flow_b.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &flow_b.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails atomically because the global binding PDA already exists; B is not created.
     assert_failure(result);
     assert!(account_data(&h.svm, &animal_b).is_none());
-    assert_eq!(rfid_binding(&h.svm, &h.deployment_id, &flow_a.rfid_a).animal_id, flow_a.animal_id);
+    assert_eq!(
+        rfid_binding(&h.svm, &h.deployment_id, &flow_a.rfid_a).animal_id,
+        flow_a.animal_id
+    );
     // FAILURE MEANS: The same physical identifier could authenticate two logical identities.
 }

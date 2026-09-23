@@ -2,7 +2,7 @@
 
 use lastro_agent::{
     command::StationCommand,
-    serial::payload::{decode_command, encode_command, COMMAND_PAYLOAD_LEN},
+    serial::payload::{COMMAND_PAYLOAD_LEN, decode_command, encode_command},
 };
 use serde_json::Value;
 use uuid::Uuid;

@@ -55,9 +55,11 @@ impl AppConfig {
                     "{name} must be exactly {N} bytes of lowercase hexadecimal"
                 )));
             }
-            let bytes = hex::decode(value)
-                .map_err(|_| ApiError::Config(format!("{name} must be valid lowercase hexadecimal")))?;
-            bytes.try_into()
+            let bytes = hex::decode(value).map_err(|_| {
+                ApiError::Config(format!("{name} must be valid lowercase hexadecimal"))
+            })?;
+            bytes
+                .try_into()
                 .map_err(|_| ApiError::Config(format!("{name} must decode to exactly {N} bytes")))
         }
 
@@ -80,8 +82,9 @@ impl AppConfig {
         }
 
         let solana_rpc_url = required(&mut lookup, "LASTRO_SOLANA_RPC_URL")?;
-        let parsed_rpc = reqwest::Url::parse(&solana_rpc_url)
-            .map_err(|_| ApiError::Config("LASTRO_SOLANA_RPC_URL must be an absolute http(s) URL".into()))?;
+        let parsed_rpc = reqwest::Url::parse(&solana_rpc_url).map_err(|_| {
+            ApiError::Config("LASTRO_SOLANA_RPC_URL must be an absolute http(s) URL".into())
+        })?;
         if !matches!(parsed_rpc.scheme(), "http" | "https") {
             return Err(ApiError::Config(
                 "LASTRO_SOLANA_RPC_URL must use http or https".into(),
@@ -96,12 +99,16 @@ impl AppConfig {
             "LASTRO_STATION_PUBKEY_HEX",
             &required(&mut lookup, "LASTRO_STATION_PUBKEY_HEX")?,
         )?;
-        derive_station_id(&station_pubkey33)
-            .map_err(|_| ApiError::Config("LASTRO_STATION_PUBKEY_HEX must be a valid compressed P-256 public key".into()))?;
+        derive_station_id(&station_pubkey33).map_err(|_| {
+            ApiError::Config(
+                "LASTRO_STATION_PUBKEY_HEX must be a valid compressed P-256 public key".into(),
+            )
+        })?;
 
         let lastro_program_id = required(&mut lookup, "LASTRO_PROGRAM_ID")?;
-        Pubkey::from_str(&lastro_program_id)
-            .map_err(|_| ApiError::Config("LASTRO_PROGRAM_ID must be a valid Solana address".into()))?;
+        Pubkey::from_str(&lastro_program_id).map_err(|_| {
+            ApiError::Config("LASTRO_PROGRAM_ID must be a valid Solana address".into())
+        })?;
 
         Ok(Self {
             bind_addr,

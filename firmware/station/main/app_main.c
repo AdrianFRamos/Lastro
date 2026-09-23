@@ -5,6 +5,7 @@
 #include "driver/usb_serial_jtag.h"
 #include "esp_err.h"
 #include "esp_log.h"
+#include "esp_timer.h"
 #include "freertos/FreeRTOS.h"
 #include "freertos/task.h"
 #include "lastro_station/rfid.h"
@@ -47,6 +48,7 @@ void app_main(void)
         .rx_buffer_size = LASTRO_AGENT_USB_BUFFER_SIZE,
     };
     uint8_t agent_bytes[LASTRO_AGENT_READ_CHUNK_SIZE];
+    int64_t last_tick_us = esp_timer_get_time();
 
     if (usb_serial_jtag_driver_install(&usb_config) != ESP_OK) {
         fail_closed("Cannot initialize the native USB Serial/JTAG Agent transport.");
@@ -69,6 +71,14 @@ void app_main(void)
             pdMS_TO_TICKS(LASTRO_AGENT_IO_TIMEOUT_MS));
         if (received > 0 && !lastro_runtime_feed_agent(agent_bytes, (size_t)received)) {
             ESP_LOGW(TAG, "Rejected invalid or temporarily unprocessable Agent serial input.");
+        }
+
+        const int64_t now_us = esp_timer_get_time();
+        const int64_t elapsed_us = now_us - last_tick_us;
+        if (elapsed_us > 0) {
+            const uint64_t elapsed_ms = (uint64_t)elapsed_us / 1000u;
+            last_tick_us = now_us - (elapsed_us % 1000);
+            lastro_station_elapse(elapsed_ms > UINT32_MAX ? UINT32_MAX : (uint32_t)elapsed_ms);
         }
 
         if (lastro_station_state() == LASTRO_STATION_WAIT_RFID) {

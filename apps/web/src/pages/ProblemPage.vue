@@ -3,7 +3,6 @@ import PhysicalTrustGapDiagram from '../components/story/PhysicalTrustGapDiagram
 import StoryHeader from '../components/story/StoryHeader.vue'
 import StoryPageFooter from '../components/story/StoryPageFooter.vue'
 import StorySectionHeading from '../components/story/StorySectionHeading.vue'
-
 </script>
 
 <template>
@@ -14,10 +13,14 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
       <section class="problem-hero" aria-labelledby="problem-title">
         <div>
           <p class="story-kicker">THE PHYSICAL TRUST GAP</p>
-          <h1 id="problem-title">The asset moves. The data fragments. The market still needs proof.</h1>
+          <h1 id="problem-title">
+            The asset moves. The data fragments. The market still needs proof.
+          </h1>
         </div>
         <p class="problem-hero__lede">
-          Physical supply chains depend on evidence of identity, origin, custody, history and compliance while the underlying asset moves across organizations, systems and jurisdictions.
+          Physical supply chains depend on evidence of identity, origin, custody, history and
+          compliance while the underlying asset moves across organizations, systems and
+          jurisdictions.
         </p>
       </section>
 
@@ -41,11 +44,19 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
         <div class="evidence__grid">
           <article class="fact-block">
             <span class="fact-block__type">FACT / BRAZIL</span>
-            <h3>Brazil is moving from lot-based traceability toward individual cattle and buffalo identification.</h3>
+            <h3>
+              Brazil is moving from lot-based traceability toward individual cattle and buffalo
+              identification.
+            </h3>
             <p>
-              MAPA's PNIB plan describes a gradual transition to individual identification, with a 2025–2032 implementation horizon.
+              MAPA's PNIB plan describes a gradual transition to individual identification, with a
+              2025–2032 implementation horizon.
             </p>
-            <a href="https://www.gov.br/agricultura/pt-br/assuntos/sanidade-animal-e-vegetal/saude-animal/rastreabilidade-animal/pnib" target="_blank" rel="noreferrer">
+            <a
+              href="https://www.gov.br/agricultura/pt-br/assuntos/sanidade-animal-e-vegetal/saude-animal/rastreabilidade-animal/pnib"
+              target="_blank"
+              rel="noreferrer"
+            >
               Source · MAPA / PNIB ↗
             </a>
           </article>
@@ -54,20 +65,35 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
             <span class="fact-block__type">FACT / EUROPEAN UNION</span>
             <h3>Cattle are within the scope of the EU Deforestation Regulation.</h3>
             <p>
-              Operators and traders placing covered commodities on the EU market must be able to show that the products do not originate from recently deforested land or contribute to forest degradation. Current application dates begin 30 December 2026 for large and medium operators.
+              Operators and traders placing covered commodities on the EU market must be able to
+              show that the products do not originate from recently deforested land or contribute to
+              forest degradation. Current application dates begin 30 December 2026 for large and
+              medium operators.
             </p>
-            <a href="https://environment.ec.europa.eu/topics/forests/deforestation/regulation-deforestation-free-products_en" target="_blank" rel="noreferrer">
+            <a
+              href="https://environment.ec.europa.eu/topics/forests/deforestation/regulation-deforestation-free-products_en"
+              target="_blank"
+              rel="noreferrer"
+            >
               Source · European Commission ↗
             </a>
           </article>
 
           <article class="fact-block">
             <span class="fact-block__type">FACT / INTERNATIONAL STANDARD</span>
-            <h3>Animal identification and traceability support health, food safety, certification and trade.</h3>
+            <h3>
+              Animal identification and traceability support health, food safety, certification and
+              trade.
+            </h3>
             <p>
-              WOAH treats identification and traceability as tools that can strengthen disease response, movement controls, inspection, certification and fair trade practices.
+              WOAH treats identification and traceability as tools that can strengthen disease
+              response, movement controls, inspection, certification and fair trade practices.
             </p>
-            <a href="https://www.woah.org/fileadmin/Home/eng/Health_standards/tahc/current/en_chapitre_ident_traceability.htm" target="_blank" rel="noreferrer">
+            <a
+              href="https://www.woah.org/fileadmin/Home/eng/Health_standards/tahc/current/en_chapitre_ident_traceability.htm"
+              target="_blank"
+              rel="noreferrer"
+            >
               Source · WOAH Terrestrial Code ↗
             </a>
           </article>
@@ -108,7 +134,9 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
         </div>
 
         <p class="comparison__note">
-          Lastro does not claim to replace official traceability or compliance systems. The thesis is narrower: verifiable identity and custody can become a foundation those architectures can reference.
+          Lastro does not claim to replace official traceability or compliance systems. The thesis
+          is narrower: verifiable identity and custody can become a foundation those architectures
+          can reference.
         </p>
       </section>
 
@@ -139,12 +167,12 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
   margin: 0 0 12px;
   color: var(--proof);
   font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: .16em;
+  letter-spacing: 0.16em;
 }
 
 .problem-hero {
   display: grid;
-  grid-template-columns: minmax(0, 1.2fr) minmax(280px, .7fr);
+  grid-template-columns: minmax(0, 1.2fr) minmax(280px, 0.7fr);
   gap: 8vw;
   align-items: end;
   padding: 72px 0 64px;
@@ -156,8 +184,8 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
   margin: 0;
   font-size: clamp(44px, 4.7vw, 68px);
   font-weight: 580;
-  line-height: .99;
-  letter-spacing: -.052em;
+  line-height: 0.99;
+  letter-spacing: -0.052em;
 }
 
 .problem-hero__lede {
@@ -198,7 +226,7 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
   margin: 22px 0 0;
   font-size: 21px;
   line-height: 1.25;
-  letter-spacing: -.02em;
+  letter-spacing: -0.02em;
 }
 
 .fact-block p {
@@ -280,7 +308,6 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
     gap: 24px;
   }
 
-
   .evidence__grid {
     grid-template-columns: 1fr;
   }
@@ -318,7 +345,6 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
     padding: 48px 0;
   }
 
-
   .flow-panel ol {
     grid-template-columns: 1fr;
   }
@@ -336,7 +362,6 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
     top: 29px;
     background: var(--surface);
   }
-
 }
 
 @media (min-width: 1200px) and (min-aspect-ratio: 16 / 10) {

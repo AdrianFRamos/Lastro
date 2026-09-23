@@ -9,7 +9,10 @@ fn rejects_275_bytes() {
     // PURPOSE: Enforce exact event length.
     // ASSERT: A truncated 275-byte buffer returns InvalidLength.
     // FAILURE MEANS: Truncated signed messages can be interpreted as valid events.
-    assert_eq!(StationEvent::decode(&common::event_bytes("origin")[..275]), Err(ProtocolError::InvalidLength));
+    assert_eq!(
+        StationEvent::decode(&common::event_bytes("origin")[..275]),
+        Err(ProtocolError::InvalidLength)
+    );
 }
 
 #[test]
@@ -19,7 +22,10 @@ fn rejects_277_bytes() {
     // FAILURE MEANS: Multiple byte strings could represent one logical event.
     let mut bytes = common::event_bytes("origin").to_vec();
     bytes.push(0);
-    assert_eq!(StationEvent::decode(&bytes), Err(ProtocolError::InvalidLength));
+    assert_eq!(
+        StationEvent::decode(&bytes),
+        Err(ProtocolError::InvalidLength)
+    );
 }
 
 #[test]
@@ -29,7 +35,10 @@ fn rejects_wrong_magic() {
     // FAILURE MEANS: Different protocols could collide at the decoder boundary.
     let mut bytes = common::event_bytes("origin");
     bytes[0] ^= 1;
-    assert_eq!(StationEvent::decode(&bytes), Err(ProtocolError::InvalidMagic));
+    assert_eq!(
+        StationEvent::decode(&bytes),
+        Err(ProtocolError::InvalidMagic)
+    );
 }
 
 #[test]
@@ -39,7 +48,10 @@ fn rejects_unknown_version() {
     // FAILURE MEANS: Incompatible formats may be accepted silently.
     let mut bytes = common::event_bytes("origin");
     bytes[4] = 2;
-    assert_eq!(StationEvent::decode(&bytes), Err(ProtocolError::UnsupportedVersion));
+    assert_eq!(
+        StationEvent::decode(&bytes),
+        Err(ProtocolError::UnsupportedVersion)
+    );
 }
 
 #[test]
@@ -49,7 +61,10 @@ fn rejects_unknown_action() {
     // FAILURE MEANS: Undefined state transitions could reach downstream code.
     let mut bytes = common::event_bytes("origin");
     bytes[5] = 4;
-    assert_eq!(StationEvent::decode(&bytes), Err(ProtocolError::InvalidAction));
+    assert_eq!(
+        StationEvent::decode(&bytes),
+        Err(ProtocolError::InvalidAction)
+    );
 }
 
 #[test]
@@ -59,7 +74,10 @@ fn rejects_nonzero_reserved() {
     // FAILURE MEANS: Equivalent events could have multiple signed encodings.
     let mut bytes = common::event_bytes("origin");
     bytes[6] = 1;
-    assert_eq!(StationEvent::decode(&bytes), Err(ProtocolError::ReservedNotZero));
+    assert_eq!(
+        StationEvent::decode(&bytes),
+        Err(ProtocolError::ReservedNotZero)
+    );
 }
 
 #[test]

@@ -4,7 +4,7 @@ use std::{fs, path::PathBuf};
 
 use bytes::{Bytes, BytesMut};
 use lastro_agent::serial::{
-    codec::{decode_next, encode_frame, MAX_FRAME_PAYLOAD},
+    codec::{MAX_FRAME_PAYLOAD, decode_next, encode_frame},
     frame::{Frame, MessageType},
 };
 
@@ -14,7 +14,10 @@ fn fixture(name: &str) -> Vec<u8> {
 }
 
 fn command_frame() -> Frame {
-    Frame { message_type: MessageType::Command, payload: Bytes::from(fixture("serial-command.bin")) }
+    Frame {
+        message_type: MessageType::Command,
+        payload: Bytes::from(fixture("serial-command.bin")),
+    }
 }
 
 #[test]
@@ -31,7 +34,9 @@ fn decoder_accepts_frame_split_at_every_byte() {
             assert!(first.is_none());
         }
         buffer.extend_from_slice(&encoded[split..]);
-        let decoded = first.or_else(|| decode_next(&mut buffer).unwrap()).expect("complete frame");
+        let decoded = first
+            .or_else(|| decode_next(&mut buffer).unwrap())
+            .expect("complete frame");
         assert_eq!(decoded, command_frame());
         assert!(decode_next(&mut buffer).unwrap().is_none());
     }
@@ -48,8 +53,15 @@ fn decoder_rejects_bad_crc() {
     bad[payload_index] ^= 1;
     let mut buffer = BytesMut::from(&bad[..]);
     buffer.extend_from_slice(&valid);
-    assert!(decode_next(&mut buffer).unwrap_err().to_string().contains("CRC32C"));
-    let decoded = decode_next(&mut buffer).unwrap().expect("recover following frame");
+    assert!(
+        decode_next(&mut buffer)
+            .unwrap_err()
+            .to_string()
+            .contains("CRC32C")
+    );
+    let decoded = decode_next(&mut buffer)
+        .unwrap()
+        .expect("recover following frame");
     assert_eq!(decoded, command_frame());
 }
 
@@ -95,7 +107,10 @@ fn encoder_matches_firmware_command_vector() {
     assert_eq!(u32::from_le_bytes(encoded[8..12].try_into().unwrap()), 224);
     assert_eq!(&encoded[12..236], fixture("serial-command.bin"));
     let expected = crc32c::crc32c(&encoded[4..236]);
-    assert_eq!(u32::from_le_bytes(encoded[236..240].try_into().unwrap()), expected);
+    assert_eq!(
+        u32::from_le_bytes(encoded[236..240].try_into().unwrap()),
+        expected
+    );
 }
 
 #[test]
@@ -104,7 +119,10 @@ fn event_ready_decoder_preserves_event_signature_and_rfid() {
     // ASSERT: EVENT_READY payload bytes are preserved exactly after frame encode/decode.
     // FAILURE MEANS: Agent could invalidate the Station signature by transforming evidence.
     let payload = Bytes::from(fixture("serial-event-ready.bin"));
-    let frame = Frame { message_type: MessageType::EventReady, payload: payload.clone() };
+    let frame = Frame {
+        message_type: MessageType::EventReady,
+        payload: payload.clone(),
+    };
     let encoded = encode_frame(&frame).unwrap();
     let mut buffer = BytesMut::from(encoded.as_ref());
     let decoded = decode_next(&mut buffer).unwrap().unwrap();
@@ -126,7 +144,8 @@ fn arbitrary_serial_bytes_never_panic() {
             })
             .collect();
         let mut buffer = BytesMut::from(bytes.as_slice());
-        let result = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode_next(&mut buffer)));
+        let result =
+            std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| decode_next(&mut buffer)));
         assert!(result.is_ok(), "serial decoder panicked for length {len}");
     }
 

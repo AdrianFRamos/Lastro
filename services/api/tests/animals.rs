@@ -5,9 +5,9 @@ mod common;
 use std::{fs, path::PathBuf, sync::Arc};
 
 use axum::{
-    body::{to_bytes, Body},
-    http::{header, Request, StatusCode},
     Router,
+    body::{Body, to_bytes},
+    http::{Request, StatusCode, header},
 };
 use lastro_api::{
     repository::animals,
@@ -15,21 +15,19 @@ use lastro_api::{
     solana::rpc::{BindingStatus, CanonicalRfidBinding},
 };
 use lastro_protocol::StationEvent;
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use tower::ServiceExt;
 
-use common::{app_state, TestDb, TestRpc, STATION_PUBKEY};
+use common::{STATION_PUBKEY, TestDb, TestRpc, app_state};
 
 const ANIMAL_ID: [u8; 32] = [0x11; 32];
 const OLD_RFID_HASH: [u8; 32] = [
-    0x8a, 0x60, 0x45, 0x28, 0xf1, 0x90, 0x62, 0xcc, 0x9a, 0xda, 0x87, 0xa5, 0xe2, 0x25,
-    0xa5, 0xc9, 0x67, 0xe2, 0xcf, 0x14, 0x8c, 0x85, 0xd8, 0x6d, 0xaf, 0x02, 0xd0, 0x42,
-    0x12, 0xeb, 0xf6, 0xe1,
+    0x8a, 0x60, 0x45, 0x28, 0xf1, 0x90, 0x62, 0xcc, 0x9a, 0xda, 0x87, 0xa5, 0xe2, 0x25, 0xa5, 0xc9,
+    0x67, 0xe2, 0xcf, 0x14, 0x8c, 0x85, 0xd8, 0x6d, 0xaf, 0x02, 0xd0, 0x42, 0x12, 0xeb, 0xf6, 0xe1,
 ];
 const NEW_RFID_HASH: [u8; 32] = [
-    0x1c, 0x5b, 0xb7, 0x23, 0x58, 0xbd, 0x63, 0x03, 0xc8, 0x6a, 0x49, 0x69, 0xbe, 0xf0,
-    0x5e, 0xed, 0x30, 0xf9, 0xa6, 0xb3, 0xda, 0xac, 0x8a, 0xd4, 0x20, 0x7b, 0xc2, 0x7f,
-    0x4f, 0x40, 0xf9, 0x78,
+    0x1c, 0x5b, 0xb7, 0x23, 0x58, 0xbd, 0x63, 0x03, 0xc8, 0x6a, 0x49, 0x69, 0xbe, 0xf0, 0x5e, 0xed,
+    0x30, 0xf9, 0xa6, 0xb3, 0xda, 0xac, 0x8a, 0xd4, 0x20, 0x7b, 0xc2, 0x7f, 0x4f, 0x40, 0xf9, 0x78,
 ];
 
 fn fixture_event(name: &str) -> StationEvent {
@@ -72,6 +70,33 @@ async fn post_animal(app: Router, visual_recovery_id: &str) -> (StatusCode, Valu
             .unwrap(),
     )
     .await
+}
+
+#[tokio::test]
+async fn anonymous_registration_stops_at_the_database_backed_minute_budget() {
+    // PURPOSE: Anonymous clients must not reserve unbounded PostgreSQL rows.
+    // ARRANGE: Simulate 60 registrations within the current minute without network calls.
+    // ACTION: Ask the public route for the 61st unoriginated animal.
+    // ASSERT: HTTP 429 and no extra row are produced, including after a new Router is built.
+    // FAILURE MEANS: An unauthenticated client could exhaust PostgreSQL storage before origin capture.
+    let db = TestDb::new().await;
+    for index in 0..60u8 {
+        let mut animal_id = [0u8; 32];
+        animal_id[0] = index + 1;
+        animals::insert_registration(&db.pool, animal_id, &format!("BUDGET-{index}"))
+            .await
+            .unwrap();
+    }
+    let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
+    let (status, body) = post_animal(app(&db, rpc), "EXTRA").await;
+    assert_eq!(status, StatusCode::TOO_MANY_REQUESTS);
+    assert_eq!(body["code"], "RATE_LIMITED");
+    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM animals")
+        .fetch_one(&db.pool)
+        .await
+        .unwrap();
+    assert_eq!(count, 60);
+    db.cleanup().await;
 }
 
 #[tokio::test]
@@ -132,14 +157,18 @@ async fn duplicate_visual_recovery_id_returns_conflict() {
     // FAILURE MEANS: Visual recovery could resolve to multiple AnimalIDs.
     let db = TestDb::new().await;
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
-    assert_eq!(post_animal(app(&db, rpc.clone()), "VISUAL-0042").await.0, StatusCode::CREATED);
+    assert_eq!(
+        post_animal(app(&db, rpc.clone()), "VISUAL-0042").await.0,
+        StatusCode::CREATED
+    );
     let (status, _) = post_animal(app(&db, rpc), "VISUAL-0042").await;
     assert_eq!(status, StatusCode::CONFLICT);
 
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM animals WHERE visual_recovery_id='VISUAL-0042'")
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM animals WHERE visual_recovery_id='VISUAL-0042'")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
     assert_eq!(count, 1);
     db.cleanup().await;
 }
@@ -175,7 +204,10 @@ async fn get_by_current_rfid_returns_only_current_binding() {
     let retired = request_json(
         app(&db, rpc.clone()),
         Request::builder()
-            .uri(format!("/api/animals/by-rfid/{}", hex::encode(OLD_RFID_HASH)))
+            .uri(format!(
+                "/api/animals/by-rfid/{}",
+                hex::encode(OLD_RFID_HASH)
+            ))
             .body(Body::empty())
             .unwrap(),
     )
@@ -185,14 +217,23 @@ async fn get_by_current_rfid_returns_only_current_binding() {
     let active = request_json(
         app(&db, rpc),
         Request::builder()
-            .uri(format!("/api/animals/by-rfid/{}", hex::encode(NEW_RFID_HASH)))
+            .uri(format!(
+                "/api/animals/by-rfid/{}",
+                hex::encode(NEW_RFID_HASH)
+            ))
             .body(Body::empty())
             .unwrap(),
     )
     .await;
     assert_eq!(active.0, StatusCode::OK);
-    assert_eq!(active.1["animalId"].as_str(), Some(hex::encode(ANIMAL_ID).as_str()));
-    assert_eq!(active.1["currentRfidHash"].as_str(), Some(hex::encode(NEW_RFID_HASH).as_str()));
+    assert_eq!(
+        active.1["animalId"].as_str(),
+        Some(hex::encode(ANIMAL_ID).as_str())
+    );
+    assert_eq!(
+        active.1["currentRfidHash"].as_str(),
+        Some(hex::encode(NEW_RFID_HASH).as_str())
+    );
     db.cleanup().await;
 }
 
@@ -235,9 +276,15 @@ async fn retired_rfid_hash_does_not_resolve_as_current_after_reidentify() {
     let transfer = fixture_event("transfer.bin");
     let reidentify = fixture_event("reidentify.bin");
     let mut tx = db.pool.begin().await.unwrap();
-    animals::apply_confirmed_state(&mut tx, &origin).await.unwrap();
-    animals::apply_confirmed_state(&mut tx, &transfer).await.unwrap();
-    let terminal = animals::apply_confirmed_state(&mut tx, &reidentify).await.unwrap();
+    animals::apply_confirmed_state(&mut tx, &origin)
+        .await
+        .unwrap();
+    animals::apply_confirmed_state(&mut tx, &transfer)
+        .await
+        .unwrap();
+    let terminal = animals::apply_confirmed_state(&mut tx, &reidentify)
+        .await
+        .unwrap();
     tx.commit().await.unwrap();
     assert_eq!(terminal.animal_id, ANIMAL_ID);
     assert_eq!(terminal.current_rfid_hash, Some(NEW_RFID_HASH));
@@ -259,7 +306,10 @@ async fn retired_rfid_hash_does_not_resolve_as_current_after_reidentify() {
     let old = request_json(
         app(&db, rpc.clone()),
         Request::builder()
-            .uri(format!("/api/animals/by-rfid/{}", hex::encode(OLD_RFID_HASH)))
+            .uri(format!(
+                "/api/animals/by-rfid/{}",
+                hex::encode(OLD_RFID_HASH)
+            ))
             .body(Body::empty())
             .unwrap(),
     )
@@ -267,14 +317,20 @@ async fn retired_rfid_hash_does_not_resolve_as_current_after_reidentify() {
     let new = request_json(
         app(&db, rpc),
         Request::builder()
-            .uri(format!("/api/animals/by-rfid/{}", hex::encode(NEW_RFID_HASH)))
+            .uri(format!(
+                "/api/animals/by-rfid/{}",
+                hex::encode(NEW_RFID_HASH)
+            ))
             .body(Body::empty())
             .unwrap(),
     )
     .await;
     assert_eq!(old.0, StatusCode::NOT_FOUND);
     assert_eq!(new.0, StatusCode::OK);
-    assert_eq!(new.1["animalId"].as_str(), Some(hex::encode(ANIMAL_ID).as_str()));
+    assert_eq!(
+        new.1["animalId"].as_str(),
+        Some(hex::encode(ANIMAL_ID).as_str())
+    );
     db.cleanup().await;
 }
 
@@ -286,8 +342,12 @@ async fn lookup_by_rfid_never_returns_two_animals() {
     let db = TestDb::new().await;
     let animal_a = [0x31; 32];
     let animal_b = [0x32; 32];
-    animals::insert_registration(&db.pool, animal_a, "CONCURRENT-A").await.unwrap();
-    animals::insert_registration(&db.pool, animal_b, "CONCURRENT-B").await.unwrap();
+    animals::insert_registration(&db.pool, animal_a, "CONCURRENT-A")
+        .await
+        .unwrap();
+    animals::insert_registration(&db.pool, animal_b, "CONCURRENT-B")
+        .await
+        .unwrap();
 
     let first = sqlx::query("UPDATE animals SET current_rfid_hash=$2 WHERE animal_id=$1")
         .bind(animal_a.to_vec())

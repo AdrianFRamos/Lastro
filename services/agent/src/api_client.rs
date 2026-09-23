@@ -1,11 +1,10 @@
 use std::time::Duration;
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 
 use crate::{command::StationCommand, error::AgentError, spool::model::OutboxRow};
-
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -29,24 +28,38 @@ pub struct ApiClient {
 }
 
 impl ApiClient {
-    pub fn new(base_url: String, bearer_token: String, timeout: Duration) -> Result<Self, AgentError> {
+    pub fn new(
+        base_url: String,
+        bearer_token: String,
+        timeout: Duration,
+    ) -> Result<Self, AgentError> {
         let base_url = Url::parse(&base_url)
             .map_err(|error| AgentError::Config(format!("invalid Agent API URL: {error}")))?;
         if !matches!(base_url.scheme(), "http" | "https") {
-            return Err(AgentError::Config("Agent API URL must use http or https".into()));
+            return Err(AgentError::Config(
+                "Agent API URL must use http or https".into(),
+            ));
         }
         if bearer_token.len() < 32 {
-            return Err(AgentError::Config("Agent bearer token must contain at least 32 characters".into()));
+            return Err(AgentError::Config(
+                "Agent bearer token must contain at least 32 characters".into(),
+            ));
         }
         if timeout.is_zero() {
-            return Err(AgentError::Config("Agent API timeout must be greater than zero".into()));
+            return Err(AgentError::Config(
+                "Agent API timeout must be greater than zero".into(),
+            ));
         }
         let client = Client::builder()
             .timeout(timeout)
             .user_agent("lastro-agent/0.1")
             .build()
             .map_err(|error| AgentError::Config(format!("cannot build HTTP client: {error}")))?;
-        Ok(Self { client, base_url, bearer_token })
+        Ok(Self {
+            client,
+            base_url,
+            bearer_token,
+        })
     }
 
     /// Poll exactly one pending command for this Station. JSON null means no command.
@@ -62,15 +75,17 @@ impl ApiClient {
         if response.status() != StatusCode::OK {
             return Err(status_error(response.status(), "poll Agent command"));
         }
-        let value: Option<AgentCommandDto> = response
-            .json()
-            .await
-            .map_err(|error| AgentError::ApiTerminal(format!("invalid Agent command JSON: {error}")))?;
+        let value: Option<AgentCommandDto> = response.json().await.map_err(|error| {
+            AgentError::ApiTerminal(format!("invalid Agent command JSON: {error}"))
+        })?;
         value.map(StationCommand::try_from).transpose()
     }
 
     /// Read lifecycle state for evidence already accepted by the API.
-    pub async fn evidence_status(&self, event_hash: &[u8; 32]) -> Result<EvidenceStatus, AgentError> {
+    pub async fn evidence_status(
+        &self,
+        event_hash: &[u8; 32],
+    ) -> Result<EvidenceStatus, AgentError> {
         let url = self.endpoint(&format!("api/agent/evidence/{}", hex::encode(event_hash)))?;
         let response = self
             .client
@@ -80,12 +95,14 @@ impl ApiClient {
             .await
             .map_err(api_transport)?;
         if response.status() != StatusCode::OK {
-            return Err(status_error(response.status(), "read Agent evidence status"));
+            return Err(status_error(
+                response.status(),
+                "read Agent evidence status",
+            ));
         }
-        let value: EvidenceStatusDto = response
-            .json()
-            .await
-            .map_err(|error| AgentError::ApiTerminal(format!("invalid Agent evidence status JSON: {error}")))?;
+        let value: EvidenceStatusDto = response.json().await.map_err(|error| {
+            AgentError::ApiTerminal(format!("invalid Agent evidence status JSON: {error}"))
+        })?;
         Ok(value.status)
     }
 
@@ -165,7 +182,10 @@ impl TryFrom<AgentCommandDto> for StationCommand {
             event_sequence: value.event_sequence,
             identity_revision: value.identity_revision,
             previous_event_hash: decode_hex32("previousEventHash", &value.previous_event_hash)?,
-            expected_old_rfid_hash: decode_hex32("expectedOldRfidHash", &value.expected_old_rfid_hash)?,
+            expected_old_rfid_hash: decode_hex32(
+                "expectedOldRfidHash",
+                &value.expected_old_rfid_hash,
+            )?,
             from_custodian: decode_hex32("fromCustodian", &value.from_custodian)?,
             to_custodian: decode_hex32("toCustodian", &value.to_custodian)?,
         };
@@ -186,11 +206,15 @@ struct AgentEvidenceDto {
 
 fn decode_hex32(name: &str, value: &str) -> Result<[u8; 32], AgentError> {
     if value.len() != 64 || value != value.to_ascii_lowercase() {
-        return Err(AgentError::ApiTerminal(format!("{name} must be 32-byte lowercase hex")));
+        return Err(AgentError::ApiTerminal(format!(
+            "{name} must be 32-byte lowercase hex"
+        )));
     }
     let bytes = hex::decode(value)
         .map_err(|_| AgentError::ApiTerminal(format!("{name} must be 32-byte lowercase hex")))?;
-    bytes.try_into().map_err(|_| AgentError::ApiTerminal(format!("{name} must be 32-byte lowercase hex")))
+    bytes
+        .try_into()
+        .map_err(|_| AgentError::ApiTerminal(format!("{name} must be 32-byte lowercase hex")))
 }
 
 fn api_transport(error: reqwest::Error) -> AgentError {

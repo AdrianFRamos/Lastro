@@ -11,7 +11,9 @@ pub type Hex32 = String;
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct CreateAnimalRequest { pub visual_recovery_id: String }
+pub struct CreateAnimalRequest {
+    pub visual_recovery_id: String,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -27,7 +29,27 @@ pub struct AnimalResponse {
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CaptureAction { Origin, Transfer, Reidentify }
+pub enum CaptureAction {
+    Origin,
+    Transfer,
+    Reidentify,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CaptureIntentRequest {
+    pub action: CaptureAction,
+    pub animal_id: Hex32,
+    pub next_custodian: Option<Hex32>,
+    pub supersede_capture_id: Option<Uuid>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CaptureAuthorizationProof {
+    pub challenge_id: Uuid,
+    pub signature_base64: String,
+}
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
@@ -35,15 +57,38 @@ pub struct CreateCaptureRequest {
     pub action: CaptureAction,
     pub animal_id: Hex32,
     pub next_custodian: Option<Hex32>,
+    pub supersede_capture_id: Option<Uuid>,
+    pub authorization: CaptureAuthorizationProof,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CaptureAuthorizationChallengeResponse {
+    pub challenge_id: Uuid,
+    pub deployment_id: Hex32,
+    pub required_signer: String,
+    pub message_base64: String,
+    pub expires_at_unix: i64,
 }
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum CaptureStatus { Pending, Dispatched, EvidenceAccepted, Expired, Cancelled }
+pub enum CaptureStatus {
+    Pending,
+    Dispatched,
+    EvidenceAccepted,
+    Expired,
+    Cancelled,
+}
 
 #[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
-pub enum EventStatus { EvidenceAccepted, Submitted, Finalized, Rejected }
+pub enum EventStatus {
+    EvidenceAccepted,
+    Submitted,
+    Finalized,
+    Rejected,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -101,7 +146,9 @@ pub struct AgentEvidenceStatusResponse {
 
 #[derive(Clone, Debug, Deserialize)]
 #[serde(rename_all = "camelCase", deny_unknown_fields)]
-pub struct ConfirmEventRequest { pub tx_signature: String }
+pub struct ConfirmEventRequest {
+    pub tx_signature: String,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -112,7 +159,11 @@ pub struct EventSubmissionResponse {
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
-pub struct AccountMetaDto { pub address: String, pub is_signer: bool, pub is_writable: bool }
+pub struct AccountMetaDto {
+    pub address: String,
+    pub is_signer: bool,
+    pub is_writable: bool,
+}
 
 #[derive(Clone, Debug, Serialize)]
 #[serde(rename_all = "camelCase")]
@@ -121,7 +172,6 @@ pub struct InstructionDto {
     pub accounts: Vec<AccountMetaDto>,
     pub data_base64: String,
 }
-
 
 #[derive(Clone, Copy, Debug, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "lowercase")]
@@ -145,13 +195,16 @@ pub struct TransactionDataResponse {
     pub transaction_version: TransactionVersionDto,
 }
 
-
 pub fn parse_hex32(name: &str, value: &str) -> Result<[u8; 32], crate::error::ApiError> {
     if value.len() != 64 || value != value.to_ascii_lowercase() {
-        return Err(crate::error::ApiError::Validation(format!("{name} must be 32-byte lowercase hex")));
+        return Err(crate::error::ApiError::Validation(format!(
+            "{name} must be 32-byte lowercase hex"
+        )));
     }
-    let bytes = hex::decode(value)
-        .map_err(|_| crate::error::ApiError::Validation(format!("{name} must be 32-byte lowercase hex")))?;
-    bytes.try_into()
-        .map_err(|_| crate::error::ApiError::Validation(format!("{name} must be 32-byte lowercase hex")))
+    let bytes = hex::decode(value).map_err(|_| {
+        crate::error::ApiError::Validation(format!("{name} must be 32-byte lowercase hex"))
+    })?;
+    bytes.try_into().map_err(|_| {
+        crate::error::ApiError::Validation(format!("{name} must be 32-byte lowercase hex"))
+    })
 }

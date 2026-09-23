@@ -89,3 +89,26 @@ def test_hardware_and_system_pytest_contracts_define_full_execution_semantics():
                 if key not in doc:
                     missing.append(f'{path.relative_to(ROOT)}::{node.name} missing {key}')
     assert not missing, '\n'.join(missing)
+
+
+def test_generated_test_index_has_no_trailing_whitespace():
+    """Generated documentation must remain clean under git diff --check."""
+    import importlib.util
+    import sys
+
+    script = ROOT / 'scripts/generate_test_index.py'
+    spec = importlib.util.spec_from_file_location('generate_test_index', script)
+    assert spec is not None and spec.loader is not None
+    module = importlib.util.module_from_spec(spec)
+    sys.modules[spec.name] = module
+    try:
+        spec.loader.exec_module(module)
+    finally:
+        sys.modules.pop(spec.name, None)
+    rendered = module.render(module.collect())
+    offenders = [
+        (index, line)
+        for index, line in enumerate(rendered.splitlines(), start=1)
+        if line != line.rstrip()
+    ]
+    assert not offenders, offenders

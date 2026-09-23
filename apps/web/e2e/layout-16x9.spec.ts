@@ -36,34 +36,28 @@ const desktopViewports = [
 
 test.describe('16:9 layout guardrails', () => {
   for (const viewport of desktopViewports) {
-    test(
-      `core routes fit ${viewport.width}x${viewport.height} without horizontal overflow`,
-      async ({ page }, testInfo) => {
-        await page.setViewportSize(viewport)
+    test(`core routes fit ${viewport.width}x${viewport.height} without horizontal overflow`, async ({
+      page,
+    }, testInfo) => {
+      await page.setViewportSize(viewport)
 
-        for (const route of routes) {
-          await page.goto(route.path)
-          await expect(
-            page.getByRole('heading', { level: 1, name: route.heading }),
-          ).toBeVisible()
+      for (const route of routes) {
+        await page.goto(route.path)
+        await expect(page.getByRole('heading', { level: 1, name: route.heading })).toBeVisible()
 
-          const dimensions = await page.evaluate(() => ({
-            clientWidth: document.documentElement.clientWidth,
-            scrollWidth: document.documentElement.scrollWidth,
-          }))
+        const dimensions = await page.evaluate(() => ({
+          clientWidth: document.documentElement.clientWidth,
+          scrollWidth: document.documentElement.scrollWidth,
+        }))
 
-          expect(dimensions.scrollWidth).toBe(dimensions.clientWidth)
+        expect(dimensions.scrollWidth).toBe(dimensions.clientWidth)
 
-          await testInfo.attach(
-            `${route.screenshotName}-${viewport.width}x${viewport.height}`,
-            {
-              body: await page.screenshot(),
-              contentType: 'image/png',
-            },
-          )
-        }
-      },
-    )
+        await testInfo.attach(`${route.screenshotName}-${viewport.width}x${viewport.height}`, {
+          body: await page.screenshot(),
+          contentType: 'image/png',
+        })
+      }
+    })
   }
 
   /**

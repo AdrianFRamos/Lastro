@@ -1,6 +1,6 @@
 //! Cryptographic verification at the evidence-ingest boundary.
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_protocol::{
     crypto::{derive_station_id, verify_station_signature},
     event::StationEvent,
@@ -41,7 +41,8 @@ pub fn verify_agent_evidence_locally(
     let event_bytes = decode_base64_array::<276>("eventBytesBase64", &request.event_bytes_base64)?;
     let observed_rfid = decode_hex_array::<8>("observedRfidHex", &request.observed_rfid_hex)?;
     let station_pubkey33 = decode_hex_array::<33>("stationPubkeyHex", &request.station_pubkey_hex)?;
-    let station_signature64 = decode_hex_array::<64>("stationSignatureHex", &request.station_signature_hex)?;
+    let station_signature64 =
+        decode_hex_array::<64>("stationSignatureHex", &request.station_signature_hex)?;
 
     let event = StationEvent::decode(&event_bytes)
         .map_err(|error| ApiError::Validation(format!("invalid StationEvent: {error}")))?;
@@ -79,7 +80,9 @@ fn decode_hex_array<const N: usize>(name: &str, value: &str) -> Result<[u8; N], 
     }
     let bytes = hex::decode(value)
         .map_err(|_| ApiError::Validation(format!("{name} must be valid lowercase hex")))?;
-    bytes.try_into().map_err(|_| ApiError::Validation(format!("{name} has invalid length")))
+    bytes
+        .try_into()
+        .map_err(|_| ApiError::Validation(format!("{name} has invalid length")))
 }
 
 fn decode_base64_array<const N: usize>(name: &str, value: &str) -> Result<[u8; N], ApiError> {
@@ -93,9 +96,14 @@ fn decode_base64_array<const N: usize>(name: &str, value: &str) -> Result<[u8; N
         .decode(value)
         .map_err(|_| ApiError::Validation(format!("{name} must be canonical base64")))?;
     if BASE64.encode(&bytes) != value {
-        return Err(ApiError::Validation(format!("{name} must be canonical base64")));
+        return Err(ApiError::Validation(format!(
+            "{name} must be canonical base64"
+        )));
     }
     bytes.try_into().map_err(|bytes: Vec<u8>| {
-        ApiError::Validation(format!("{name} must decode to {N} bytes, got {}", bytes.len()))
+        ApiError::Validation(format!(
+            "{name} must decode to {N} bytes, got {}",
+            bytes.len()
+        ))
     })
 }

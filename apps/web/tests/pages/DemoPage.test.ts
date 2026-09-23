@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
     getAnimal: vi.fn(),
     getAnimalByRecovery: vi.fn(),
     getEvidencePackage: vi.fn(),
+    getCaptureAuthorizationChallenge: vi.fn(),
     createCapture: vi.fn(),
     getCapture: vi.fn(),
     getTransactionData: vi.fn(),
@@ -26,14 +27,22 @@ const mocks = vi.hoisted(() => ({
   },
   connect: vi.fn(),
   connectByName: vi.fn(),
+  signCaptureAuthorization: vi.fn(),
   walletChoices: [] as Array<{ name: string; address: string }>,
   submit: vi.fn(),
+  rebroadcast: vi.fn(),
+  getBlockHeight: vi.fn(),
+  getSignatureStatuses: vi.fn(),
 }))
 
 vi.mock('../../src/api/client', () => ({
   api: mocks.api,
   ApiClientError: class ApiClientError extends Error {
-    constructor(message: string, readonly status: number | null, readonly responseBody: string | null) {
+    constructor(
+      message: string,
+      readonly status: number | null,
+      readonly responseBody: string | null,
+    ) {
       super(message)
     }
   },
@@ -44,6 +53,7 @@ vi.mock('../../src/solana/wallet', () => ({
   connectFirstAvailableWallet: mocks.connect,
   connectWalletByName: mocks.connectByName,
   currentWalletAddress: () => mocks.walletAddress,
+  signCaptureAuthorization: mocks.signCaptureAuthorization,
   walletAddressToCustodianHex: (address: string) => {
     if (address === WALLET_A) return CUSTODIAN_A
     if (address === WALLET_B) return CUSTODIAN_B
@@ -54,6 +64,16 @@ vi.mock('../../src/solana/wallet', () => ({
 
 vi.mock('../../src/solana/transaction', () => ({
   submitLastroTransaction: mocks.submit,
+  rebroadcastSignedLastroTransaction: mocks.rebroadcast,
+}))
+
+vi.mock('../../src/solana/client', () => ({
+  solanaClient: {
+    rpc: {
+      getBlockHeight: mocks.getBlockHeight,
+      getSignatureStatuses: mocks.getSignatureStatuses,
+    },
+  },
 }))
 
 const unoriginated: AnimalProjection = {
@@ -85,7 +105,7 @@ const twoEventPackage = {
   animalId: vectors.animal_id_hex,
   events: [vectors.events.origin, vectors.events.transfer].map((event) => ({
     eventBytesBase64: eventBase64(event.event_bytes_hex),
-    observedRfidHex: vectors.rfid.a_hex,
+    observedRfidHex: vectors.rfid.a_canonical_hex,
     stationPubkeyHex: vectors.station.pubkey_compressed_hex,
     stationSignatureHex: event.station_signature_hex,
     txSignature: 'test-signature',
@@ -131,7 +151,24 @@ beforeEach(() => {
   mocks.api.getEvidencePackage.mockResolvedValue(twoEventPackage)
   mocks.connect.mockReset()
   mocks.connectByName.mockReset()
+  mocks.signCaptureAuthorization.mockReset()
+  mocks.signCaptureAuthorization.mockResolvedValue({
+    challengeId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    signatureBase64: btoa(String.fromCharCode(...new Uint8Array(64).fill(7))),
+  })
+  mocks.api.getCaptureAuthorizationChallenge.mockResolvedValue({
+    challengeId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    deploymentId: vectors.deployment_id_hex,
+    requiredSigner: WALLET_B,
+    messageBase64: btoa('test capture authorization'),
+    expiresAtUnix: 2_000_000_000,
+  })
   mocks.submit.mockReset()
+  mocks.rebroadcast.mockReset()
+  mocks.getBlockHeight.mockReset()
+  mocks.getSignatureStatuses.mockReset()
+  mocks.getBlockHeight.mockReturnValue({ send: async () => 1n })
+  mocks.getSignatureStatuses.mockReturnValue({ send: async () => ({ value: [null] }) })
 })
 
 describe('pages/DemoPage state machine', () => {
@@ -204,12 +241,75 @@ describe('pages/DemoPage state machine', () => {
     mocks.walletAddress = WALLET_B
     const wrapper = mountPage()
     await recover(wrapper, withCustodianB)
-    expect(wrapper.findAll('button').some((candidate) => candidate.text() === 'Run stale-custodian attempt')).toBe(false)
+    expect(
+      wrapper
+        .findAll('button')
+        .some((candidate) => candidate.text() === 'Run stale-custodian attempt'),
+    ).toBe(false)
 
     await refreshWallet(wrapper, WALLET_A)
     expect(button(wrapper, 'Run stale-custodian attempt').exists()).toBe(true)
     expect(button(wrapper, 'Transfer').attributes('disabled')).toBeDefined()
     expect(button(wrapper, 'Reidentify').attributes('disabled')).toBeDefined()
+    wrapper.unmount()
+  })
+
+  /**
+   * PURPOSE: Prove wallet control before reserving physical Station work.
+   * ARRANGE: Current custodian B requests a B->C transfer and the API issues one authorization challenge.
+   * ACTION: Start TRANSFER, sign the challenge, and stop immediately after the capture reservation call.
+   * ASSERT: challenge issuance and wallet proof both happen before createCapture, which receives that exact proof.
+   * FAILURE MEANS: an unauthenticated public client can enqueue physical Station work before proving custody authority.
+   */
+  it('authorizes the exact capture intent before reserving Station work', async () => {
+    mocks.walletAddress = WALLET_B
+    const challenge = {
+      challengeId: 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+      deploymentId: vectors.deployment_id_hex,
+      requiredSigner: WALLET_B,
+      messageBase64: btoa('test capture authorization'),
+      expiresAtUnix: 2_000_000_000,
+    }
+    const proof = {
+      challengeId: challenge.challengeId,
+      signatureBase64: btoa(String.fromCharCode(...new Uint8Array(64).fill(7))),
+    }
+    mocks.api.getCaptureAuthorizationChallenge.mockResolvedValueOnce(challenge)
+    mocks.signCaptureAuthorization.mockResolvedValueOnce(proof)
+    mocks.api.createCapture.mockRejectedValueOnce(new Error('reservation boundary reached'))
+
+    const wrapper = mountPage()
+    await recover(wrapper, withCustodianB)
+    await wrapper.get('input[aria-label="Next custodian wallet"]').setValue(WALLET_C)
+    await button(wrapper, 'Transfer').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.getCaptureAuthorizationChallenge).toHaveBeenCalledWith(
+      'TRANSFER',
+      withCustodianB.animalId,
+      CUSTODIAN_C,
+      null,
+    )
+    expect(mocks.signCaptureAuthorization).toHaveBeenCalledWith(challenge, {
+      action: 'TRANSFER',
+      animalId: withCustodianB.animalId,
+      nextCustodian: CUSTODIAN_C,
+      supersedeCaptureId: null,
+    })
+    expect(mocks.api.createCapture).toHaveBeenCalledWith(
+      'TRANSFER',
+      withCustodianB.animalId,
+      CUSTODIAN_C,
+      proof,
+      null,
+    )
+    expect(mocks.api.getCaptureAuthorizationChallenge.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.signCaptureAuthorization.mock.invocationCallOrder[0]!,
+    )
+    expect(mocks.signCaptureAuthorization.mock.invocationCallOrder[0]).toBeLessThan(
+      mocks.api.createCapture.mock.invocationCallOrder[0]!,
+    )
+    expect(wrapper.text()).toContain('reservation boundary reached')
     wrapper.unmount()
   })
 
@@ -249,6 +349,58 @@ describe('pages/DemoPage state machine', () => {
   })
 
   /**
+   * PURPOSE: Preserve the exact signed Solana transaction before an ambiguous RPC result.
+   * ARRANGE: The Station evidence is accepted, the wallet signs, and the transaction helper reports
+   *          the signed signature/wire through its pre-broadcast callback before simulating a lost RPC response.
+   * ACTION: Run TRANSFER and let the submit helper fail after invoking that callback.
+   * ASSERT: localStorage already contains the exact signature and signed wire, while API submission is not fabricated.
+   * FAILURE MEANS: an RPC timeout after signing can lose the only retryable copy and tempt the UI to create a second transaction.
+   */
+  it('persists signed transaction bytes before an ambiguous RPC send failure', async () => {
+    const pendingEventHash = '66'.repeat(32)
+    const transactionSignature = '8'.repeat(88)
+    const wireTransactionBase64 = btoa('signed-wire')
+    mocks.walletAddress = WALLET_B
+    const wrapper = mountPage()
+    await recover(wrapper, withCustodianB)
+    await wrapper.get('input[aria-label="Next custodian wallet"]').setValue(WALLET_C)
+
+    mocks.api.createCapture.mockResolvedValueOnce({
+      captureId: '44444444-4444-4444-4444-444444444444',
+      action: 'TRANSFER',
+      animalId: withCustodianB.animalId,
+      status: 'EVIDENCE_ACCEPTED',
+      eventHash: pendingEventHash,
+      eventStatus: 'EVIDENCE_ACCEPTED',
+      txSignature: null,
+    })
+    mocks.api.getTransactionData.mockResolvedValueOnce({ requiredSigner: WALLET_B })
+    mocks.submit.mockImplementationOnce(
+      async (
+        _transactionData: unknown,
+        _expectedIntent: unknown,
+        onSigned: (signed: { signature: string; wireTransactionBase64: string }) => void,
+      ) => {
+        onSigned({ signature: transactionSignature, wireTransactionBase64 })
+        throw new Error('RPC transport response lost after signing')
+      },
+    )
+
+    await button(wrapper, 'Transfer').trigger('click')
+    await flushPromises()
+
+    const stored = JSON.parse(
+      window.localStorage.getItem('lastro.pending-operation') ?? '{}',
+    ) as Record<string, unknown>
+    expect(stored.txSignature).toBe(transactionSignature)
+    expect(stored.wireTransactionBase64).toBe(wireTransactionBase64)
+    expect(stored.eventHash).toBe(pendingEventHash)
+    expect(mocks.api.submit).not.toHaveBeenCalled()
+    expect(wrapper.text()).toContain('RPC transport response lost after signing')
+    wrapper.unmount()
+  })
+
+  /**
    * ARRANGE: animal recovery fails because the API projection is unavailable.
    * ACTION: attempt recovery and render the page error boundary.
    * ASSERT: no animal state is fabricated and no canonical-success message appears.
@@ -281,7 +433,10 @@ describe('pages/DemoPage state machine', () => {
 
     expect(mocks.api.getAnimal).toHaveBeenCalledWith(withCustodianB.animalId)
     expect(mocks.api.getEvidencePackage).toHaveBeenCalledWith(withCustodianB.animalId)
-    expect(wrapper.get('input[aria-label="Visual recovery ID"]').element).toHaveProperty('value', withCustodianB.visualRecoveryId)
+    expect(wrapper.get('input[aria-label="Visual recovery ID"]').element).toHaveProperty(
+      'value',
+      withCustodianB.visualRecoveryId,
+    )
     expect(wrapper.findAll('[aria-label="Custody timeline"] li')).toHaveLength(2)
     expect(wrapper.text()).toContain(`Restored AnimalID ${withCustodianB.animalId}`)
     wrapper.unmount()
@@ -343,14 +498,18 @@ describe('pages/DemoPage state machine', () => {
       lastEventHash: pendingEventHash,
     }
     window.history.replaceState(null, '', `/demo?animalId=${withCustodianB.animalId}`)
-    window.localStorage.setItem('lastro.pending-operation', JSON.stringify({
-      animalId: withCustodianB.animalId,
-      captureId: '11111111-1111-1111-1111-111111111111',
-      action: 'TRANSFER',
-      nextCustodian: CUSTODIAN_C,
-      eventHash: pendingEventHash,
-      txSignature: transactionSignature,
-    }))
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({
+        animalId: withCustodianB.animalId,
+        captureId: '11111111-1111-1111-1111-111111111111',
+        action: 'TRANSFER',
+        nextCustodian: CUSTODIAN_C,
+        expectedToCustodian: CUSTODIAN_C,
+        eventHash: pendingEventHash,
+        txSignature: transactionSignature,
+      }),
+    )
     mocks.api.getAnimal.mockResolvedValueOnce(withCustodianB)
     mocks.api.getCapture.mockResolvedValueOnce({
       captureId: '11111111-1111-1111-1111-111111111111',
@@ -376,6 +535,195 @@ describe('pages/DemoPage state machine', () => {
   })
 
   /**
+   * PURPOSE: Retry an ambiguously sent transaction using the exact previously signed bytes.
+   * ARRANGE: localStorage contains the signature and signed wire; the first API verification says the
+   *          transaction is not confirmed yet, then succeeds after an exact rebroadcast.
+   * ACTION: Reload the pending operation.
+   * ASSERT: The same signature/wire is rebroadcast once and no wallet signing or new transaction data is requested.
+   * FAILURE MEANS: recovery can create a second transaction instead of replaying the immutable signed envelope.
+   */
+  it('reload rebroadcasts the exact remembered signed transaction when confirmation is initially absent', async () => {
+    const pendingEventHash = '88'.repeat(32)
+    const transactionSignature = '9'.repeat(88)
+    const wireTransactionBase64 = btoa('exact-signed-wire')
+    const finalized = { ...withCustodianB, eventSequence: 3, lastEventHash: pendingEventHash }
+    const { ApiClientError } = await import('../../src/api/client')
+
+    window.history.replaceState(null, '', `/demo?animalId=${withCustodianB.animalId}`)
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({
+        animalId: withCustodianB.animalId,
+        captureId: '55555555-5555-5555-5555-555555555555',
+        action: 'TRANSFER',
+        nextCustodian: CUSTODIAN_C,
+        expectedToCustodian: CUSTODIAN_C,
+        eventHash: pendingEventHash,
+        txSignature: transactionSignature,
+        wireTransactionBase64,
+      }),
+    )
+    mocks.api.getAnimal.mockResolvedValueOnce(withCustodianB)
+    mocks.api.getCapture.mockResolvedValueOnce({
+      captureId: '55555555-5555-5555-5555-555555555555',
+      action: 'TRANSFER',
+      animalId: withCustodianB.animalId,
+      status: 'EVIDENCE_ACCEPTED',
+      eventHash: pendingEventHash,
+      eventStatus: 'EVIDENCE_ACCEPTED',
+      txSignature: null,
+    })
+    mocks.api.submit
+      .mockRejectedValueOnce(
+        new ApiClientError(
+          'pending',
+          409,
+          JSON.stringify({
+            message: 'transaction is not a confirmed exact Lastro transaction for this event',
+          }),
+        ),
+      )
+      .mockResolvedValueOnce({ status: 'SUBMITTED', txSignature: transactionSignature })
+    mocks.rebroadcast.mockResolvedValueOnce(transactionSignature)
+    mocks.api.confirm.mockResolvedValueOnce(finalized)
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(mocks.rebroadcast).toHaveBeenCalledWith({
+      signature: transactionSignature,
+      wireTransactionBase64,
+    })
+    expect(mocks.submit).not.toHaveBeenCalled()
+    expect(mocks.api.getTransactionData).not.toHaveBeenCalled()
+    expect(mocks.api.submit).toHaveBeenCalledTimes(2)
+    expect(mocks.api.confirm).toHaveBeenCalledWith(pendingEventHash, transactionSignature)
+    wrapper.unmount()
+  })
+
+  /**
+   * ARRANGE: Restore an accepted capture with an expired blockhash, absent signature history and retained wire.
+   * ACTION: Ask the API to verify the transaction and check finalized height/signature status.
+   * ASSERT: Only the signed envelope is cleared; the capture and signed physical event remain.
+   * FAILURE MEANS: expiration can strand evidence or trigger an unsafe second physical read.
+   */
+  it('retains physical evidence while clearing only a provably expired signed envelope', async () => {
+    const eventHash = '88'.repeat(32)
+    const txSignature = '9'.repeat(88)
+    const { ApiClientError } = await import('../../src/api/client')
+    window.history.replaceState(null, '', `/demo?animalId=${withCustodianB.animalId}`)
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({
+        animalId: withCustodianB.animalId,
+        captureId: '55555555-5555-5555-5555-555555555555',
+        action: 'TRANSFER',
+        nextCustodian: CUSTODIAN_C,
+        expectedToCustodian: CUSTODIAN_C,
+        eventHash,
+        txSignature,
+        wireTransactionBase64: btoa('signed-wire'),
+        lastValidBlockHeight: '100',
+      }),
+    )
+    mocks.api.getAnimal.mockResolvedValueOnce(withCustodianB)
+    mocks.api.getCapture.mockResolvedValueOnce({
+      captureId: '55555555-5555-5555-5555-555555555555',
+      action: 'TRANSFER',
+      animalId: withCustodianB.animalId,
+      status: 'EVIDENCE_ACCEPTED',
+      eventHash,
+      eventStatus: 'EVIDENCE_ACCEPTED',
+      txSignature: null,
+    })
+    mocks.api.submit.mockRejectedValueOnce(
+      new ApiClientError(
+        'pending',
+        409,
+        JSON.stringify({
+          message: 'transaction is not a confirmed exact Lastro transaction for this event',
+        }),
+      ),
+    )
+    mocks.getBlockHeight.mockReturnValue({ send: async () => 101n })
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    const stored = JSON.parse(window.localStorage.getItem('lastro.pending-operation')!)
+    expect(stored.captureId).toBe('55555555-5555-5555-5555-555555555555')
+    expect(stored.eventHash).toBe(eventHash)
+    expect(stored.txSignature).toBeNull()
+    expect(stored.wireTransactionBase64).toBeNull()
+    expect(mocks.getSignatureStatuses).toHaveBeenCalledWith([txSignature], {
+      searchTransactionHistory: true,
+    })
+    expect(mocks.rebroadcast).not.toHaveBeenCalled()
+    wrapper.unmount()
+  })
+
+  /**
+   * ARRANGE: Restore an accepted REIDENTIFY capture that has not been signed on Solana.
+   * ACTION: Click the explicit Retry RFID scan control with the current custodian connected.
+   * ASSERT: The prior capture ID is bound to both the wallet challenge and reservation request.
+   * FAILURE MEANS: the page can silently reuse the wrong tag or replace unrelated evidence.
+   */
+  it('requests an explicitly signed same-action RFID rescan', async () => {
+    const captureId = '55555555-5555-5555-5555-555555555555'
+    const accepted = {
+      captureId,
+      action: 'REIDENTIFY',
+      animalId: withCustodianB.animalId,
+      status: 'EVIDENCE_ACCEPTED',
+      eventHash: '44'.repeat(32),
+      eventStatus: 'EVIDENCE_ACCEPTED',
+      txSignature: null,
+    }
+    mocks.walletAddress = WALLET_B
+    window.history.replaceState(null, '', `/demo?animalId=${withCustodianB.animalId}`)
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({
+        animalId: withCustodianB.animalId,
+        captureId,
+        action: 'REIDENTIFY',
+        nextCustodian: null,
+        expectedToCustodian: CUSTODIAN_B,
+        eventHash: accepted.eventHash,
+        txSignature: null,
+        wireTransactionBase64: null,
+      }),
+    )
+    mocks.api.getAnimal.mockResolvedValueOnce(withCustodianB)
+    mocks.api.getCapture.mockResolvedValueOnce(accepted).mockResolvedValueOnce(accepted)
+    mocks.api.createCapture.mockRejectedValueOnce(new Error('stopped before dispatch'))
+
+    const wrapper = mountPage()
+    await flushPromises()
+    await button(wrapper, 'Retry RFID scan').trigger('click')
+    await flushPromises()
+
+    expect(mocks.api.getCaptureAuthorizationChallenge).toHaveBeenCalledWith(
+      'REIDENTIFY',
+      withCustodianB.animalId,
+      null,
+      captureId,
+    )
+    expect(mocks.signCaptureAuthorization).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.objectContaining({ supersedeCaptureId: captureId }),
+    )
+    expect(mocks.api.createCapture).toHaveBeenCalledWith(
+      'REIDENTIFY',
+      withCustodianB.animalId,
+      null,
+      expect.anything(),
+      captureId,
+    )
+    wrapper.unmount()
+  })
+
+  /**
    * PURPOSE: Recover the narrower crash window after wallet broadcast but before the API has persisted SUBMITTED.
    * ARRANGE: localStorage has the broadcast signature while durable capture state still reports only EVIDENCE_ACCEPTED.
    * ACTION: Reload the page and let it re-register that same signature through confirmed RPC verification.
@@ -387,14 +735,18 @@ describe('pages/DemoPage state machine', () => {
     const transactionSignature = '6'.repeat(88)
     const finalized = { ...withCustodianB, eventSequence: 3, lastEventHash: pendingEventHash }
     window.history.replaceState(null, '', `/demo?animalId=${withCustodianB.animalId}`)
-    window.localStorage.setItem('lastro.pending-operation', JSON.stringify({
-      animalId: withCustodianB.animalId,
-      captureId: '22222222-2222-2222-2222-222222222222',
-      action: 'TRANSFER',
-      nextCustodian: CUSTODIAN_C,
-      eventHash: pendingEventHash,
-      txSignature: transactionSignature,
-    }))
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({
+        animalId: withCustodianB.animalId,
+        captureId: '22222222-2222-2222-2222-222222222222',
+        action: 'TRANSFER',
+        nextCustodian: CUSTODIAN_C,
+        expectedToCustodian: CUSTODIAN_C,
+        eventHash: pendingEventHash,
+        txSignature: transactionSignature,
+      }),
+    )
     mocks.api.getAnimal.mockResolvedValueOnce(withCustodianB)
     mocks.api.getCapture.mockResolvedValueOnce({
       captureId: '22222222-2222-2222-2222-222222222222',
@@ -405,7 +757,10 @@ describe('pages/DemoPage state machine', () => {
       eventStatus: 'EVIDENCE_ACCEPTED',
       txSignature: null,
     })
-    mocks.api.submit.mockResolvedValueOnce({ status: 'SUBMITTED', txSignature: transactionSignature })
+    mocks.api.submit.mockResolvedValueOnce({
+      status: 'SUBMITTED',
+      txSignature: transactionSignature,
+    })
     mocks.api.confirm.mockResolvedValueOnce(finalized)
 
     const wrapper = mountPage()
@@ -419,4 +774,58 @@ describe('pages/DemoPage state machine', () => {
     wrapper.unmount()
   })
 
+  /**
+   * PURPOSE: Pending-operation recovery must not depend on exporting an all-finalized evidence package.
+   * ARRANGE: the URL and localStorage identify a SUBMITTED transfer while the projection still reflects
+   *          the last finalized state.
+   * ACTION: mount the page and resume the durable capture.
+   * ASSERT: capture recovery begins before the evidence-package timeline is loaded.
+   * FAILURE MEANS: the backend's correct 409 for a non-finalized history can prevent reload recovery.
+   */
+  it('recovers a pending transfer before requesting the finalized evidence timeline', async () => {
+    const pendingEventHash = '77'.repeat(32)
+    const transactionSignature = '7'.repeat(88)
+    const finalized = {
+      ...withCustodianB,
+      currentCustodian: CUSTODIAN_C,
+      eventSequence: 3,
+      lastEventHash: pendingEventHash,
+    }
+    window.history.replaceState(null, '', `/demo?animalId=${withCustodianB.animalId}`)
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({
+        animalId: withCustodianB.animalId,
+        captureId: '33333333-3333-3333-3333-333333333333',
+        action: 'TRANSFER',
+        nextCustodian: CUSTODIAN_C,
+        expectedToCustodian: CUSTODIAN_C,
+        eventHash: pendingEventHash,
+        txSignature: transactionSignature,
+      }),
+    )
+    mocks.api.getAnimal.mockResolvedValueOnce(withCustodianB)
+    mocks.api.getCapture.mockResolvedValueOnce({
+      captureId: '33333333-3333-3333-3333-333333333333',
+      action: 'TRANSFER',
+      animalId: withCustodianB.animalId,
+      status: 'EVIDENCE_ACCEPTED',
+      eventHash: pendingEventHash,
+      eventStatus: 'SUBMITTED',
+      txSignature: transactionSignature,
+    })
+    mocks.api.confirm.mockResolvedValueOnce(finalized)
+    mocks.api.getEvidencePackage.mockResolvedValueOnce(twoEventPackage)
+
+    const wrapper = mountPage()
+    await flushPromises()
+
+    expect(mocks.api.getCapture).toHaveBeenCalledWith('33333333-3333-3333-3333-333333333333')
+    expect(mocks.api.getEvidencePackage).toHaveBeenCalled()
+    expect(mocks.api.getCapture.mock.invocationCallOrder[0]!).toBeLessThan(
+      mocks.api.getEvidencePackage.mock.invocationCallOrder[0]!,
+    )
+    expect(mocks.api.confirm).toHaveBeenCalledWith(pendingEventHash, transactionSignature)
+    wrapper.unmount()
+  })
 })

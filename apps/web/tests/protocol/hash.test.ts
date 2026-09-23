@@ -23,7 +23,9 @@ describe('protocol/hash', () => {
    * FAILURE MEANS: Station registration and evidence verification derive different identities.
    */
   it('station id matches the frozen compressed-key vector', async () => {
-    expect(hex(await stationId(bytes(vectors.station.pubkey_compressed_hex)))).toBe(vectors.station.station_id_hex)
+    expect(hex(await stationId(bytes(vectors.station.pubkey_compressed_hex)))).toBe(
+      vectors.station.station_id_hex,
+    )
   })
 
   /**
@@ -33,8 +35,10 @@ describe('protocol/hash', () => {
    * FAILURE MEANS: predecessor chaining cannot interoperate across layers.
    */
   it('event hash matches every frozen 276-byte StationEvent vector', async () => {
-    for (const name of ['origin', 'transfer', 'reidentify']) {
-      expect(hex(await eventHash(bytes(vectors.events[name].event_bytes_hex)))).toBe(vectors.events[name].event_hash_hex)
+    for (const name of ['origin', 'transfer', 'reidentify'] as const) {
+      expect(hex(await eventHash(bytes(vectors.events[name].event_bytes_hex)))).toBe(
+        vectors.events[name].event_hash_hex,
+      )
     }
   })
 
@@ -45,6 +49,8 @@ describe('protocol/hash', () => {
    * FAILURE MEANS: reader-specific representation can contaminate canonical identity.
    */
   it('does not hash reader text or framing as if it were canonical RFID bytes', async () => {
-    await expect(rfidHash(new TextEncoder().encode('8000130000000001'))).rejects.toThrow('exactly 8 bytes')
+    await expect(rfidHash(new TextEncoder().encode('8000130000000001'))).rejects.toThrow(
+      'exactly 8 bytes',
+    )
   })
 })

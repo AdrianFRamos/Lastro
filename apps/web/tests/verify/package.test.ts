@@ -9,8 +9,9 @@ function validPackage() {
 }
 
 async function localStatuses(value: unknown) {
-  return (await verifyEvidencePackage(parseEvidencePackage(value))).layers
-    .filter((layer) => layer.layer !== 'ON_CHAIN_STATE')
+  return (await verifyEvidencePackage(parseEvidencePackage(value))).layers.filter(
+    (layer) => layer.layer !== 'ON_CHAIN_STATE',
+  )
 }
 
 describe('verify/evidence-package local verification', () => {
@@ -22,8 +23,14 @@ describe('verify/evidence-package local verification', () => {
    */
   it('valid frozen package passes every local verification layer before RPC', async () => {
     const result = await verifyEvidencePackage(validPackage())
-    expect(result.layers.filter((layer) => layer.layer !== 'ON_CHAIN_STATE').every((layer) => layer.status === 'VALID')).toBe(true)
-    expect(result.layers.find((layer) => layer.layer === 'ON_CHAIN_STATE')?.status).toBe('NOT_CHECKED')
+    expect(
+      result.layers
+        .filter((layer) => layer.layer !== 'ON_CHAIN_STATE')
+        .every((layer) => layer.status === 'VALID'),
+    ).toBe(true)
+    expect(result.layers.find((layer) => layer.layer === 'ON_CHAIN_STATE')?.status).toBe(
+      'NOT_CHECKED',
+    )
     expect(result.valid).toBe(false)
   })
 

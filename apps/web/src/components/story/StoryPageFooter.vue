@@ -34,7 +34,7 @@ defineProps<{
   margin: 0 0 12px;
   color: var(--proof);
   font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: .16em;
+  letter-spacing: 0.16em;
 }
 
 .story-page-footer h2 {
@@ -42,7 +42,7 @@ defineProps<{
   margin: 0;
   font-size: clamp(26px, 2.6vw, 38px);
   line-height: 1.08;
-  letter-spacing: -.03em;
+  letter-spacing: -0.03em;
 }
 
 .story-page-footer__link {

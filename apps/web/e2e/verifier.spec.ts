@@ -10,9 +10,15 @@ import {
 } from './support/system'
 
 test.describe('Independent browser verifier', () => {
-  test.skip(requireFullStack, 'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment')
+  test.skip(
+    requireFullStack,
+    'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment',
+  )
 
-  test('exported package from a real completed flow verifies all five layers', async ({ page, system }) => {
+  test('exported package from a real completed flow verifies all five layers', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove portable evidence independently reproduces the complete live system validity result.
     // ARRANGE: Complete ORIGIN, A->B, REIDENTIFY, and B->C through the browser using two physical RFID observations.
     await page.goto('/demo')
@@ -43,7 +49,10 @@ test.describe('Independent browser verifier', () => {
     // FAILURE MEANS: a valid completed Lastro history cannot be independently reproduced from portable evidence and canonical state.
   })
 
-  test('one-byte mutation of signed event data makes the verifier explicitly INVALID', async ({ page, system }) => {
+  test('one-byte mutation of signed event data makes the verifier explicitly INVALID', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove one-byte tampering is detected locally without trusting any backend verdict.
     // ARRANGE: Create one valid finalized ORIGIN package and flip one byte inside its signed StationEvent while retaining signature/key metadata.
     await page.goto('/demo')
@@ -62,14 +71,24 @@ test.describe('Independent browser verifier', () => {
     })
 
     // ASSERT: At least one cryptographic/integrity layer and the overall result become explicitly INVALID.
-    await expect(page.getByLabel('Verification result').getByText(/— INVALID/).first()).toBeVisible()
+    await expect(
+      page
+        .getByLabel('Verification result')
+        .getByText(/— INVALID/)
+        .first(),
+    ).toBeVisible()
     await expect(page.getByText('Overall: INVALID')).toBeVisible()
-    await expect(page.getByText('Evidence is invalid before canonical Solana comparison.')).toBeVisible()
+    await expect(
+      page.getByText('Evidence is invalid before canonical Solana comparison.'),
+    ).toBeVisible()
 
     // FAILURE MEANS: signed evidence bytes can change without invalidating the portable proof.
   })
 
-  test('local-file verification continues when the Lastro evidence API is unavailable', async ({ page, system }) => {
+  test('local-file verification continues when the Lastro evidence API is unavailable', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove independent verification does not require Lastro API availability after the EvidencePackage has been exported.
     // ARRANGE: Finalize one ORIGIN, retain its package locally, then block the evidence-package HTTP endpoint in the verifier page.
     await page.goto('/demo')
@@ -104,8 +123,14 @@ test.describe('Independent browser verifier', () => {
   })
 })
 
-async function expectVerificationLayer(page: import('@playwright/test').Page, label: string, status: 'VALID' | 'INVALID'): Promise<void> {
-  await expect(page.getByLabel('Verification result').locator('li').filter({ hasText: label })).toContainText(`— ${status}`)
+async function expectVerificationLayer(
+  page: import('@playwright/test').Page,
+  label: string,
+  status: 'VALID' | 'INVALID',
+): Promise<void> {
+  await expect(
+    page.getByLabel('Verification result').locator('li').filter({ hasText: label }),
+  ).toContainText(`— ${status}`)
 }
 
 function mutateSignedEventByte(pkg: EvidencePackageDto, offset: number): EvidencePackageDto {
@@ -113,8 +138,9 @@ function mutateSignedEventByte(pkg: EvidencePackageDto, offset: number): Evidenc
   const first = copy.events[0]
   if (!first) throw new Error('EvidencePackage contains no events to tamper')
   const raw = Buffer.from(first.eventBytesBase64, 'base64')
-  if (raw.length !== 276 || offset < 0 || offset >= raw.length) throw new Error('Tamper offset is outside StationEvent')
-  raw[offset] ^= 0x01
+  if (raw.length !== 276 || offset < 0 || offset >= raw.length)
+    throw new Error('Tamper offset is outside StationEvent')
+  raw[offset] = raw[offset]! ^ 0x01
   first.eventBytesBase64 = raw.toString('base64')
   return copy
 }

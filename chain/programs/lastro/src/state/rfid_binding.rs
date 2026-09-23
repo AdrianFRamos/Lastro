@@ -4,8 +4,8 @@
 //! RETIRED and creates a new ACTIVE account. Therefore an RFID that ever participated
 //! in canonical history cannot be silently reused for another AnimalID.
 
-use anchor_lang::prelude::*;
 use crate::constants::{RFID_STATUS_ACTIVE, RFID_STATUS_RETIRED};
+use anchor_lang::prelude::*;
 
 #[account]
 pub struct RfidBinding {
@@ -17,6 +17,10 @@ pub struct RfidBinding {
 
 impl RfidBinding {
     pub const SPACE: usize = 8 + 32 + 32 + 1 + 1;
-    pub fn is_active(&self) -> bool { self.status == RFID_STATUS_ACTIVE }
-    pub fn retire(&mut self) { self.status = RFID_STATUS_RETIRED; }
+    pub fn is_active(&self) -> bool {
+        self.status == RFID_STATUS_ACTIVE
+    }
+    pub fn retire(&mut self) {
+        self.status = RFID_STATUS_RETIRED;
+    }
 }

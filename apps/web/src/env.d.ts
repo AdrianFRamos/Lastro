@@ -5,6 +5,8 @@ interface ImportMetaEnv {
   readonly VITE_SOLANA_RPC_URL: string
   readonly VITE_SOLANA_CHAIN: string
   readonly VITE_LASTRO_PROGRAM_ID: string
+  readonly VITE_LASTRO_DEPLOYMENT_ID_HEX: string
+  readonly VITE_LASTRO_AUTHORITY?: string
 }
 
 interface ImportMeta {

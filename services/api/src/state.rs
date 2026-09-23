@@ -4,9 +4,9 @@
 //! are behind `Arc`. Required dependencies are provided through Axum `State`; do
 //! not hide mandatory services in globals or optional request extensions.
 
-use std::sync::Arc;
-use sqlx::PgPool;
 use crate::{config::AppConfig, solana::rpc::SolanaRpc};
+use sqlx::PgPool;
+use std::sync::Arc;
 
 #[derive(Clone)]
 pub struct AppState {

@@ -13,10 +13,19 @@ fn valid_secp_over_exact_event_is_accepted() {
     h.initialize();
     let flow = h.flow([0xc1; 32]);
     // ACTION: Execute the exact two-instruction envelope.
-    let result = send_event(&mut h.svm, &flow.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &flow.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: Precompile and Lastro both accept and create canonical state.
     assert_success(result);
-    assert_eq!(animal_state(&h.svm, &h.deployment_id, &flow.animal_id).last_event_hash, flow.origin.event_hash());
+    assert_eq!(
+        animal_state(&h.svm, &h.deployment_id, &flow.animal_id).last_event_hash,
+        flow.origin.event_hash()
+    );
     // FAILURE MEANS: The Station→chain happy path would be broken.
 }
 
@@ -32,7 +41,13 @@ fn missing_secp_instruction_fails() {
     let result = send_event_with_envelope(&mut h.svm, vec![lastro_ix], &h.wallet_a);
     // ASSERT: Station-proof validation fails and state does not exist.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: Backend/wallet could fabricate a transition without a Station signature.
 }
 
@@ -46,12 +61,23 @@ fn wrong_station_pubkey_fails() {
     let k2 = signing_key_from_small_scalar(2);
     let k2_pub = compressed_pubkey(&k2);
     let lastro_ix = build_lastro_instruction(&flow.origin);
-    let secp_ix = build_secp_instruction(&flow.origin.encode(), &k2, &k2_pub, SecpDescriptor::default());
+    let secp_ix = build_secp_instruction(
+        &flow.origin.encode(),
+        &k2,
+        &k2_pub,
+        SecpDescriptor::default(),
+    );
     // ACTION: Execute valid Secp for K2 + Lastro configured for K1.
     let result = send_event_with_envelope(&mut h.svm, vec![secp_ix, lastro_ix], &h.wallet_a);
     // ASSERT: Precompile may accept K2, but Lastro rejects key mismatch; no state is created.
     assert_failure_contains(result, "InvalidStationProof");
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: Any Station could operate the deployment.
 }
 
@@ -60,10 +86,22 @@ fn signature_and_public_key_descriptor_offsets_and_indexes_are_exact() {
     // PURPOSE: Every descriptor field locating signature/key bytes is part of the frozen Station proof envelope.
     // ARRANGE: Build four otherwise-valid ORIGIN envelopes, changing one signature/key offset/index field at a time.
     let variants = [
-        SecpDescriptor { signature_offset: SECP_SIGNATURE_OFFSET + 1, ..SecpDescriptor::default() },
-        SecpDescriptor { signature_instruction_index: 1, ..SecpDescriptor::default() },
-        SecpDescriptor { public_key_offset: SECP_PUBLIC_KEY_OFFSET + 1, ..SecpDescriptor::default() },
-        SecpDescriptor { public_key_instruction_index: 1, ..SecpDescriptor::default() },
+        SecpDescriptor {
+            signature_offset: SECP_SIGNATURE_OFFSET + 1,
+            ..SecpDescriptor::default()
+        },
+        SecpDescriptor {
+            signature_instruction_index: 1,
+            ..SecpDescriptor::default()
+        },
+        SecpDescriptor {
+            public_key_offset: SECP_PUBLIC_KEY_OFFSET + 1,
+            ..SecpDescriptor::default()
+        },
+        SecpDescriptor {
+            public_key_instruction_index: 1,
+            ..SecpDescriptor::default()
+        },
     ];
 
     for (index, descriptor) in variants.into_iter().enumerate() {
@@ -81,7 +119,13 @@ fn signature_and_public_key_descriptor_offsets_and_indexes_are_exact() {
         let result = send_event_with_envelope(&mut h.svm, vec![secp, lastro_ix], &h.wallet_a);
         // ASSERT: Every field deviation fails atomically and creates no AnimalState.
         assert_failure(result);
-        assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+        assert!(
+            account_data(
+                &h.svm,
+                &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+            )
+            .is_none()
+        );
     }
     // FAILURE MEANS: A client could relocate signature/key bytes or reference another instruction.
 }
@@ -95,13 +139,23 @@ fn signature_over_other_276_bytes_fails() {
     let flow1 = h.flow([0xc4; 32]);
     let flow2 = h.flow([0xc5; 32]);
     let signature_e1 = low_s_signature(&h.station_signing_key, &flow1.origin.encode());
-    let secp = build_secp_instruction_with_signature(signature_e1, &h.station_pubkey33, SecpDescriptor::default());
+    let secp = build_secp_instruction_with_signature(
+        signature_e1,
+        &h.station_pubkey33,
+        SecpDescriptor::default(),
+    );
     let lastro_ix = build_lastro_instruction(&flow2.origin);
     // ACTION: Execute signature(E1) with Lastro(E2).
     let result = send_event_with_envelope(&mut h.svm, vec![secp, lastro_ix], &h.wallet_a);
     // ASSERT: The runtime precompile rejects the detached signature; E2 state is absent.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow2.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow2.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: A detached signature could authorize a different event.
 }
 
@@ -109,18 +163,35 @@ fn signature_over_other_276_bytes_fails() {
 fn message_offset_one_byte_wrong_fails() {
     // PURPOSE: Offset is part of envelope security.
     // ARRANGE: Correct ORIGIN transaction with descriptor offset changed by +1 and -1 in separate fresh harnesses.
-    for offset in [STATION_EVENT_OFFSET_IN_ANCHOR_IX - 1, STATION_EVENT_OFFSET_IN_ANCHOR_IX + 1] {
+    for offset in [
+        STATION_EVENT_OFFSET_IN_ANCHOR_IX - 1,
+        STATION_EVENT_OFFSET_IN_ANCHOR_IX + 1,
+    ] {
         let mut h = Harness::new();
         h.initialize();
         let flow = h.flow([offset as u8; 32]);
-        let descriptor = SecpDescriptor { message_offset: offset, ..SecpDescriptor::default() };
-        let secp = build_secp_instruction(&flow.origin.encode(), &h.station_signing_key, &h.station_pubkey33, descriptor);
+        let descriptor = SecpDescriptor {
+            message_offset: offset,
+            ..SecpDescriptor::default()
+        };
+        let secp = build_secp_instruction(
+            &flow.origin.encode(),
+            &h.station_signing_key,
+            &h.station_pubkey33,
+            descriptor,
+        );
         let lastro_ix = build_lastro_instruction(&flow.origin);
         // ACTION: Execute each malformed descriptor.
         let result = send_event_with_envelope(&mut h.svm, vec![secp, lastro_ix], &h.wallet_a);
         // ASSERT: Precompile/Lastro rejects it and no state is created.
         assert_failure(result);
-        assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+        assert!(
+            account_data(
+                &h.svm,
+                &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+            )
+            .is_none()
+        );
     }
     // FAILURE MEANS: The builder could point to an incorrect substring without detection.
 }
@@ -133,14 +204,28 @@ fn message_length_275_or_277_fails() {
         let mut h = Harness::new();
         h.initialize();
         let flow = h.flow([length as u8; 32]);
-        let descriptor = SecpDescriptor { message_length: length, ..SecpDescriptor::default() };
-        let secp = build_secp_instruction(&flow.origin.encode(), &h.station_signing_key, &h.station_pubkey33, descriptor);
+        let descriptor = SecpDescriptor {
+            message_length: length,
+            ..SecpDescriptor::default()
+        };
+        let secp = build_secp_instruction(
+            &flow.origin.encode(),
+            &h.station_signing_key,
+            &h.station_pubkey33,
+            descriptor,
+        );
         let lastro_ix = build_lastro_instruction(&flow.origin);
         // ACTION: Execute malformed-length envelope.
         let result = send_event_with_envelope(&mut h.svm, vec![secp, lastro_ix], &h.wallet_a);
         // ASSERT: Both malformed lengths fail and create no state.
         assert_failure(result);
-        assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+        assert!(
+            account_data(
+                &h.svm,
+                &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+            )
+            .is_none()
+        );
     }
     // FAILURE MEANS: A truncated/extended event could be accepted.
 }
@@ -152,14 +237,28 @@ fn wrong_instruction_index_fails() {
     let mut h = Harness::new();
     h.initialize();
     let flow = h.flow([0xc8; 32]);
-    let descriptor = SecpDescriptor { message_instruction_index: 0, ..SecpDescriptor::default() };
-    let secp = build_secp_instruction(&flow.origin.encode(), &h.station_signing_key, &h.station_pubkey33, descriptor);
+    let descriptor = SecpDescriptor {
+        message_instruction_index: 0,
+        ..SecpDescriptor::default()
+    };
+    let secp = build_secp_instruction(
+        &flow.origin.encode(),
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        descriptor,
+    );
     let lastro_ix = build_lastro_instruction(&flow.origin);
     // ACTION: Execute.
     let result = send_event_with_envelope(&mut h.svm, vec![secp, lastro_ix], &h.wallet_a);
     // ASSERT: Runtime/Lastro rejects it and state remains absent.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: An attacker could supply a signed message outside the processed instruction.
 }
 
@@ -176,7 +275,13 @@ fn secp_after_lastro_fails_when_program_requires_expected_order() {
     let result = send_event_with_envelope(&mut h.svm, envelope, &h.wallet_a);
     // ASSERT: It fails and does not create state.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: Different clients could create semantically divergent envelopes.
 }
 
@@ -189,13 +294,20 @@ fn high_s_signature_is_rejected_by_runtime_precompile() {
     let flow = h.flow([0xca; 32]);
     let low = low_s_signature(&h.station_signing_key, &flow.origin.encode());
     let high = high_s_from_low_s(low);
-    let secp = build_secp_instruction_with_signature(high, &h.station_pubkey33, SecpDescriptor::default());
+    let secp =
+        build_secp_instruction_with_signature(high, &h.station_pubkey33, SecpDescriptor::default());
     let lastro_ix = build_lastro_instruction(&flow.origin);
     // ACTION: Execute Secp256r1 + Lastro.
     let result = send_event_with_envelope(&mut h.svm, vec![secp, lastro_ix], &h.wallet_a);
     // ASSERT: Runtime rejects high-S and Lastro does not advance state.
     assert_failure(result);
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: Host could accept evidence that the chain will never accept.
 }
 
@@ -212,6 +324,12 @@ fn extra_instruction_fails_frozen_two_instruction_envelope() {
     let result = send_event_with_envelope(&mut h.svm, envelope, &h.wallet_a);
     // ASSERT: Lastro rejects instruction 2 existence and no state is committed.
     assert_failure_contains(result, "InvalidStationProof");
-    assert!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).is_none());
+    assert!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .is_none()
+    );
     // FAILURE MEANS: A client could alter the signed transaction envelope without detection.
 }

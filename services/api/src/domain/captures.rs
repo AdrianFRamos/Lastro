@@ -21,4 +21,10 @@
 //! Expired/cancelled/consumed captures never accept evidence.
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CaptureStatus { Pending, Dispatched, EvidenceAccepted, Expired, Cancelled }
+pub enum CaptureStatus {
+    Pending,
+    Dispatched,
+    EvidenceAccepted,
+    Expired,
+    Cancelled,
+}

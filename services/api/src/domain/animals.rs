@@ -13,8 +13,8 @@
 //! - both identifiers unavailable: return UNRESOLVED; do not infer identity from
 //!   operator guess, location or other metadata.
 
-use rand::RngCore;
 use lastro_protocol::ids::AnimalId;
+use rand::RngCore;
 
 pub fn generate_animal_id() -> AnimalId {
     let mut out = [0u8; 32];

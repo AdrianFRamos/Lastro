@@ -1,3 +1,4 @@
+import type { Base64EncodedWireTransaction } from '@solana/kit'
 import { beforeEach, describe, expect, it } from 'vitest'
 import {
   clearPendingOperation,
@@ -6,15 +7,19 @@ import {
   type PendingOperation,
 } from '../../src/demo/pendingOperation'
 
-const TX_SIGNATURE = '2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2'
+const TX_SIGNATURE =
+  '2AXDGYSE4f2sz7tvMMzyHvUfcoJmxudvdhBcmiUSo6ijwfYmfZYsKRxboQMPh3R4kUhXRVdtSXFXMheka4Rc4P2'
 
 const operation: PendingOperation = {
   animalId: '11'.repeat(32),
   captureId: '00112233-4455-6677-8899-aabbccddeeff',
   action: 'TRANSFER',
   nextCustodian: '22'.repeat(32),
+  expectedToCustodian: '22'.repeat(32),
   eventHash: '33'.repeat(32),
   txSignature: TX_SIGNATURE,
+  wireTransactionBase64: 'AQIDBA==' as Base64EncodedWireTransaction,
+  lastValidBlockHeight: '12345',
 }
 
 beforeEach(() => {
@@ -44,7 +49,10 @@ describe('demo/pendingOperation', () => {
    * FAILURE MEANS: attacker- or corruption-controlled localStorage can steer capture/event recovery with invalid identifiers.
    */
   it('fails closed and removes malformed local storage', () => {
-    window.localStorage.setItem('lastro.pending-operation', JSON.stringify({ ...operation, eventHash: 'not-a-hash' }))
+    window.localStorage.setItem(
+      'lastro.pending-operation',
+      JSON.stringify({ ...operation, eventHash: 'not-a-hash' }),
+    )
     expect(readPendingOperation()).toBeNull()
     expect(window.localStorage.getItem('lastro.pending-operation')).toBeNull()
   })
@@ -60,11 +68,15 @@ describe('demo/pendingOperation', () => {
       { ...operation, captureId: 'x'.repeat(4096) },
       { ...operation, txSignature: 'not-base58' },
       { ...operation, txSignature: '1'.repeat(89) },
+      { ...operation, expectedToCustodian: 'not-a-custodian' },
+      { ...operation, wireTransactionBase64: 'not canonical base64' },
+      { ...operation, wireTransactionBase64: btoa('x'.repeat(1233)) },
+      { ...operation, lastValidBlockHeight: '-1' },
+      { ...operation, lastValidBlockHeight: 'not-a-height' },
     ]) {
       window.localStorage.setItem('lastro.pending-operation', JSON.stringify(corrupted))
       expect(readPendingOperation()).toBeNull()
       expect(window.localStorage.getItem('lastro.pending-operation')).toBeNull()
     }
   })
-
 })

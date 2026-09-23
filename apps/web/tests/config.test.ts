@@ -5,11 +5,14 @@ const validEnvironment = {
   VITE_SOLANA_RPC_URL: 'https://rpc.lastro.example/path?cluster=demo',
   VITE_SOLANA_CHAIN: 'solana:devnet',
   VITE_LASTRO_PROGRAM_ID: 'Vote111111111111111111111111111111111111111',
+  VITE_LASTRO_DEPLOYMENT_ID_HEX: 'd0'.repeat(32),
+  VITE_LASTRO_AUTHORITY: 'Vote111111111111111111111111111111111111111',
 } as const
 
 async function loadConfig(overrides: Partial<Record<keyof typeof validEnvironment, string>> = {}) {
   vi.resetModules()
-  for (const [name, value] of Object.entries({ ...validEnvironment, ...overrides })) vi.stubEnv(name, value)
+  for (const [name, value] of Object.entries({ ...validEnvironment, ...overrides }))
+    vi.stubEnv(name, value)
   return (await import('../src/config')).webConfig
 }
 
@@ -22,15 +25,24 @@ describe('public web deployment configuration', () => {
   /**
    * ARRANGE: start from a complete valid VITE_* environment and remove each required variable independently.
    * ACTION: reset the module cache and import src/config.ts for every case.
-   * ASSERT: VITE_API_BASE_URL, VITE_SOLANA_RPC_URL, VITE_SOLANA_CHAIN and VITE_LASTRO_PROGRAM_ID
-   *         each fail closed before API/RPC/wallet clients can be constructed.
+   * ASSERT: every public API/RPC/chain/program/deployment variable fails closed independently.
+   *         No browser client can start with an ambiguous deployment identity.
    * FAILURE MEANS: browser can silently target an unintended deployment or program.
    */
   it('rejects every missing required VITE deployment variable independently', async () => {
     for (const name of Object.keys(validEnvironment) as Array<keyof typeof validEnvironment>) {
-      await expect(loadConfig({ [name]: '' })).rejects.toThrow(`Missing required public build configuration: ${name}`)
+      if (name === 'VITE_LASTRO_AUTHORITY') continue
+      await expect(loadConfig({ [name]: '' })).rejects.toThrow(
+        `Missing required public build configuration: ${name}`,
+      )
       vi.unstubAllEnvs()
     }
+  })
+
+  it('fails closed for canonical verification when no independent authority anchor is supplied', async () => {
+    await expect(loadConfig({ VITE_LASTRO_AUTHORITY: '' })).resolves.toMatchObject({
+      lastroAuthority: null,
+    })
   })
 
   /**
@@ -41,7 +53,12 @@ describe('public web deployment configuration', () => {
    */
   it('rejects malformed or unsupported API and RPC URL schemes', async () => {
     for (const field of ['VITE_API_BASE_URL', 'VITE_SOLANA_RPC_URL'] as const) {
-      for (const value of ['not a url', 'file:///tmp/lastro', 'ws://rpc.example', 'ftp://rpc.example']) {
+      for (const value of [
+        'not a url',
+        'file:///tmp/lastro',
+        'ws://rpc.example',
+        'ftp://rpc.example',
+      ]) {
         await expect(loadConfig({ [field]: value })).rejects.toThrow()
         vi.unstubAllEnvs()
       }
@@ -66,7 +83,24 @@ describe('public web deployment configuration', () => {
       )
       vi.unstubAllEnvs()
     }
-    await expect(loadConfig({ VITE_SOLANA_CHAIN: 'solana:custom-demo' })).resolves.toMatchObject({ solanaChain: 'solana:custom-demo' })
+    await expect(loadConfig({ VITE_SOLANA_CHAIN: 'solana:custom-demo' })).resolves.toMatchObject({
+      solanaChain: 'solana:custom-demo',
+    })
+  })
+
+  /**
+   * ARRANGE: use malformed deployment identifiers that are not canonical lowercase 32-byte hex.
+   * ACTION: load browser configuration.
+   * ASSERT: configuration rejects them before transaction validation can trust the deployment anchor.
+   * FAILURE MEANS: user intent cannot be bound to one independently configured deployment.
+   */
+  it('requires a canonical lowercase 32-byte deployment id', async () => {
+    for (const value of ['abc', 'AA'.repeat(32), '00'.repeat(31), 'gg'.repeat(32)]) {
+      await expect(loadConfig({ VITE_LASTRO_DEPLOYMENT_ID_HEX: value })).rejects.toThrow(
+        'VITE_LASTRO_DEPLOYMENT_ID_HEX must be lowercase 32-byte hex',
+      )
+      vi.unstubAllEnvs()
+    }
   })
 
   /**
@@ -81,6 +115,8 @@ describe('public web deployment configuration', () => {
       solanaRpcUrl: validEnvironment.VITE_SOLANA_RPC_URL,
       solanaChain: validEnvironment.VITE_SOLANA_CHAIN,
       lastroProgramId: validEnvironment.VITE_LASTRO_PROGRAM_ID,
+      lastroDeploymentId: validEnvironment.VITE_LASTRO_DEPLOYMENT_ID_HEX,
+      lastroAuthority: validEnvironment.VITE_LASTRO_AUTHORITY,
     })
   })
 
@@ -94,11 +130,20 @@ describe('public web deployment configuration', () => {
     const config = await loadConfig()
     expect(Object.keys(validEnvironment).sort()).toEqual([
       'VITE_API_BASE_URL',
+      'VITE_LASTRO_AUTHORITY',
+      'VITE_LASTRO_DEPLOYMENT_ID_HEX',
       'VITE_LASTRO_PROGRAM_ID',
       'VITE_SOLANA_CHAIN',
       'VITE_SOLANA_RPC_URL',
     ])
-    expect(Object.keys(config).sort()).toEqual(['apiBaseUrl', 'lastroProgramId', 'solanaChain', 'solanaRpcUrl'])
+    expect(Object.keys(config).sort()).toEqual([
+      'apiBaseUrl',
+      'lastroAuthority',
+      'lastroDeploymentId',
+      'lastroProgramId',
+      'solanaChain',
+      'solanaRpcUrl',
+    ])
     expect(JSON.stringify(config)).not.toMatch(/token|secret|private.?key|database|password/i)
   })
 })

@@ -2,11 +2,11 @@ use std::time::Duration;
 
 use bytes::Bytes;
 use lastro_protocol::{
+    Action, StationEvent,
     crypto::{derive_station_id, verify_station_signature},
     rfid::hash_canonical_rfid,
-    Action, StationEvent,
 };
-use tokio::time::sleep;
+use tokio::time::{sleep, timeout};
 
 const MAX_RETRY_BACKOFF: Duration = Duration::from_secs(30);
 
@@ -15,63 +15,101 @@ use crate::{
     command::StationCommand,
     error::AgentError,
     serial::{
-        frame::{Frame, MessageType},
-        payload::{decode_error, decode_event_ready, encode_ack, encode_command, AckPayload, EventReadyPayload},
         StationTransport,
+        frame::{Frame, MessageType},
+        payload::{
+            AckPayload, EventReadyPayload, decode_error, decode_event_ready, encode_ack,
+            encode_command,
+        },
     },
-    spool::{model::{OutboxRow, OutboxState}, Spool},
+    spool::{
+        Spool,
+        model::{OutboxRow, OutboxState},
+    },
 };
 
 /// Run one Station capture at a time. Evidence reaches durable LOCAL state before ACK or HTTP.
 pub async fn run<T: StationTransport>(
     mut transport: T,
-    spool: Spool,
-    api: ApiClient,
+    spool: &Spool,
+    api: &ApiClient,
     expected_station_pubkey33: [u8; 33],
     poll_interval: Duration,
+    station_response_timeout: Duration,
 ) -> Result<(), AgentError> {
-    replay_durable_local_acks(&mut transport, &spool, &expected_station_pubkey33).await?;
+    replay_durable_acks(&mut transport, spool, &expected_station_pubkey33).await?;
     loop {
-        if retry_pending_once(&spool, &api, poll_interval).await? {
-            sleep(poll_interval).await;
-            continue;
+        match retry_pending_once(spool, api, poll_interval).await {
+            Ok(true) => {
+                sleep(poll_interval).await;
+                continue;
+            }
+            Ok(false) => {}
+            Err(AgentError::Api(message)) => {
+                tracing::warn!(error = %message, "Agent API retry pass failed transiently; retrying");
+                sleep(poll_interval).await;
+                continue;
+            }
+            Err(error) => return Err(error),
         }
 
-        let Some(command) = api.poll_command().await? else {
+        let command = match api.poll_command().await {
+            Ok(command) => command,
+            Err(AgentError::Api(message)) => {
+                tracing::warn!(error = %message, "Agent command poll failed transiently; retrying");
+                sleep(poll_interval).await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let Some(command) = command else {
             sleep(poll_interval).await;
             continue;
         };
-        process_capture(
+        match process_capture(
             &mut transport,
-            &spool,
-            &api,
+            spool,
+            api,
             &expected_station_pubkey33,
+            station_response_timeout,
             &command,
         )
-        .await?;
+        .await
+        {
+            Ok(()) => {}
+            Err(AgentError::Serial(message)) | Err(AgentError::Station(message)) => {
+                tracing::warn!(error = %message, "Station capture did not complete; polling for recovery");
+                sleep(poll_interval).await;
+            }
+            Err(error) => return Err(error),
+        }
     }
 }
 
-
-/// Replay ACK after process restart for evidence that was already committed to durable LOCAL state.
-/// A duplicate ACK is safe: the Station accepts it only when capture_id and event_hash match its
-/// current WAIT_ACK evidence. This closes the crash window between SQLite commit and ACK send.
-pub async fn replay_durable_local_acks<T: StationTransport>(
+/// Replay ACK after process restart for all durable pending evidence, whether it is still LOCAL
+/// or has already advanced to SERVER. A duplicate ACK is safe: the Station accepts it only when
+/// capture_id and event_hash match its current WAIT_ACK evidence. Replaying SERVER rows closes the
+/// window where the host write succeeded and HTTP acceptance completed but the Station lost the ACK.
+pub async fn replay_durable_acks<T: StationTransport>(
     transport: &mut T,
     spool: &Spool,
     expected_station_pubkey33: &[u8; 33],
 ) -> Result<usize, AgentError> {
     let mut sent = 0usize;
     for row in spool.pending().await? {
-        if row.state != OutboxState::Local {
+        if !matches!(row.state, OutboxState::Local | OutboxState::Server) {
             continue;
         }
         if &row.station_pubkey != expected_station_pubkey33 {
             return Err(AgentError::Contract(
-                "durable LOCAL evidence Station public key does not match configured Station".into(),
+                "durable LOCAL evidence Station public key does not match configured Station"
+                    .into(),
             ));
         }
-        let ack = AckPayload { capture_id: row.capture_id, event_hash: row.event_hash };
+        let ack = AckPayload {
+            capture_id: row.capture_id,
+            event_hash: row.event_hash,
+        };
         transport
             .send(Frame {
                 message_type: MessageType::Ack,
@@ -97,11 +135,18 @@ pub async fn retry_pending_once(
         }
 
         let result = match row.state {
-            OutboxState::Local => api.post_evidence(&row).await.map(|()| Some(OutboxState::Server)),
+            OutboxState::Local => api
+                .post_evidence(&row)
+                .await
+                .map(|()| Some(OutboxState::Server)),
             OutboxState::Server => api.evidence_status(&row.event_hash).await.map(|status| {
-                if status == EvidenceStatus::Finalized { Some(OutboxState::Finalized) } else { None }
+                if status == EvidenceStatus::Finalized {
+                    Some(OutboxState::Finalized)
+                } else {
+                    None
+                }
             }),
-            OutboxState::Finalized => Ok(None),
+            OutboxState::Finalized | OutboxState::Quarantined => Ok(None),
         };
 
         match result {
@@ -111,12 +156,14 @@ pub async fn retry_pending_once(
                 spool.record_failure(row.capture_id, &message).await?;
                 retryable_failure = true;
             }
+            Err(AgentError::ApiTerminal(message)) => {
+                spool.quarantine(row.capture_id, &message).await?;
+            }
             Err(error) => return Err(error),
         }
     }
     Ok(retryable_failure)
 }
-
 
 /// Exponential retry delay derived from the durable attempt count. The first upload of a new
 /// LOCAL row is immediate; failed retries double from the configured poll interval up to 30 seconds.
@@ -136,6 +183,7 @@ pub async fn process_capture<T: StationTransport>(
     spool: &Spool,
     api: &ApiClient,
     expected_station_pubkey33: &[u8; 33],
+    station_response_timeout: Duration,
     command: &StationCommand,
 ) -> Result<(), AgentError> {
     command.validate()?;
@@ -147,14 +195,19 @@ pub async fn process_capture<T: StationTransport>(
         })
         .await?;
 
-    let response = transport.receive().await?;
+    let response = timeout(station_response_timeout, transport.receive())
+        .await
+        .map_err(|_| AgentError::Serial("timed out waiting for Station response".into()))??;
     match response.message_type {
         MessageType::EventReady => {
             let ready = decode_event_ready(&response.payload)?;
             let row = validate_event_ready(command, expected_station_pubkey33, &ready)?;
             spool.persist_local(&row).await?;
 
-            let ack = AckPayload { capture_id: row.capture_id, event_hash: row.event_hash };
+            let ack = AckPayload {
+                capture_id: row.capture_id,
+                event_hash: row.event_hash,
+            };
             transport
                 .send(Frame {
                     message_type: MessageType::Ack,
@@ -168,17 +221,21 @@ pub async fn process_capture<T: StationTransport>(
                     spool.record_failure(row.capture_id, &message).await?;
                     Ok(())
                 }
+                Err(AgentError::ApiTerminal(message)) => {
+                    spool.quarantine(row.capture_id, &message).await
+                }
                 Err(error) => Err(error),
             }
         }
         MessageType::Error => {
             let station_error = decode_error(&response.payload)?;
-            if !station_error.capture_id.is_nil() && station_error.capture_id != command.capture_id {
+            if !station_error.capture_id.is_nil() && station_error.capture_id != command.capture_id
+            {
                 return Err(AgentError::Contract(
                     "Station ERROR capture_id does not match the active command".into(),
                 ));
             }
-            Err(AgentError::Contract(format!(
+            Err(AgentError::Station(format!(
                 "Station rejected capture with {:?}",
                 station_error.code
             )))

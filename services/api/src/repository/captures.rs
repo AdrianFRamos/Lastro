@@ -1,12 +1,18 @@
 //! SQL access for immutable capture contexts and lifecycle transitions.
 
-use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::error::ApiError;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
-pub enum CaptureState { Pending, Dispatched, EvidenceAccepted, Expired, Cancelled }
+pub enum CaptureState {
+    Pending,
+    Dispatched,
+    EvidenceAccepted,
+    Expired,
+    Cancelled,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CaptureRecord {
@@ -61,6 +67,34 @@ pub async fn insert_pending(pool: &PgPool, value: &NewCapture) -> Result<Capture
     decode_capture(&row)
 }
 
+pub async fn insert_pending_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    value: &NewCapture,
+) -> Result<CaptureRecord, ApiError> {
+    let capture_id = Uuid::new_v4();
+    let row = sqlx::query(
+        r#"INSERT INTO captures(
+             capture_id,station_id,action,animal_id,event_sequence,identity_revision,
+             expected_old_rfid_hash,from_custodian,to_custodian,previous_event_hash,status,expires_at)
+           VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,'PENDING',now()+interval '5 minutes')
+           RETURNING *"#,
+    )
+    .bind(capture_id)
+    .bind(value.station_id.to_vec())
+    .bind(i16::from(value.action))
+    .bind(value.animal_id.to_vec())
+    .bind(i64::try_from(value.event_sequence).map_err(|_| ApiError::Validation("event sequence is too large".into()))?)
+    .bind(i32::try_from(value.identity_revision).map_err(|_| ApiError::Validation("identity revision is too large".into()))?)
+    .bind(value.expected_old_rfid_hash.to_vec())
+    .bind(value.from_custodian.to_vec())
+    .bind(value.to_custodian.to_vec())
+    .bind(value.previous_event_hash.to_vec())
+    .fetch_one(&mut **tx)
+    .await
+    .map_err(map_insert_error)?;
+    decode_capture(&row)
+}
+
 pub async fn claim_next_for_station(
     pool: &PgPool,
     station_id: [u8; 32],
@@ -92,18 +126,30 @@ pub async fn claim_next_for_station(
     Ok(Some(result))
 }
 
-pub async fn find_by_id(pool: &PgPool, capture_id: Uuid) -> Result<Option<CaptureRecord>, ApiError> {
+pub async fn find_by_id(
+    pool: &PgPool,
+    capture_id: Uuid,
+) -> Result<Option<CaptureRecord>, ApiError> {
     let row = sqlx::query("SELECT * FROM captures WHERE capture_id=$1")
-        .bind(capture_id).fetch_optional(pool).await.map_err(db_error)?;
+        .bind(capture_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(db_error)?;
     row.as_ref().map(decode_capture).transpose()
 }
 
-pub async fn load_for_evidence(pool: &PgPool, capture_id: Uuid) -> Result<Option<CaptureRecord>, ApiError> {
+pub async fn load_for_evidence(
+    pool: &PgPool,
+    capture_id: Uuid,
+) -> Result<Option<CaptureRecord>, ApiError> {
     let mut tx = pool.begin().await.map_err(db_error)?;
     sqlx::query("UPDATE captures SET status='EXPIRED' WHERE capture_id=$1 AND status IN ('PENDING','DISPATCHED') AND expires_at <= now()")
         .bind(capture_id).execute(&mut *tx).await.map_err(db_error)?;
     let row = sqlx::query("SELECT * FROM captures WHERE capture_id=$1 FOR UPDATE")
-        .bind(capture_id).fetch_optional(&mut *tx).await.map_err(db_error)?;
+        .bind(capture_id)
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(db_error)?;
     let decoded = row.as_ref().map(decode_capture).transpose()?;
     tx.commit().await.map_err(db_error)?;
     Ok(decoded)
@@ -118,12 +164,38 @@ pub async fn mark_evidence_accepted(
     if result.rows_affected() == 1 {
         return Ok(());
     }
-    let status: Option<String> = sqlx::query_scalar("SELECT status FROM captures WHERE capture_id=$1")
-        .bind(capture_id).fetch_optional(&mut **tx).await.map_err(db_error)?;
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM captures WHERE capture_id=$1")
+            .bind(capture_id)
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db_error)?;
     if status.as_deref() == Some("EVIDENCE_ACCEPTED") {
         Ok(())
     } else {
-        Err(ApiError::Conflict("capture is not active for evidence admission".into()))
+        Err(ApiError::Conflict(
+            "capture is not active for evidence admission".into(),
+        ))
+    }
+}
+
+pub async fn cancel_evidence_accepted_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    capture_id: Uuid,
+) -> Result<(), ApiError> {
+    let result = sqlx::query(
+        "UPDATE captures SET status='CANCELLED' WHERE capture_id=$1 AND status='EVIDENCE_ACCEPTED'",
+    )
+    .bind(capture_id)
+    .execute(&mut **tx)
+    .await
+    .map_err(db_error)?;
+    if result.rows_affected() == 1 {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "accepted capture cannot be superseded in its current state".into(),
+        ))
     }
 }
 

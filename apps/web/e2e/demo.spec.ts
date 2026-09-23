@@ -11,9 +11,15 @@ import {
 } from './support/system'
 
 test.describe('Lastro full browser demo', () => {
-  test.skip(requireFullStack, 'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment')
+  test.skip(
+    requireFullStack,
+    'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment',
+  )
 
-  test('full ORIGIN -> A->B -> REIDENTIFY -> B->C flow preserves one AnimalID', async ({ page, system }) => {
+  test('full ORIGIN -> A->B -> REIDENTIFY -> B->C flow preserves one AnimalID', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove the complete hackathon journey through the real browser, Agent, API, wallet, and Solana boundaries.
     // ARRANGE: Create one fresh animal, two unique physical RFIDs, and deterministic Wallet A/B/C actors.
     await page.goto('/demo')
@@ -54,7 +60,11 @@ test.describe('Lastro full browser demo', () => {
     const beforeStaleCanonical = await system.animalAccountSnapshot(animalId)
     await connectWallet(page, system, 'Wallet A')
     await page.getByRole('button', { name: 'Run stale-custodian attempt' }).click()
-    await expect(page.getByText('REJECTED: connected wallet is not the current custodian. No capture, evidence, or transaction was created.')).toBeVisible()
+    await expect(
+      page.getByText(
+        'REJECTED: connected wallet is not the current custodian. No capture, evidence, or transaction was created.',
+      ),
+    ).toBeVisible()
     expect(await system.animal(animalId)).toEqual(beforeStaleProjection)
     expect(await system.animalAccountSnapshot(animalId)).toEqual(beforeStaleCanonical)
 
@@ -90,7 +100,9 @@ test.describe('Lastro full browser demo', () => {
     expectProjectionMatchesCanonical(projection, canonical)
     await expect(definitionValue(page, 'AnimalID')).toHaveText(animalId)
     await expect(definitionValue(page, 'Current RFID')).toHaveText(system.rfidHashHex(rfidB))
-    await expect(definitionValue(page, 'Custodian')).toHaveText(system.walletCustodianHex('Wallet C'))
+    await expect(definitionValue(page, 'Custodian')).toHaveText(
+      system.walletCustodianHex('Wallet C'),
+    )
     await expect(definitionValue(page, 'Revision')).toHaveText('2')
     await expect(definitionValue(page, 'Sequence')).toHaveText('4')
     await expect(timelineItems(page)).toHaveCount(4)
@@ -102,7 +114,10 @@ test.describe('Lastro full browser demo', () => {
     // FAILURE MEANS: the primary physical evidence -> custody -> reidentification proof cannot complete without violating canonical state.
   })
 
-  test('stale Wallet A attack after A->B is rejected and cannot change canonical state', async ({ page, system }) => {
+  test('stale Wallet A attack after A->B is rejected and cannot change canonical state', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Protect the current-custodian authority invariant through the operator-facing stale-wallet demonstration.
     // ARRANGE: Complete ORIGIN and A->B, then snapshot both PostgreSQL projection and raw canonical AnimalState.
     await page.goto('/demo')

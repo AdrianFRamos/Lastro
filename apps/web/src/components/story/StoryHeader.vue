@@ -12,16 +12,10 @@ defineProps<{ active?: 'problem' | 'future' | 'demo' }>()
     </RouterLink>
 
     <nav class="story-header__nav" aria-label="Primary">
-      <RouterLink
-        to="/problem"
-        :aria-current="active === 'problem' ? 'page' : undefined"
-      >
+      <RouterLink to="/problem" :aria-current="active === 'problem' ? 'page' : undefined">
         The Problem
       </RouterLink>
-      <RouterLink
-        to="/future"
-        :aria-current="active === 'future' ? 'page' : undefined"
-      >
+      <RouterLink to="/future" :aria-current="active === 'future' ? 'page' : undefined">
         The Future
       </RouterLink>
       <RouterLink
@@ -51,7 +45,7 @@ defineProps<{ active?: 'problem' | 'future' | 'demo' }>()
   gap: 10px;
   color: var(--text);
   font: 750 13px/1 var(--font-mono);
-  letter-spacing: .18em;
+  letter-spacing: 0.18em;
   text-decoration: none;
 }
 

@@ -19,6 +19,26 @@ export interface AnimalProjection {
   lastEventHash: Hex32 | null
 }
 
+export interface CaptureAuthorizationChallenge {
+  challengeId: string
+  deploymentId: Hex32
+  requiredSigner: string
+  messageBase64: string
+  expiresAtUnix: number
+}
+
+export interface CaptureAuthorizationProof {
+  challengeId: string
+  signatureBase64: string
+}
+
+export interface CaptureAuthorizationIntent {
+  action: CaptureAction
+  animalId: Hex32
+  nextCustodian: Hex32 | null
+  supersedeCaptureId?: string | null
+}
+
 export interface Capture {
   captureId: string
   action: CaptureAction
@@ -34,8 +54,16 @@ export interface EventSubmission {
   txSignature: string
 }
 
-export interface AccountMetaDto { address: string; isSigner: boolean; isWritable: boolean }
-export interface InstructionDto { programId: string; accounts: AccountMetaDto[]; dataBase64: string }
+export interface AccountMetaDto {
+  address: string
+  isSigner: boolean
+  isWritable: boolean
+}
+export interface InstructionDto {
+  programId: string
+  accounts: AccountMetaDto[]
+  dataBase64: string
+}
 export interface TransactionData {
   requiredSigner: string
   lastroProgramId: string

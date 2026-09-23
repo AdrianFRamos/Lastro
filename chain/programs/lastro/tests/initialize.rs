@@ -11,10 +11,23 @@ fn initialize_creates_config_with_deployment_and_station() {
     // ARRANGE: Clean LiteSVM; authority signer; deployment_id D; valid compressed pubkey33 K.
     let mut h = Harness::new();
     let (_, expected_bump) = protocol_config_pda(&h.deployment_id);
-    // ACTION: Submit initialize for PDA ["config",D].
-    h.initialize();
+    // ACTION: Submit initialize for PDA ["config",D] with the explicit transaction compute budget.
+    let result = send_initialize(
+        &mut h.svm,
+        &h.authority,
+        h.deployment_id,
+        h.station_pubkey33,
+    );
+    let metadata = assert_success(result);
+    println!(
+        "initialize compute units consumed: {}",
+        metadata.compute_units_consumed
+    );
     let config = protocol_config(&h.svm, &h.deployment_id);
-    // ASSERT: ProtocolConfig is program-owned and contains the exact authority, D, K, and expected bump.
+    // ASSERT: Initialization exceeds the default 200k ceiling but remains within the requested
+    // transaction budget; ProtocolConfig contains the exact authority, D, K, and expected bump.
+    assert!(metadata.compute_units_consumed > 200_000);
+    assert!(metadata.compute_units_consumed <= u64::from(INITIALIZE_COMPUTE_UNIT_LIMIT));
     assert_eq!(config.authority.to_bytes(), h.authority.pubkey().to_bytes());
     assert_eq!(config.deployment_id, h.deployment_id);
     assert_eq!(config.station_pubkey33, h.station_pubkey33);
@@ -32,7 +45,12 @@ fn initialize_rejects_duplicate_config_pda() {
     let before = account_data(&h.svm, &config_address).expect("config must exist");
     h.svm.expire_blockhash();
     // ACTION: Execute initialize again for the same PDA.
-    let result = send_initialize(&mut h.svm, &h.authority, h.deployment_id, h.station_pubkey33);
+    let result = send_initialize(
+        &mut h.svm,
+        &h.authority,
+        h.deployment_id,
+        h.station_pubkey33,
+    );
     // ASSERT: The second transaction fails and the first account is unchanged.
     assert_failure(result);
     assert_eq!(account_data(&h.svm, &config_address).unwrap(), before);
@@ -47,10 +65,9 @@ fn initialize_rejects_invalid_station_pubkey_encoding() {
     let mut invalid_point = [0u8; 33];
     invalid_point[0] = 0x02;
     invalid_point[1..].copy_from_slice(&[
-        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01,
-        0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
-        0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff,
-        0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+        0xff, 0xff,
     ]);
 
     for (deployment, key) in [([0x41; 32], invalid_prefix), ([0x42; 32], invalid_point)] {

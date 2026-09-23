@@ -3,8 +3,13 @@
 mod common;
 
 use common::*;
+use solana_signer::Signer;
 
-fn measured_len(h: &Harness, event: &lastro_protocol::StationEvent, signer: &solana_keypair::Keypair) -> usize {
+fn measured_len(
+    h: &Harness,
+    event: &lastro_protocol::StationEvent,
+    signer: &solana_keypair::Keypair,
+) -> usize {
     let tx = build_transaction(
         &h.svm,
         build_envelope(event, &h.station_signing_key, &h.station_pubkey33),
@@ -23,7 +28,10 @@ fn origin_serialized_transaction_fits_selected_format_limit() {
     let len = measured_len(&h, &flow.origin, &h.wallet_a);
     eprintln!("ORIGIN serialized transaction bytes: {len}");
     // ASSERT: Complete wire transaction stays within Solana's 1232-byte packet limit.
-    assert!(len <= TRANSACTION_LIMIT, "ORIGIN transaction is {len} bytes");
+    assert!(
+        len <= TRANSACTION_LIMIT,
+        "ORIGIN transaction is {len} bytes"
+    );
     // FAILURE MEANS: ORIGIN could fail on the network because of size.
 }
 
@@ -37,7 +45,10 @@ fn transfer_serialized_transaction_fits_selected_format_limit() {
     let len = measured_len(&h, &flow.transfer_ab, &h.wallet_a);
     eprintln!("TRANSFER serialized transaction bytes: {len}");
     // ASSERT: Serialized size is at most 1232 bytes.
-    assert!(len <= TRANSACTION_LIMIT, "TRANSFER transaction is {len} bytes");
+    assert!(
+        len <= TRANSACTION_LIMIT,
+        "TRANSFER transaction is {len} bytes"
+    );
     // FAILURE MEANS: TRANSFER could exceed the network limit because of its full account set.
 }
 
@@ -51,7 +62,10 @@ fn reidentify_serialized_transaction_fits_selected_format_limit() {
     let len = measured_len(&h, &flow.reidentify, &h.wallet_b);
     eprintln!("REIDENTIFY serialized transaction bytes: {len}");
     // ASSERT: Serialized size is at most 1232 bytes.
-    assert!(len <= TRANSACTION_LIMIT, "REIDENTIFY transaction is {len} bytes");
+    assert!(
+        len <= TRANSACTION_LIMIT,
+        "REIDENTIFY transaction is {len} bytes"
+    );
     // FAILURE MEANS: The heaviest action could fail only at runtime.
 }
 
@@ -72,7 +86,10 @@ fn size_test_includes_wallet_signature_accounts_and_both_instructions() {
     assert_eq!(envelope[1].program_id, program_id());
     assert_eq!(envelope[1].accounts.len(), 6);
     assert_eq!(tx.message.account_keys[0], h.wallet_a.pubkey());
-    assert!(len > envelope[0].data.len() + envelope[1].data.len(), "measurement must include signatures/message/accounts");
+    assert!(
+        len > envelope[0].data.len() + envelope[1].data.len(),
+        "measurement must include signatures/message/accounts"
+    );
     assert!(len <= TRANSACTION_LIMIT);
     // FAILURE MEANS: The size metric would not represent the submitted payload.
 }

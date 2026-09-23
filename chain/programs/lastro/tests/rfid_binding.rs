@@ -12,12 +12,24 @@ fn only_one_active_binding_can_point_to_an_rfid() {
     let mut h = Harness::new();
     h.initialize();
     let flow_a = h.flow([0x91; 32]);
-    assert_success(send_event(&mut h.svm, &flow_a.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow_a.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     let mut flow_b = h.flow([0x92; 32]);
     flow_b.origin.new_rfid_hash = flow_a.rfid_a;
     h.svm.expire_blockhash();
     // ACTION: Attempt ORIGIN Animal B to X.
-    let result = send_event(&mut h.svm, &flow_b.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &flow_b.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: Second creation fails; the single PDA X still points to A and is ACTIVE.
     assert_failure(result);
     let binding = rfid_binding(&h.svm, &h.deployment_id, &flow_a.rfid_a);
@@ -55,10 +67,19 @@ fn retired_rfid_cannot_be_reoriginated() {
     second.new_rfid_hash = flow.rfid_a;
     h.svm.expire_blockhash();
     // ACTION: Attempt ORIGIN for new Animal B with X.
-    let result = send_event(&mut h.svm, &second, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &second,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails because binding X still exists as historical state.
     assert_failure(result);
-    assert_eq!(rfid_binding(&h.svm, &h.deployment_id, &flow.rfid_a).status, RFID_STATUS_RETIRED);
+    assert_eq!(
+        rfid_binding(&h.svm, &h.deployment_id, &flow.rfid_a).status,
+        RFID_STATUS_RETIRED
+    );
     // FAILURE MEANS: An old identifier could gain a new competing history.
 }
 
@@ -76,7 +97,13 @@ fn lookup_active_binding_matches_animal_state_current_rfid() {
     let current = rfid_binding(&h.svm, &h.deployment_id, &flow.rfid_b);
     // ASSERT: current hash Y matches ACTIVE Y; X remains RETIRED; both point to the same AnimalID.
     assert_eq!(animal.current_rfid_hash, flow.rfid_b);
-    assert_eq!((current.status, current.animal_id), (RFID_STATUS_ACTIVE, flow.animal_id));
-    assert_eq!((old.status, old.animal_id), (RFID_STATUS_RETIRED, flow.animal_id));
+    assert_eq!(
+        (current.status, current.animal_id),
+        (RFID_STATUS_ACTIVE, flow.animal_id)
+    );
+    assert_eq!(
+        (old.status, old.animal_id),
+        (RFID_STATUS_RETIRED, flow.animal_id)
+    );
     // FAILURE MEANS: Two canonical on-chain sources could contradict each other.
 }

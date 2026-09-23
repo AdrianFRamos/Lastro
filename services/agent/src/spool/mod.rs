@@ -3,15 +3,17 @@ pub mod model;
 use std::{str::FromStr, time::Duration};
 
 use sqlx::{
-    sqlite::{SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow, SqliteSynchronous},
     Row, SqlitePool,
+    sqlite::{
+        SqliteConnectOptions, SqliteJournalMode, SqlitePoolOptions, SqliteRow, SqliteSynchronous,
+    },
 };
 use uuid::Uuid;
 
 use crate::error::AgentError;
 use model::{OutboxRow, OutboxState};
 
-/// Durable outbox. State may advance LOCAL -> SERVER -> FINALIZED only.
+/// Durable outbox. Evidence bytes are immutable; delivery state may advance to SERVER/FINALIZED or terminal QUARANTINED.
 pub struct Spool {
     pool: SqlitePool,
 }
@@ -105,16 +107,19 @@ impl Spool {
 
     pub async fn advance(&self, capture_id: Uuid, to: OutboxState) -> Result<(), AgentError> {
         let mut tx = self.pool.begin().await.map_err(spool_error)?;
-        let current: Option<String> = sqlx::query_scalar("SELECT state FROM outbox WHERE capture_id = ?")
-            .bind(capture_id.to_string())
-            .fetch_optional(&mut *tx)
-            .await
-            .map_err(spool_error)?;
+        let current: Option<String> =
+            sqlx::query_scalar("SELECT state FROM outbox WHERE capture_id = ?")
+                .bind(capture_id.to_string())
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(spool_error)?;
         let current = current
             .as_deref()
             .map(parse_state)
             .transpose()?
-            .ok_or_else(|| AgentError::Spool(format!("outbox capture {capture_id} does not exist")))?;
+            .ok_or_else(|| {
+                AgentError::Spool(format!("outbox capture {capture_id} does not exist"))
+            })?;
 
         if current == to {
             tx.commit().await.map_err(spool_error)?;
@@ -145,9 +150,26 @@ impl Spool {
         Ok(())
     }
 
+    pub async fn quarantine(&self, capture_id: Uuid, error: &str) -> Result<(), AgentError> {
+        let result = sqlx::query(
+            "UPDATE outbox SET state = 'QUARANTINED', attempts = attempts + 1, last_error = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE capture_id = ? AND state IN ('LOCAL','SERVER')",
+        )
+        .bind(error)
+        .bind(capture_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(spool_error)?;
+        if result.rows_affected() != 1 {
+            return Err(AgentError::Spool(format!(
+                "cannot quarantine non-pending capture {capture_id}"
+            )));
+        }
+        Ok(())
+    }
+
     pub async fn record_failure(&self, capture_id: Uuid, error: &str) -> Result<(), AgentError> {
         let result = sqlx::query(
-            "UPDATE outbox SET attempts = attempts + 1, last_error = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE capture_id = ? AND state != 'FINALIZED'",
+            "UPDATE outbox SET attempts = attempts + 1, last_error = ?, updated_at = strftime('%Y-%m-%dT%H:%M:%fZ','now') WHERE capture_id = ? AND state IN ('LOCAL','SERVER')",
         )
         .bind(error)
         .bind(capture_id.to_string())
@@ -205,6 +227,7 @@ fn parse_state(value: &str) -> Result<OutboxState, AgentError> {
         "LOCAL" => Ok(OutboxState::Local),
         "SERVER" => Ok(OutboxState::Server),
         "FINALIZED" => Ok(OutboxState::Finalized),
+        "QUARANTINED" => Ok(OutboxState::Quarantined),
         other => Err(AgentError::Spool(format!("invalid outbox state {other}"))),
     }
 }
@@ -214,6 +237,7 @@ const fn state_text(state: OutboxState) -> &'static str {
         OutboxState::Local => "LOCAL",
         OutboxState::Server => "SERVER",
         OutboxState::Finalized => "FINALIZED",
+        OutboxState::Quarantined => "QUARANTINED",
     }
 }
 

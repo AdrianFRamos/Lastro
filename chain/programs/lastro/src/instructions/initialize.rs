@@ -6,11 +6,14 @@ use p256::PublicKey;
 use crate::{constants::PROTOCOL_CONFIG_SEED, error::LastroError, state::ProtocolConfig};
 
 pub fn handler(
-    ctx: Context<'_, '_, '_, '_, Initialize<'_>>,
+    ctx: Context<Initialize>,
     deployment_id: [u8; 32],
     station_pubkey33: [u8; 33],
 ) -> Result<()> {
-    require!(matches!(station_pubkey33[0], 0x02 | 0x03), LastroError::InvalidEvent);
+    require!(
+        matches!(station_pubkey33[0], 0x02 | 0x03),
+        LastroError::InvalidEvent
+    );
     PublicKey::from_sec1_bytes(&station_pubkey33).map_err(|_| error!(LastroError::InvalidEvent))?;
 
     let config = &mut ctx.accounts.protocol_config;

@@ -46,7 +46,7 @@ Hardware, Devnet, eFuse, and real browser-wallet-extension interoperability rema
 - ESP-IDF 6.1.x for ESP32-C5; Unity for target-based component tests.
 - Axum + Tokio + SQLx 0.9 for API/Agent.
 - PostgreSQL 18.x for the local projection store.
-- Vue 3.5 + Vite 8 + TypeScript 7.
+- Vue 3.5 + Vite 8 + TypeScript 6.0.2.
 - Solana Kit + Kit RPC/Wallet plugins + Wallet Standard.
 - `@noble/curves` 2.4.0 for portable browser P-256 verification.
 - Vitest + Vue Test Utils for unit/component tests; Playwright for browser E2E.

@@ -4,8 +4,8 @@
 //! applies. The migration contains the length/uniqueness/immutability constraints
 //! that act as a second line of defense behind domain validation.
 
-use sqlx::{postgres::PgPoolOptions, PgPool};
 use crate::error::ApiError;
+use sqlx::{PgPool, postgres::PgPoolOptions};
 
 pub async fn connect_and_migrate(database_url: &str) -> Result<PgPool, ApiError> {
     let pool = PgPoolOptions::new()

@@ -10,7 +10,7 @@ use std::{fs, path::PathBuf};
 use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
-use common::{TestDb, STATION_PUBKEY};
+use common::{STATION_PUBKEY, TestDb};
 
 const ANIMAL_A: [u8; 32] = [0x11; 32];
 const ANIMAL_B: [u8; 32] = [0x22; 32];
@@ -131,7 +131,10 @@ async fn migration_applies_on_empty_postgres() {
     .await
     .unwrap();
     for required in ["animals", "captures", "events"] {
-        assert!(tables.iter().any(|table| table == required), "missing table {required}");
+        assert!(
+            tables.iter().any(|table| table == required),
+            "missing table {required}"
+        );
     }
 
     let index_exists: bool = sqlx::query_scalar(
@@ -217,10 +220,11 @@ async fn current_rfid_hash_is_unique_when_present() {
         .await;
     assert!(duplicate.is_err());
 
-    let null_count: i64 = sqlx::query_scalar("SELECT count(*) FROM animals WHERE current_rfid_hash IS NULL")
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
+    let null_count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM animals WHERE current_rfid_hash IS NULL")
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
     assert_eq!(null_count, 1);
     db.cleanup().await;
 }
@@ -235,7 +239,9 @@ async fn event_bytes_requires_exactly_276_bytes() {
 
     for (index, len, expected_ok) in [(1i64, 275usize, false), (2, 276, true), (3, 277, false)] {
         let capture = Uuid::new_v4();
-        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED").await.unwrap();
+        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED")
+            .await
+            .unwrap();
         let mut hash = [0u8; 32];
         hash[0] = index as u8;
         let result = insert_event(
@@ -251,7 +257,11 @@ async fn event_bytes_requires_exactly_276_bytes() {
             &SIGNATURE64,
         )
         .await;
-        assert_eq!(result.is_ok(), expected_ok, "unexpected result for {len}-byte event");
+        assert_eq!(
+            result.is_ok(),
+            expected_ok,
+            "unexpected result for {len}-byte event"
+        );
     }
     db.cleanup().await;
 }
@@ -266,7 +276,9 @@ async fn event_pubkey_requires_33_bytes() {
 
     for (index, len, expected_ok) in [(1i64, 32usize, false), (2, 33, true), (3, 65, false)] {
         let capture = Uuid::new_v4();
-        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED").await.unwrap();
+        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED")
+            .await
+            .unwrap();
         let mut hash = [0u8; 32];
         hash[0] = 0x20 + index as u8;
         let result = insert_event(
@@ -282,7 +294,11 @@ async fn event_pubkey_requires_33_bytes() {
             &SIGNATURE64,
         )
         .await;
-        assert_eq!(result.is_ok(), expected_ok, "unexpected result for {len}-byte key");
+        assert_eq!(
+            result.is_ok(),
+            expected_ok,
+            "unexpected result for {len}-byte key"
+        );
     }
     db.cleanup().await;
 }
@@ -297,7 +313,9 @@ async fn event_signature_requires_64_bytes() {
 
     for (index, len, expected_ok) in [(1i64, 63usize, false), (2, 64, true), (3, 65, false)] {
         let capture = Uuid::new_v4();
-        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED").await.unwrap();
+        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED")
+            .await
+            .unwrap();
         let mut hash = [0u8; 32];
         hash[0] = 0x30 + index as u8;
         let result = insert_event(
@@ -313,7 +331,11 @@ async fn event_signature_requires_64_bytes() {
             &vec![0x44; len],
         )
         .await;
-        assert_eq!(result.is_ok(), expected_ok, "unexpected result for {len}-byte signature");
+        assert_eq!(
+            result.is_ok(),
+            expected_ok,
+            "unexpected result for {len}-byte signature"
+        );
     }
     db.cleanup().await;
 }
@@ -328,7 +350,9 @@ async fn animal_sequence_is_unique() {
     let _ = insert_valid_event(&db.pool, ANIMAL_A, 1).await;
 
     let capture = Uuid::new_v4();
-    insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED").await.unwrap();
+    insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED")
+        .await
+        .unwrap();
     let duplicate = insert_event(
         &db.pool,
         capture,
@@ -355,8 +379,14 @@ async fn only_one_active_capture_per_station() {
     insert_animal(&db.pool, ANIMAL_A, "A").await;
 
     let first = Uuid::new_v4();
-    insert_capture(&db.pool, first, ANIMAL_A, "PENDING").await.unwrap();
-    assert!(insert_capture(&db.pool, Uuid::new_v4(), ANIMAL_A, "DISPATCHED").await.is_err());
+    insert_capture(&db.pool, first, ANIMAL_A, "PENDING")
+        .await
+        .unwrap();
+    assert!(
+        insert_capture(&db.pool, Uuid::new_v4(), ANIMAL_A, "DISPATCHED")
+            .await
+            .is_err()
+    );
 
     sqlx::query("UPDATE captures SET status='EXPIRED' WHERE capture_id=$1")
         .bind(first)
@@ -364,7 +394,9 @@ async fn only_one_active_capture_per_station() {
         .await
         .unwrap();
     let second = Uuid::new_v4();
-    insert_capture(&db.pool, second, ANIMAL_A, "PENDING").await.unwrap();
+    insert_capture(&db.pool, second, ANIMAL_A, "PENDING")
+        .await
+        .unwrap();
 
     sqlx::query("UPDATE captures SET status='CANCELLED' WHERE capture_id=$1")
         .bind(second)
@@ -386,7 +418,9 @@ async fn capture_context_is_immutable_and_lifecycle_is_monotonic() {
     insert_animal(&db.pool, ANIMAL_A, "A").await;
     insert_animal(&db.pool, ANIMAL_B, "B").await;
     let capture = Uuid::new_v4();
-    insert_capture(&db.pool, capture, ANIMAL_A, "PENDING").await.unwrap();
+    insert_capture(&db.pool, capture, ANIMAL_A, "PENDING")
+        .await
+        .unwrap();
 
     for sql in [
         "UPDATE captures SET station_id=decode(repeat('91',32),'hex') WHERE capture_id=$1",
@@ -402,7 +436,14 @@ async fn capture_context_is_immutable_and_lifecycle_is_monotonic() {
         "UPDATE captures SET expires_at=expires_at+interval '1 second' WHERE capture_id=$1",
         "UPDATE captures SET status='EVIDENCE_ACCEPTED' WHERE capture_id=$1",
     ] {
-        assert!(sqlx::query(sql).bind(capture).execute(&db.pool).await.is_err(), "unexpectedly allowed: {sql}");
+        assert!(
+            sqlx::query(sql)
+                .bind(capture)
+                .execute(&db.pool)
+                .await
+                .is_err(),
+            "unexpectedly allowed: {sql}"
+        );
     }
 
     sqlx::query("UPDATE captures SET status='DISPATCHED' WHERE capture_id=$1")
@@ -410,27 +451,35 @@ async fn capture_context_is_immutable_and_lifecycle_is_monotonic() {
         .execute(&db.pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE captures SET expires_at=expires_at-interval '1 second' WHERE capture_id=$1")
-        .bind(capture)
-        .execute(&db.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE captures SET expires_at=expires_at-interval '1 second' WHERE capture_id=$1",
+    )
+    .bind(capture)
+    .execute(&db.pool)
+    .await
+    .unwrap();
     sqlx::query("UPDATE captures SET status='EVIDENCE_ACCEPTED' WHERE capture_id=$1")
         .bind(capture)
         .execute(&db.pool)
         .await
         .unwrap();
 
-    assert!(sqlx::query("UPDATE captures SET status='DISPATCHED' WHERE capture_id=$1")
+    assert!(
+        sqlx::query("UPDATE captures SET status='DISPATCHED' WHERE capture_id=$1")
+            .bind(capture)
+            .execute(&db.pool)
+            .await
+            .is_err()
+    );
+    assert!(
+        sqlx::query(
+            "UPDATE captures SET expires_at=expires_at-interval '1 second' WHERE capture_id=$1"
+        )
         .bind(capture)
         .execute(&db.pool)
         .await
-        .is_err());
-    assert!(sqlx::query("UPDATE captures SET expires_at=expires_at-interval '1 second' WHERE capture_id=$1")
-        .bind(capture)
-        .execute(&db.pool)
-        .await
-        .is_err());
+        .is_err()
+    );
 
     db.cleanup().await;
 }
@@ -475,9 +524,18 @@ async fn event_evidence_columns_are_immutable() {
     assert_eq!(row.get::<i64, _>("event_sequence"), 1);
     assert_eq!(row.get::<i16, _>("action"), 1);
     assert_eq!(row.get::<Vec<u8>, _>("event_bytes"), fixture("origin.bin"));
-    assert_eq!(row.get::<Vec<u8>, _>("observed_rfid").as_slice(), OBSERVED_RFID);
-    assert_eq!(row.get::<Vec<u8>, _>("station_pubkey").as_slice(), STATION_PUBKEY);
-    assert_eq!(row.get::<Vec<u8>, _>("station_signature").as_slice(), SIGNATURE64);
+    assert_eq!(
+        row.get::<Vec<u8>, _>("observed_rfid").as_slice(),
+        OBSERVED_RFID
+    );
+    assert_eq!(
+        row.get::<Vec<u8>, _>("station_pubkey").as_slice(),
+        STATION_PUBKEY
+    );
+    assert_eq!(
+        row.get::<Vec<u8>, _>("station_signature").as_slice(),
+        SIGNATURE64
+    );
     db.cleanup().await;
 }
 
@@ -500,11 +558,13 @@ async fn event_status_and_tx_signature_may_advance_without_mutating_evidence() {
         .execute(&db.pool)
         .await
         .unwrap();
-    sqlx::query("UPDATE events SET status='FINALIZED' WHERE event_hash=$1 AND tx_signature='tx-one'")
-        .bind(event_hash.to_vec())
-        .execute(&db.pool)
-        .await
-        .unwrap();
+    sqlx::query(
+        "UPDATE events SET status='FINALIZED' WHERE event_hash=$1 AND tx_signature='tx-one'",
+    )
+    .bind(event_hash.to_vec())
+    .execute(&db.pool)
+    .await
+    .unwrap();
 
     let row = sqlx::query("SELECT status,tx_signature,event_bytes FROM events WHERE event_hash=$1")
         .bind(event_hash.to_vec())
@@ -512,7 +572,10 @@ async fn event_status_and_tx_signature_may_advance_without_mutating_evidence() {
         .await
         .unwrap();
     assert_eq!(row.get::<String, _>("status"), "FINALIZED");
-    assert_eq!(row.get::<Option<String>, _>("tx_signature").as_deref(), Some("tx-one"));
+    assert_eq!(
+        row.get::<Option<String>, _>("tx_signature").as_deref(),
+        Some("tx-one")
+    );
     assert_eq!(row.get::<Vec<u8>, _>("event_bytes"), before);
     db.cleanup().await;
 }
@@ -528,10 +591,12 @@ async fn event_lifecycle_is_monotonic_and_transaction_signature_is_stable() {
     insert_animal(&db.pool, ANIMAL_A, "A").await;
     let (_, event_hash) = insert_valid_event(&db.pool, ANIMAL_A, 1).await;
 
-    let skip = sqlx::query("UPDATE events SET status='FINALIZED',tx_signature='tx-one' WHERE event_hash=$1")
-        .bind(event_hash.to_vec())
-        .execute(&db.pool)
-        .await;
+    let skip = sqlx::query(
+        "UPDATE events SET status='FINALIZED',tx_signature='tx-one' WHERE event_hash=$1",
+    )
+    .bind(event_hash.to_vec())
+    .execute(&db.pool)
+    .await;
     assert!(skip.is_err());
 
     sqlx::query("UPDATE events SET status='SUBMITTED',tx_signature='tx-one' WHERE event_hash=$1")
@@ -540,10 +605,11 @@ async fn event_lifecycle_is_monotonic_and_transaction_signature_is_stable() {
         .await
         .unwrap();
 
-    let replace_signature = sqlx::query("UPDATE events SET tx_signature='tx-two' WHERE event_hash=$1")
-        .bind(event_hash.to_vec())
-        .execute(&db.pool)
-        .await;
+    let replace_signature =
+        sqlx::query("UPDATE events SET tx_signature='tx-two' WHERE event_hash=$1")
+            .bind(event_hash.to_vec())
+            .execute(&db.pool)
+            .await;
     assert!(replace_signature.is_err());
 
     sqlx::query("UPDATE events SET status='FINALIZED' WHERE event_hash=$1")
@@ -570,7 +636,10 @@ async fn event_lifecycle_is_monotonic_and_transaction_signature_is_stable() {
         .await
         .unwrap();
     assert_eq!(row.get::<String, _>("status"), "FINALIZED");
-    assert_eq!(row.get::<Option<String>, _>("tx_signature").as_deref(), Some("tx-one"));
+    assert_eq!(
+        row.get::<Option<String>, _>("tx_signature").as_deref(),
+        Some("tx-one")
+    );
     db.cleanup().await;
 }
 
@@ -591,7 +660,10 @@ async fn submitted_and_finalized_rows_require_a_transaction_signature() {
             .bind(status)
             .execute(&db.pool)
             .await;
-        assert!(result.is_err(), "status {status} unexpectedly accepted without tx_signature");
+        assert!(
+            result.is_err(),
+            "status {status} unexpectedly accepted without tx_signature"
+        );
     }
 
     let status: String = sqlx::query_scalar("SELECT status FROM events WHERE event_hash=$1")
@@ -610,11 +682,17 @@ async fn events_and_captures_require_existing_animal_row() {
     // FAILURE MEANS: API persistence could contain operational evidence with no resolvable identity record.
     let db = TestDb::new().await;
     let capture = Uuid::new_v4();
-    assert!(insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED").await.is_err());
+    assert!(
+        insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED")
+            .await
+            .is_err()
+    );
 
     insert_animal(&db.pool, ANIMAL_B, "B").await;
     let valid_capture = Uuid::new_v4();
-    insert_capture(&db.pool, valid_capture, ANIMAL_B, "EXPIRED").await.unwrap();
+    insert_capture(&db.pool, valid_capture, ANIMAL_B, "EXPIRED")
+        .await
+        .unwrap();
     let orphan_event = insert_event(
         &db.pool,
         valid_capture,
@@ -631,7 +709,9 @@ async fn events_and_captures_require_existing_animal_row() {
     assert!(orphan_event.is_err());
 
     insert_animal(&db.pool, ANIMAL_A, "A").await;
-    insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED").await.unwrap();
+    insert_capture(&db.pool, capture, ANIMAL_A, "EXPIRED")
+        .await
+        .unwrap();
     insert_event(
         &db.pool,
         capture,
@@ -676,16 +756,18 @@ async fn finalized_transaction_signature_cannot_be_attached_to_two_events() {
         .await;
     assert!(duplicate.is_err());
 
-    let first_signature: Option<String> = sqlx::query_scalar("SELECT tx_signature FROM events WHERE event_hash=$1")
-        .bind(first_hash.to_vec())
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
-    let second_signature: Option<String> = sqlx::query_scalar("SELECT tx_signature FROM events WHERE event_hash=$1")
-        .bind(second_hash.to_vec())
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
+    let first_signature: Option<String> =
+        sqlx::query_scalar("SELECT tx_signature FROM events WHERE event_hash=$1")
+            .bind(first_hash.to_vec())
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
+    let second_signature: Option<String> =
+        sqlx::query_scalar("SELECT tx_signature FROM events WHERE event_hash=$1")
+            .bind(second_hash.to_vec())
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
     assert_eq!(first_signature.as_deref(), Some("same-finalized-signature"));
     assert_eq!(second_signature, None);
     db.cleanup().await;

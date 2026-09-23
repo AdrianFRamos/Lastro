@@ -10,7 +10,13 @@ fn setup() -> (Harness, FlowEvents) {
     let mut h = Harness::new();
     h.initialize();
     let flow = h.flow([0x61; 32]);
-    assert_success(send_event(&mut h.svm, &flow.origin, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.origin,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     h.svm.expire_blockhash();
     (h, flow)
 }
@@ -21,15 +27,27 @@ fn transfer_a_to_b_updates_only_custodian_sequence_hash() {
     // ARRANGE: State seq1/rev1/RFID X/custodian A/H1 and valid TRANSFER A→B.
     let (mut h, flow) = setup();
     // ACTION: Execute with signer A.
-    assert_success(send_event(&mut h.svm, &flow.transfer_ab, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.transfer_ab,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     // ASSERT: Only custodian/sequence/hash advance; RFID/revision/binding stay unchanged.
     let animal = animal_state(&h.svm, &h.deployment_id, &flow.animal_id);
-    assert_eq!(animal.current_custodian.to_bytes(), h.wallet_b.pubkey().to_bytes());
+    assert_eq!(
+        animal.current_custodian.to_bytes(),
+        h.wallet_b.pubkey().to_bytes()
+    );
     assert_eq!(animal.event_sequence, 2);
     assert_eq!(animal.last_event_hash, flow.transfer_ab.event_hash());
     assert_eq!(animal.current_rfid_hash, flow.rfid_a);
     assert_eq!(animal.identity_revision, 1);
-    assert_eq!(rfid_binding(&h.svm, &h.deployment_id, &flow.rfid_a).status, RFID_STATUS_ACTIVE);
+    assert_eq!(
+        rfid_binding(&h.svm, &h.deployment_id, &flow.rfid_a).status,
+        RFID_STATUS_ACTIVE
+    );
     // FAILURE MEANS: TRANSFER could reidentify or corrupt unrelated state.
 }
 
@@ -38,7 +56,13 @@ fn old_custodian_cannot_transfer_after_a_to_b() {
     // PURPOSE: Old authority loses power immediately after confirmation.
     // ARRANGE: State is already at B after A→B.
     let (mut h, flow) = setup();
-    assert_success(send_event(&mut h.svm, &flow.transfer_ab, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a));
+    assert_success(send_event(
+        &mut h.svm,
+        &flow.transfer_ab,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    ));
     let before = animal_state(&h.svm, &h.deployment_id, &flow.animal_id);
     let stale = lastro_protocol::StationEvent {
         event_sequence: 3,
@@ -49,7 +73,13 @@ fn old_custodian_cannot_transfer_after_a_to_b() {
     };
     h.svm.expire_blockhash();
     // ACTION: A signs a new TRANSFER after custody already belongs to B.
-    let result = send_event(&mut h.svm, &stale, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &stale,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails and state remains B.
     assert_failure_contains(result, "InvalidCustodian");
     let after = animal_state(&h.svm, &h.deployment_id, &flow.animal_id);
@@ -88,10 +118,19 @@ fn transfer_rejects_sequence_gap() {
     let mut wrong = flow.transfer_ab.clone();
     wrong.event_sequence = 3;
     // ACTION: Submit the gap event.
-    let result = send_event(&mut h.svm, &wrong, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &wrong,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails and sequence remains 1.
     assert_failure_contains(result, "InvalidSequence");
-    assert_eq!(animal_state(&h.svm, &h.deployment_id, &flow.animal_id).event_sequence, 1);
+    assert_eq!(
+        animal_state(&h.svm, &h.deployment_id, &flow.animal_id).event_sequence,
+        1
+    );
     // FAILURE MEANS: Gaps could hide missing events.
 }
 
@@ -102,12 +141,29 @@ fn transfer_rejects_wrong_predecessor() {
     let (mut h, flow) = setup();
     let mut wrong = flow.transfer_ab.clone();
     wrong.previous_event_hash = [0x77; 32];
-    let before = account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).unwrap();
+    let before = account_data(
+        &h.svm,
+        &animal_state_pda(&h.deployment_id, &flow.animal_id).0,
+    )
+    .unwrap();
     // ACTION: Submit the fork candidate.
-    let result = send_event(&mut h.svm, &wrong, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &wrong,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails; no mutation occurs.
     assert_failure_contains(result, "InvalidPredecessor");
-    assert_eq!(account_data(&h.svm, &animal_state_pda(&h.deployment_id, &flow.animal_id).0).unwrap(), before);
+    assert_eq!(
+        account_data(
+            &h.svm,
+            &animal_state_pda(&h.deployment_id, &flow.animal_id).0
+        )
+        .unwrap(),
+        before
+    );
     // FAILURE MEANS: A Station-signed fork could be accepted outside canonical state.
 }
 
@@ -120,10 +176,19 @@ fn transfer_rejects_revision_change() {
         let mut wrong = flow.transfer_ab.clone();
         wrong.identity_revision = revision;
         // ACTION: Submit each revision-changing variant.
-        let result = send_event(&mut h.svm, &wrong, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+        let result = send_event(
+            &mut h.svm,
+            &wrong,
+            &h.station_signing_key,
+            &h.station_pubkey33,
+            &h.wallet_a,
+        );
         // ASSERT: It fails; revision remains 1.
         assert_failure(result);
-        assert_eq!(animal_state(&h.svm, &h.deployment_id, &flow.animal_id).identity_revision, 1);
+        assert_eq!(
+            animal_state(&h.svm, &h.deployment_id, &flow.animal_id).identity_revision,
+            1
+        );
     }
     // FAILURE MEANS: A physical identity change could occur without REIDENTIFY.
 }
@@ -136,12 +201,21 @@ fn transfer_rejects_same_destination_as_current_custodian() {
     let mut wrong = flow.transfer_ab.clone();
     wrong.to_custodian = h.wallet_a.pubkey().to_bytes();
     // ACTION: Execute with signer A and otherwise valid context.
-    let result = send_event(&mut h.svm, &wrong, &h.station_signing_key, &h.station_pubkey33, &h.wallet_a);
+    let result = send_event(
+        &mut h.svm,
+        &wrong,
+        &h.station_signing_key,
+        &h.station_pubkey33,
+        &h.wallet_a,
+    );
     // ASSERT: It fails; sequence/hash/custodian remain unchanged.
     assert_failure(result);
     let animal = animal_state(&h.svm, &h.deployment_id, &flow.animal_id);
     assert_eq!(animal.event_sequence, 1);
-    assert_eq!(animal.current_custodian.to_bytes(), h.wallet_a.pubkey().to_bytes());
+    assert_eq!(
+        animal.current_custodian.to_bytes(),
+        h.wallet_a.pubkey().to_bytes()
+    );
     assert_eq!(animal.last_event_hash, flow.origin.event_hash());
     // FAILURE MEANS: An empty TRANSFER could consume a history position and confuse auditing/UI.
 }

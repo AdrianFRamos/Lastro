@@ -11,9 +11,15 @@ import {
 } from './support/system'
 
 test.describe('Physical identity recovery and RFID replacement', () => {
-  test.skip(requireFullStack, 'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment')
+  test.skip(
+    requireFullStack,
+    'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment',
+  )
 
-  test('visual recovery resolves the existing AnimalID before a new RFID capture', async ({ page, system }) => {
+  test('visual recovery resolves the existing AnimalID before a new RFID capture', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove visual recovery selects an existing digital identity rather than creating a replacement animal.
     // ARRANGE: Originate one animal on RFID A, transfer A->B, then open a fresh demo route with no selected animal.
     await page.goto('/demo')
@@ -24,7 +30,11 @@ test.describe('Physical identity recovery and RFID replacement', () => {
     await runAction(page, system, 'ORIGIN', rfidA)
     await runAction(page, system, 'TRANSFER', rfidA, { nextWallet: 'Wallet B' })
     const before = await system.animal(created.animalId)
-    expect(before).toMatchObject({ identityRevision: 1, eventSequence: 2, currentCustodian: system.walletCustodianHex('Wallet B') })
+    expect(before).toMatchObject({
+      identityRevision: 1,
+      eventSequence: 2,
+      currentCustodian: system.walletCustodianHex('Wallet B'),
+    })
 
     // ACTION: Drop browser selection state, resolve by the independent visual identifier, then REIDENTIFY with Wallet B and RFID B.
     await page.goto('/demo')
@@ -50,7 +60,10 @@ test.describe('Physical identity recovery and RFID replacement', () => {
     // FAILURE MEANS: recovery can silently fork AnimalID or REIDENTIFY changes custody/revision incorrectly.
   })
 
-  test('retired RFID A is no longer presented or resolved as current after REIDENTIFY to B', async ({ page, system }) => {
+  test('retired RFID A is no longer presented or resolved as current after REIDENTIFY to B', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Protect the one-current-RFID invariant while retaining immutable historical RfidBinding state.
     // ARRANGE: Complete ORIGIN, A->B, and REIDENTIFY from RFID A to fresh RFID B.
     await page.goto('/demo')
@@ -81,12 +94,15 @@ test.describe('Physical identity recovery and RFID replacement', () => {
     // FAILURE MEANS: physical binding history becomes ambiguous or the old RFID can still identify the animal as current.
   })
 
-  test('missing both RFID and visual recovery identifier leaves identity UNRESOLVED', async ({ page }) => {
+  test('missing both RFID and visual recovery identifier leaves identity UNRESOLVED', async ({
+    page,
+  }) => {
     // PURPOSE: Ensure the browser never invents biological/physical identity when both independent identifiers are unavailable.
     // ARRANGE: Open a fresh demo route without an AnimalID query parameter, RFID observation, or visual recovery identifier.
     const captureRequests: string[] = []
     page.on('request', (request) => {
-      if (request.method() === 'POST' && request.url().includes('/api/captures')) captureRequests.push(request.url())
+      if (request.method() === 'POST' && request.url().includes('/api/captures'))
+        captureRequests.push(request.url())
     })
     await page.goto('/demo')
 
@@ -99,7 +115,11 @@ test.describe('Physical identity recovery and RFID replacement', () => {
 
     // ASSERT: Identity remains explicitly unresolved and no capture/transition can begin.
     await expect(page.getByText(/Physical identity continuity:/)).toContainText('UNRESOLVED')
-    await expect(page.getByText(/Lastro does not guess identity when both physical identifiers are unavailable/)).toBeVisible()
+    await expect(
+      page.getByText(
+        /Lastro does not guess identity when both physical identifiers are unavailable/,
+      ),
+    ).toBeVisible()
     await expect(create).toBeDisabled()
     await expect(recover).toBeDisabled()
     await expect(origin).toBeDisabled()

@@ -9,7 +9,8 @@ fn assert_fixture(name: &str) {
     let bytes = common::event_bytes(name);
     let event = StationEvent::decode(&bytes).expect("decode fixture");
     assert_eq!(event.encode(), bytes);
-    let expected_hash = common::hex_array::<32>(fixture["events"][name]["event_hash_hex"].as_str().unwrap());
+    let expected_hash =
+        common::hex_array::<32>(fixture["events"][name]["event_hash_hex"].as_str().unwrap());
     assert_eq!(event.event_hash(), expected_hash);
 }
 

@@ -1,4 +1,10 @@
-import { address, getAddressDecoder, getBase58Decoder, getBase58Encoder, getProgramDerivedAddress } from '@solana/kit'
+import {
+  address,
+  getAddressDecoder,
+  getBase58Decoder,
+  getBase58Encoder,
+  getProgramDerivedAddress,
+} from '@solana/kit'
 import { describe, expect, it } from 'vitest'
 import validFixture from '../../../../test-vectors/evidence-package.valid.json'
 import { parseEvidencePackage } from '../../src/protocol/evidence'
@@ -12,6 +18,7 @@ const TX_PROGRAM_ID = 'Vote111111111111111111111111111111111111111'
 const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111'
 const INSTRUCTIONS_SYSVAR_ID = 'Sysvar1nstructions1111111111111111111111111'
 const RPC_URL = 'https://rpc.invalid.test'
+const TRUSTED_AUTHORITY = 'Vote111111111111111111111111111111111111111'
 const text = new TextEncoder()
 
 type FixtureMutation = (accounts: RpcFixtureAccounts) => void
@@ -40,11 +47,15 @@ function writeU64(bytes: Uint8Array, offset: number, value: bigint): void {
 }
 
 async function discriminator(name: string): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', text.encode(`account:${name}`))).subarray(0, 8)
+  return new Uint8Array(
+    await crypto.subtle.digest('SHA-256', text.encode(`account:${name}`)),
+  ).subarray(0, 8)
 }
 
 async function instructionDiscriminator(name: string): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', text.encode(`global:${name}`))).subarray(0, 8)
+  return new Uint8Array(
+    await crypto.subtle.digest('SHA-256', text.encode(`global:${name}`)),
+  ).subarray(0, 8)
 }
 
 async function canonicalAccounts(programId = PROGRAM_ID): Promise<RpcFixtureAccounts> {
@@ -64,6 +75,7 @@ async function canonicalAccounts(programId = PROGRAM_ID): Promise<RpcFixtureAcco
   })
   const config = new Uint8Array(106)
   config.set(await discriminator('ProtocolConfig'), 0)
+  config.set(getBase58Encoder().encode(TRUSTED_AUTHORITY), 8)
   config.set(deployment, 40)
   config.set(bytesHex(pkg.events[0]!.stationPubkeyHex), 72)
   config[105] = configBump
@@ -110,20 +122,35 @@ async function canonicalAccounts(programId = PROGRAM_ID): Promise<RpcFixtureAcco
 
 function accountResponse(data: Uint8Array, owner = PROGRAM_ID): Response {
   const encoded = btoa(String.fromCharCode(...data))
-  return new Response(JSON.stringify({
-    jsonrpc: '2.0',
-    id: 1,
-    result: {
-      context: { slot: 1 },
-      value: { data: [encoded, 'base64'], executable: false, lamports: 1, owner, rentEpoch: 0, space: data.length },
-    },
-  }), { status: 200, headers: { 'content-type': 'application/json' } })
+  return new Response(
+    JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      result: {
+        context: { slot: 1 },
+        value: {
+          data: [encoded, 'base64'],
+          executable: false,
+          lamports: 1,
+          owner,
+          rentEpoch: 0,
+          space: data.length,
+        },
+      },
+    }),
+    { status: 200, headers: { 'content-type': 'application/json' } },
+  )
 }
 
 async function rpcFetch(mutate?: FixtureMutation): Promise<typeof fetch> {
   const accounts = await canonicalAccounts()
   mutate?.(accounts)
-  const queue = [accounts.config, accounts.animal, accounts.currentBinding, ...accounts.retiredBindings]
+  const queue = [
+    accounts.config,
+    accounts.animal,
+    accounts.currentBinding,
+    ...accounts.retiredBindings,
+  ]
   return (async () => {
     const data = queue.shift()
     if (!data) throw new Error('unexpected RPC request')
@@ -134,11 +161,11 @@ async function rpcFetch(mutate?: FixtureMutation): Promise<typeof fetch> {
 async function verify(mutate?: FixtureMutation) {
   return verifyCanonicalChainState(parseEvidencePackage(structuredClone(validFixture)), {
     programId: PROGRAM_ID,
+    trustedAuthority: TRUSTED_AUTHORITY,
     rpcUrl: RPC_URL,
     fetchFn: await rpcFetch(mutate),
   })
 }
-
 
 interface CompiledMessageFixture {
   header: {
@@ -194,7 +221,9 @@ async function finalizedTransaction(
     programAddress,
     seeds: [text.encode('animal'), event.deploymentId, event.animalId],
   })
-  const signer = getAddressDecoder().decode(event.action === 1 ? event.toCustodian : event.fromCustodian)
+  const signer = getAddressDecoder().decode(
+    event.action === 1 ? event.toCustodian : event.fromCustodian,
+  )
 
   let accounts: Array<{ address: string; isWritable: boolean }>
   if (event.action === 1) {
@@ -243,9 +272,11 @@ async function finalizedTransaction(
   }
 
   const unique = (values: string[]) => [...new Set(values)]
-  const writableUnsigned = unique(accounts
-    .filter((account) => account.address !== signer && account.isWritable)
-    .map((account) => account.address))
+  const writableUnsigned = unique(
+    accounts
+      .filter((account) => account.address !== signer && account.isWritable)
+      .map((account) => account.address),
+  )
   const readonlyUnsigned = unique([
     ...accounts
       .filter((account) => account.address !== signer && !account.isWritable)
@@ -306,7 +337,12 @@ async function transactionRpcFixture(mutate?: TransactionMutation) {
     pkg.events.map((_, eventIndex) => finalizedTransaction(pkg, eventIndex)),
   )
   mutate?.(transactions)
-  const accountQueue = [accounts.config, accounts.animal, accounts.currentBinding, ...accounts.retiredBindings]
+  const accountQueue = [
+    accounts.config,
+    accounts.animal,
+    accounts.currentBinding,
+    ...accounts.retiredBindings,
+  ]
 
   const fetchFn = (async (_input: RequestInfo | URL, init?: RequestInit) => {
     const request = JSON.parse(String(init?.body)) as { method?: string; params?: unknown[] }
@@ -314,11 +350,14 @@ async function transactionRpcFixture(mutate?: TransactionMutation) {
       const signature = request.params?.[0]
       const eventIndex = pkg.events.findIndex((entry) => entry.txSignature === signature)
       if (eventIndex < 0) throw new Error('unexpected transaction signature')
-      return new Response(JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        result: transactions[eventIndex],
-      }), { status: 200, headers: { 'content-type': 'application/json' } })
+      return new Response(
+        JSON.stringify({
+          jsonrpc: '2.0',
+          id: 1,
+          result: transactions[eventIndex],
+        }),
+        { status: 200, headers: { 'content-type': 'application/json' } },
+      )
     }
     if (request.method === 'getAccountInfo') {
       const data = accountQueue.shift()
@@ -332,6 +371,23 @@ async function transactionRpcFixture(mutate?: TransactionMutation) {
 }
 
 describe('verify/final canonical Solana comparison', () => {
+  /**
+   * ARRANGE: Use canonical fixture accounts and an independent trusted authority.
+   * ACTION: Remove the authority anchor, then substitute the on-chain authority.
+   * ASSERT: An absent anchor is NOT_CHECKED; a substituted authority is INVALID.
+   * FAILURE MEANS: an impostor deployment can be presented as independent proof.
+   */
+  it('refuses an unpinned deployment authority and rejects an authority substituted on-chain', async () => {
+    const pkg = parseEvidencePackage(structuredClone(validFixture))
+    const withoutAnchor = await verifyCanonicalChainState(pkg, { trustedAuthority: '' })
+    expect(withoutAnchor.status).toBe('NOT_CHECKED')
+
+    const changedAuthority = await verify((accounts) => {
+      accounts.config[8] = (accounts.config[8] ?? 0) ^ 1
+    })
+    expect(changedAuthority.status).toBe('INVALID')
+    expect(changedAuthority.detail).toContain('trusted deployment authority')
+  })
   /**
    * ARRANGE: build canonical ProtocolConfig, AnimalState, current RFID binding, and retired RFID binding from the valid package.
    * ACTION: compare the independently reconstructed terminal state to those RPC account bytes.
@@ -351,7 +407,9 @@ describe('verify/final canonical Solana comparison', () => {
    * FAILURE MEANS: stale or fabricated custody could be presented as current.
    */
   it('rejects a package whose terminal custodian differs from canonical RPC state', async () => {
-    const result = await verify(({ animal }) => { animal[72] ^= 1 })
+    const result = await verify(({ animal }) => {
+      animal[72] = animal[72]! ^ 1
+    })
     expect(result.status).toBe('INVALID')
     expect(result.detail).toContain('custodian')
   })
@@ -364,10 +422,18 @@ describe('verify/final canonical Solana comparison', () => {
    */
   it('rejects every terminal RFID revision sequence or last-event-hash mismatch', async () => {
     const mutations: FixtureMutation[] = [
-      ({ animal }) => { animal[40] ^= 1 },
-      ({ animal }) => { writeU32(animal, 104, new DataView(animal.buffer).getUint32(104, true) + 1) },
-      ({ animal }) => { writeU64(animal, 108, new DataView(animal.buffer).getBigUint64(108, true) + 1n) },
-      ({ animal }) => { animal[116] ^= 1 },
+      ({ animal }) => {
+        animal[40] = animal[40]! ^ 1
+      },
+      ({ animal }) => {
+        writeU32(animal, 104, new DataView(animal.buffer).getUint32(104, true) + 1)
+      },
+      ({ animal }) => {
+        writeU64(animal, 108, new DataView(animal.buffer).getBigUint64(108, true) + 1n)
+      },
+      ({ animal }) => {
+        animal[116] = animal[116]! ^ 1
+      },
     ]
     for (const mutate of mutations) expect((await verify(mutate)).status).toBe('INVALID')
   })
@@ -379,12 +445,18 @@ describe('verify/final canonical Solana comparison', () => {
    * FAILURE MEANS: network unavailability can be confused with proof validity.
    */
   it('represents RPC unavailability as NOT_CHECKED and never as canonical validity', async () => {
-    const fetchFn = (async () => { throw new TypeError('network unavailable') }) as typeof fetch
-    const result = await verifyCanonicalChainState(parseEvidencePackage(structuredClone(validFixture)), {
-      programId: PROGRAM_ID,
-      rpcUrl: RPC_URL,
-      fetchFn,
-    })
+    const fetchFn = (async () => {
+      throw new TypeError('network unavailable')
+    }) as typeof fetch
+    const result = await verifyCanonicalChainState(
+      parseEvidencePackage(structuredClone(validFixture)),
+      {
+        programId: PROGRAM_ID,
+        trustedAuthority: TRUSTED_AUTHORITY,
+        rpcUrl: RPC_URL,
+        fetchFn,
+      },
+    )
     expect(result.status).toBe('NOT_CHECKED')
   })
 
@@ -396,23 +468,43 @@ describe('verify/final canonical Solana comparison', () => {
    */
   it('requires the AnimalState account owner and binary layout to match the Lastro program', async () => {
     const accounts = await canonicalAccounts()
-    const wrongOwnerQueue = [accounts.config, accounts.animal, accounts.currentBinding, ...accounts.retiredBindings]
+    const wrongOwnerQueue = [
+      accounts.config,
+      accounts.animal,
+      accounts.currentBinding,
+      ...accounts.retiredBindings,
+    ]
     let request = 0
     const wrongOwnerFetch = (async () => {
       const data = wrongOwnerQueue.shift()!
-      const response = accountResponse(data, request++ === 1 ? 'Vote111111111111111111111111111111111111111' : PROGRAM_ID)
+      const response = accountResponse(
+        data,
+        request++ === 1 ? 'Vote111111111111111111111111111111111111111' : PROGRAM_ID,
+      )
       return response
     }) as typeof fetch
-    const wrongOwner = await verifyCanonicalChainState(parseEvidencePackage(structuredClone(validFixture)), {
-      programId: PROGRAM_ID, rpcUrl: RPC_URL, fetchFn: wrongOwnerFetch,
-    })
+    const wrongOwner = await verifyCanonicalChainState(
+      parseEvidencePackage(structuredClone(validFixture)),
+      {
+        programId: PROGRAM_ID,
+        trustedAuthority: TRUSTED_AUTHORITY,
+        rpcUrl: RPC_URL,
+        fetchFn: wrongOwnerFetch,
+      },
+    )
     expect(wrongOwner.status).toBe('INVALID')
 
     const malformedQueue = [accounts.config, accounts.animal.slice(0, 148)]
     const malformedFetch = (async () => accountResponse(malformedQueue.shift()!)) as typeof fetch
-    const malformed = await verifyCanonicalChainState(parseEvidencePackage(structuredClone(validFixture)), {
-      programId: PROGRAM_ID, rpcUrl: RPC_URL, fetchFn: malformedFetch,
-    })
+    const malformed = await verifyCanonicalChainState(
+      parseEvidencePackage(structuredClone(validFixture)),
+      {
+        programId: PROGRAM_ID,
+        trustedAuthority: TRUSTED_AUTHORITY,
+        rpcUrl: RPC_URL,
+        fetchFn: malformedFetch,
+      },
+    )
     expect(malformed.status).toBe('INVALID')
   })
 
@@ -428,6 +520,7 @@ describe('verify/final canonical Solana comparison', () => {
     const fetchFn = await rpcFetch()
     const result = await verifyCanonicalChainState(pkg, {
       programId: PROGRAM_ID,
+      trustedAuthority: TRUSTED_AUTHORITY,
       rpcUrl: RPC_URL,
       fetchFn,
     })
@@ -445,6 +538,7 @@ describe('verify/final canonical Solana comparison', () => {
     const fixture = await transactionRpcFixture()
     const result = await verifyCanonicalChainState(fixture.pkg, {
       programId: TX_PROGRAM_ID,
+      trustedAuthority: TRUSTED_AUTHORITY,
       rpcUrl: RPC_URL,
       fetchFn: fixture.fetchFn,
     })
@@ -459,17 +553,33 @@ describe('verify/final canonical Solana comparison', () => {
    * FAILURE MEANS: pending or failed Solana execution could be presented as accepted canonical history.
    */
   it('rejects non-finalized and failed evidence transactions', async () => {
-    const nonFinalized = await transactionRpcFixture((transactions) => { transactions[0] = null })
-    expect((await verifyCanonicalChainState(nonFinalized.pkg, {
-      programId: TX_PROGRAM_ID, rpcUrl: RPC_URL, fetchFn: nonFinalized.fetchFn,
-    })).status).toBe('INVALID')
+    const nonFinalized = await transactionRpcFixture((transactions) => {
+      transactions[0] = null
+    })
+    expect(
+      (
+        await verifyCanonicalChainState(nonFinalized.pkg, {
+          programId: TX_PROGRAM_ID,
+          trustedAuthority: TRUSTED_AUTHORITY,
+          rpcUrl: RPC_URL,
+          fetchFn: nonFinalized.fetchFn,
+        })
+      ).status,
+    ).toBe('INVALID')
 
     const failed = await transactionRpcFixture((transactions) => {
       transactions[0]!.meta.err = { InstructionError: [1, { Custom: 6000 }] }
     })
-    expect((await verifyCanonicalChainState(failed.pkg, {
-      programId: TX_PROGRAM_ID, rpcUrl: RPC_URL, fetchFn: failed.fetchFn,
-    })).status).toBe('INVALID')
+    expect(
+      (
+        await verifyCanonicalChainState(failed.pkg, {
+          programId: TX_PROGRAM_ID,
+          trustedAuthority: TRUSTED_AUTHORITY,
+          rpcUrl: RPC_URL,
+          fetchFn: failed.fetchFn,
+        })
+      ).status,
+    ).toBe('INVALID')
   })
 
   /**
@@ -484,6 +594,7 @@ describe('verify/final canonical Solana comparison', () => {
     })
     const result = await verifyCanonicalChainState(fixture.pkg, {
       programId: TX_PROGRAM_ID,
+      trustedAuthority: TRUSTED_AUTHORITY,
       rpcUrl: RPC_URL,
       fetchFn: fixture.fetchFn,
     })
@@ -502,7 +613,7 @@ describe('verify/final canonical Solana comparison', () => {
       (transactions) => {
         const instruction = transactions[0]!.transaction.message.instructions[1]!
         const data = fromBase58(instruction.data)
-        data[data.length - 1] ^= 1
+        data[data.length - 1] = data[data.length - 1]! ^ 1
         instruction.data = base58(data)
       },
       (transactions) => {
@@ -520,6 +631,7 @@ describe('verify/final canonical Solana comparison', () => {
       const fixture = await transactionRpcFixture(mutate)
       const result = await verifyCanonicalChainState(fixture.pkg, {
         programId: TX_PROGRAM_ID,
+        trustedAuthority: TRUSTED_AUTHORITY,
         rpcUrl: RPC_URL,
         fetchFn: fixture.fetchFn,
       })
@@ -541,19 +653,24 @@ describe('verify/final canonical Solana comparison', () => {
           reject(new Error('expected verifier RPC AbortSignal'))
           return
         }
-        signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), { once: true })
+        signal.addEventListener('abort', () => reject(new DOMException('aborted', 'AbortError')), {
+          once: true,
+        })
       })
       throw new Error('unreachable')
     }) as typeof fetch
 
-    const result = await verifyCanonicalChainState(parseEvidencePackage(structuredClone(validFixture)), {
-      programId: PROGRAM_ID,
-      rpcUrl: RPC_URL,
-      fetchFn: stalledFetch,
-      rpcTimeoutMs: 1,
-    })
+    const result = await verifyCanonicalChainState(
+      parseEvidencePackage(structuredClone(validFixture)),
+      {
+        programId: PROGRAM_ID,
+        trustedAuthority: TRUSTED_AUTHORITY,
+        rpcUrl: RPC_URL,
+        fetchFn: stalledFetch,
+        rpcTimeoutMs: 1,
+      },
+    )
     expect(result.status).toBe('NOT_CHECKED')
     expect(result.detail).toContain('unavailable')
   })
-
 })

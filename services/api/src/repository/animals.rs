@@ -2,7 +2,7 @@
 //! Canonical current state may change only after finalized Solana state has been checked.
 
 use lastro_protocol::{Action, StationEvent};
-use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 
 use crate::error::ApiError;
 
@@ -22,14 +22,52 @@ pub async fn insert_registration(
     animal_id: [u8; 32],
     visual_recovery_id: &str,
 ) -> Result<AnimalRecord, ApiError> {
-    let row = sqlx::query(
-        "INSERT INTO animals(animal_id, visual_recovery_id) VALUES($1,$2) RETURNING *",
+    let row =
+        sqlx::query("INSERT INTO animals(animal_id, visual_recovery_id) VALUES($1,$2) RETURNING *")
+            .bind(animal_id.to_vec())
+            .bind(visual_recovery_id)
+            .fetch_one(pool)
+            .await
+            .map_err(map_write_error)?;
+    decode_animal(&row)
+}
+
+/// Keep anonymous demo registration within a deployment-wide persistence budget.
+/// The transaction lock serializes the budget check across API replicas.
+pub async fn insert_public_registration(
+    pool: &PgPool,
+    animal_id: [u8; 32],
+    visual_recovery_id: &str,
+) -> Result<AnimalRecord, ApiError> {
+    let mut tx = pool.begin().await.map_err(db_error)?;
+    sqlx::query("SELECT pg_advisory_xact_lock(5494761203310419792)")
+        .execute(&mut *tx)
+        .await
+        .map_err(db_error)?;
+    let recent: i64 = sqlx::query_scalar(
+        "SELECT count(*) FROM animals WHERE event_sequence=0 AND created_at > now() - interval '1 minute'",
     )
-    .bind(animal_id.to_vec())
-    .bind(visual_recovery_id)
-    .fetch_one(pool)
+    .fetch_one(&mut *tx)
     .await
-    .map_err(map_write_error)?;
+    .map_err(db_error)?;
+    let unoriginated: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM animals WHERE event_sequence=0")
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(db_error)?;
+    if recent >= 60 || unoriginated >= 5000 {
+        return Err(ApiError::RateLimited(
+            "public animal registration budget exhausted".into(),
+        ));
+    }
+    let row =
+        sqlx::query("INSERT INTO animals(animal_id, visual_recovery_id) VALUES($1,$2) RETURNING *")
+            .bind(animal_id.to_vec())
+            .bind(visual_recovery_id)
+            .fetch_one(&mut *tx)
+            .await
+            .map_err(map_write_error)?;
+    tx.commit().await.map_err(db_error)?;
     decode_animal(&row)
 }
 
@@ -37,7 +75,12 @@ pub async fn find_by_animal_id(
     pool: &PgPool,
     animal_id: [u8; 32],
 ) -> Result<Option<AnimalRecord>, ApiError> {
-    fetch_optional(pool, "SELECT * FROM animals WHERE animal_id = $1", animal_id.to_vec()).await
+    fetch_optional(
+        pool,
+        "SELECT * FROM animals WHERE animal_id = $1",
+        animal_id.to_vec(),
+    )
+    .await
 }
 
 pub async fn find_by_visual_recovery_id(
@@ -135,11 +178,15 @@ pub async fn apply_confirmed_state(
         .as_ref()
         .map(decode_animal)
         .transpose()?
-        .ok_or_else(|| ApiError::Conflict("local projection is missing for confirmed event".into()))?;
+        .ok_or_else(|| {
+            ApiError::Conflict("local projection is missing for confirmed event".into())
+        })?;
     if matches_terminal(&current, event) {
         Ok(current)
     } else {
-        Err(ApiError::Conflict("local projection predecessor does not match confirmed event".into()))
+        Err(ApiError::Conflict(
+            "local projection predecessor does not match confirmed event".into(),
+        ))
     }
 }
 
@@ -157,7 +204,11 @@ async fn fetch_optional(
     sql: &'static str,
     value: Vec<u8>,
 ) -> Result<Option<AnimalRecord>, ApiError> {
-    let row = sqlx::query(sql).bind(value).fetch_optional(pool).await.map_err(db_error)?;
+    let row = sqlx::query(sql)
+        .bind(value)
+        .fetch_optional(pool)
+        .await
+        .map_err(db_error)?;
     row.as_ref().map(decode_animal).transpose()
 }
 
@@ -182,7 +233,9 @@ fn fixed<const N: usize>(row: &PgRow, column: &str) -> Result<[u8; N], ApiError>
 
 fn optional_fixed<const N: usize>(row: &PgRow, column: &str) -> Result<Option<[u8; N]>, ApiError> {
     let value: Option<Vec<u8>> = row.try_get(column).map_err(db_error)?;
-    value.map(|bytes| bytes.try_into().map_err(|_| ApiError::Internal)).transpose()
+    value
+        .map(|bytes| bytes.try_into().map_err(|_| ApiError::Internal))
+        .transpose()
 }
 
 fn map_write_error(error: sqlx::Error) -> ApiError {

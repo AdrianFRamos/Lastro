@@ -18,6 +18,8 @@ export interface CanonicalVerificationOptions {
   programId?: string
   fetchFn?: typeof fetch
   rpcTimeoutMs?: number
+  trustedAuthority?: string
+  trustedDeploymentId?: string
 }
 
 interface RpcAccount {
@@ -44,12 +46,29 @@ const CONFIG_SEED = new TextEncoder().encode('config')
 const ANIMAL_SEED = new TextEncoder().encode('animal')
 const RFID_SEED = new TextEncoder().encode('rfid')
 const DEFAULT_RPC_TIMEOUT_MS = 10_000
+const MAX_VERIFICATION_DURATION_MS = 30_000
 
 export async function verifyCanonicalChainState(
   pkg: EvidencePackage,
   options: CanonicalVerificationOptions = {},
 ): Promise<VerificationLayerResult> {
   try {
+    if (pkg.events.length === 0 || pkg.events.length > 128) {
+      return invalid('Evidence history exceeds the 128-event verification limit')
+    }
+    if (pkg.deploymentId !== (options.trustedDeploymentId ?? webConfig.lastroDeploymentId)) {
+      return invalid('EvidencePackage deployment differs from the trusted browser deployment')
+    }
+    const trustedAuthority = options.trustedAuthority ?? webConfig.lastroAuthority
+    if (!trustedAuthority) {
+      return {
+        layer: 'ON_CHAIN_STATE',
+        status: 'NOT_CHECKED',
+        detail:
+          'A trusted deployment authority must be configured independently before canonical verification',
+      }
+    }
+    const expectedAuthority = decodeCanonicalBase58(trustedAuthority, 32, 'deployment authority')
     const deployment = decodeHex(pkg.deploymentId, 32)
     const animalId = decodeHex(pkg.animalId, 32)
     const events = pkg.events.map((entry) => ({
@@ -61,7 +80,11 @@ export async function verifyCanonicalChainState(
     const last = decodeStationEvent(events.at(-1)!.raw)
     const programId = options.programId ?? webConfig.lastroProgramId
     const rpcUrl = options.rpcUrl ?? webConfig.solanaRpcUrl
-    const fetchFn = withTimeout(options.fetchFn ?? fetch, options.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS)
+    const fetchFn = withTimeout(
+      options.fetchFn ?? fetch,
+      options.rpcTimeoutMs ?? DEFAULT_RPC_TIMEOUT_MS,
+      MAX_VERIFICATION_DURATION_MS,
+    )
     const programAddress = address(programId)
 
     const [configPda, configBump] = await getProgramDerivedAddress({
@@ -70,8 +93,15 @@ export async function verifyCanonicalChainState(
     })
     const configData = await getOwnedAccount(configPda, 106, programId, rpcUrl, fetchFn)
     await requireDiscriminator(configData, 'ProtocolConfig')
-    if (!equalBytes(configData.subarray(40, 72), deployment)) return invalid('ProtocolConfig deployment_id does not match the package')
-    if (configData[105] !== configBump) return invalid('Canonical ProtocolConfig PDA bump is invalid')
+    if (!equalBytes(configData.subarray(8, 40), expectedAuthority)) {
+      return invalid(
+        'Canonical ProtocolConfig authority differs from the trusted deployment authority',
+      )
+    }
+    if (!equalBytes(configData.subarray(40, 72), deployment))
+      return invalid('ProtocolConfig deployment_id does not match the package')
+    if (configData[105] !== configBump)
+      return invalid('Canonical ProtocolConfig PDA bump is invalid')
     const canonicalStation = configData.subarray(72, 105)
     if (events.some((entry) => !equalBytes(entry.stationPubkey, canonicalStation))) {
       return invalid('Package contains a Station key not authorized by canonical ProtocolConfig')
@@ -79,7 +109,9 @@ export async function verifyCanonicalChainState(
 
     const transactionSignatureCount = events.filter((entry) => entry.txSignature !== null).length
     if (transactionSignatureCount !== 0 && transactionSignatureCount !== events.length) {
-      return invalid('EvidencePackage must contain transaction signatures for every event or for none of them')
+      return invalid(
+        'EvidencePackage must contain transaction signatures for every event or for none of them',
+      )
     }
     if (transactionSignatureCount === events.length) {
       for (const entry of events) {
@@ -101,30 +133,53 @@ export async function verifyCanonicalChainState(
     })
     const animalData = await getOwnedAccount(animalPda, 149, programId, rpcUrl, fetchFn)
     await requireDiscriminator(animalData, 'AnimalState')
-    if (!equalBytes(animalData.subarray(8, 40), animalId)) return invalid('Canonical AnimalState AnimalID does not match the package')
+    if (!equalBytes(animalData.subarray(8, 40), animalId))
+      return invalid('Canonical AnimalState AnimalID does not match the package')
     if (animalData[148] !== animalBump) return invalid('Canonical AnimalState PDA bump is invalid')
-    if (!equalBytes(animalData.subarray(40, 72), last.newRfidHash)) return invalid('Canonical current RFID differs from package terminal state')
-    if (!equalBytes(animalData.subarray(72, 104), last.toCustodian)) return invalid('Canonical custodian differs from package terminal state')
-    if (readU32(animalData, 104) !== last.identityRevision) return invalid('Canonical identity revision differs from package terminal state')
-    if (readU64(animalData, 108) !== last.eventSequence) return invalid('Canonical event sequence differs from package terminal state')
+    if (!equalBytes(animalData.subarray(40, 72), last.newRfidHash))
+      return invalid('Canonical current RFID differs from package terminal state')
+    if (!equalBytes(animalData.subarray(72, 104), last.toCustodian))
+      return invalid('Canonical custodian differs from package terminal state')
+    if (readU32(animalData, 104) !== last.identityRevision)
+      return invalid('Canonical identity revision differs from package terminal state')
+    if (readU64(animalData, 108) !== last.eventSequence)
+      return invalid('Canonical event sequence differs from package terminal state')
     if (!equalBytes(animalData.subarray(116, 148), await eventHash(events.at(-1)!.raw))) {
       return invalid('Canonical last event hash differs from package terminal event')
     }
 
-    const currentBinding = await loadBinding(programAddress, deployment, last.newRfidHash, programId, rpcUrl, fetchFn)
-    if (!equalBytes(currentBinding.subarray(8, 40), animalId)
-      || !equalBytes(currentBinding.subarray(40, 72), last.newRfidHash)
-      || currentBinding[72] !== 1) {
+    const currentBinding = await loadBinding(
+      programAddress,
+      deployment,
+      last.newRfidHash,
+      programId,
+      rpcUrl,
+      fetchFn,
+    )
+    if (
+      !equalBytes(currentBinding.subarray(8, 40), animalId) ||
+      !equalBytes(currentBinding.subarray(40, 72), last.newRfidHash) ||
+      currentBinding[72] !== 1
+    ) {
       return invalid('Canonical current RfidBinding is not ACTIVE for this AnimalID')
     }
 
     for (const entry of events) {
       const event = decodeStationEvent(entry.raw)
       if (event.action !== 3) continue
-      const retired = await loadBinding(programAddress, deployment, event.oldRfidHash, programId, rpcUrl, fetchFn)
-      if (!equalBytes(retired.subarray(8, 40), animalId)
-        || !equalBytes(retired.subarray(40, 72), event.oldRfidHash)
-        || retired[72] !== 2) {
+      const retired = await loadBinding(
+        programAddress,
+        deployment,
+        event.oldRfidHash,
+        programId,
+        rpcUrl,
+        fetchFn,
+      )
+      if (
+        !equalBytes(retired.subarray(8, 40), animalId) ||
+        !equalBytes(retired.subarray(40, 72), event.oldRfidHash) ||
+        retired[72] !== 2
+      ) {
         return invalid('A previous RFID from REIDENTIFY is not RETIRED canonically')
       }
     }
@@ -133,13 +188,15 @@ export async function verifyCanonicalChainState(
       return {
         layer: 'ON_CHAIN_STATE',
         status: 'NOT_CHECKED',
-        detail: 'Canonical ProtocolConfig, AnimalState, and RFID bindings match, but transaction signatures are absent so the historical Solana envelopes were not checked',
+        detail:
+          'Canonical ProtocolConfig, AnimalState, and RFID bindings match, but transaction signatures are absent so the historical Solana envelopes were not checked',
       }
     }
     return {
       layer: 'ON_CHAIN_STATE',
       status: 'VALID',
-      detail: 'Canonical ProtocolConfig, AnimalState, and RFID bindings match the independently verified history, and every supplied transaction is finalized with the exact Lastro envelope',
+      detail:
+        'Canonical ProtocolConfig, AnimalState, and RFID bindings match the independently verified history, and every supplied transaction is finalized with the exact Lastro envelope',
     }
   } catch (error) {
     if (error instanceof RpcUnavailableError) {
@@ -159,26 +216,31 @@ async function verifyFinalizedEventTransaction(
   fetchFn: typeof fetch,
 ): Promise<void> {
   decodeCanonicalBase58(txSignature, 64, 'transaction signature')
-  const result = await rpcResult(
-    rpcUrl,
-    fetchFn,
-    'getTransaction',
-    [txSignature, { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 0 }],
-  )
+  const result = await rpcResult(rpcUrl, fetchFn, 'getTransaction', [
+    txSignature,
+    { commitment: 'finalized', encoding: 'json', maxSupportedTransactionVersion: 0 },
+  ])
   if (result === null) throw new Error('Evidence transaction is not finalized on canonical Solana')
-  if (!isRecord(result)) throw new Error('Finalized Solana transaction response has an invalid shape')
+  if (!isRecord(result))
+    throw new Error('Finalized Solana transaction response has an invalid shape')
   if (result.version !== undefined && result.version !== null && result.version !== 'legacy') {
     throw new Error('Evidence transaction is not the required legacy transaction version')
   }
   if (!isRecord(result.meta) || result.meta.err !== null) {
     throw new Error('Evidence transaction did not finalize successfully')
   }
-  if (!isRecord(result.transaction)) throw new Error('Finalized Solana transaction payload is invalid')
+  if (!isRecord(result.transaction))
+    throw new Error('Finalized Solana transaction payload is invalid')
   const transaction = result.transaction
-  if (!Array.isArray(transaction.signatures) || transaction.signatures.length !== 1 || transaction.signatures[0] !== txSignature) {
+  if (
+    !Array.isArray(transaction.signatures) ||
+    transaction.signatures.length !== 1 ||
+    transaction.signatures[0] !== txSignature
+  ) {
     throw new Error('Finalized Solana transaction signature does not match EvidencePackage')
   }
-  if (!isRecord(transaction.message)) throw new Error('Finalized Solana transaction message is invalid')
+  if (!isRecord(transaction.message))
+    throw new Error('Finalized Solana transaction message is invalid')
 
   const expected = await expectedEventEnvelope(rawEvent, stationPubkey, stationSignature, programId)
   verifyCompiledMessage(transaction.message, expected.requiredSigner, expected.instructions)
@@ -192,13 +254,24 @@ async function expectedEventEnvelope(
 ): Promise<{ requiredSigner: string; instructions: [ExpectedInstruction, ExpectedInstruction] }> {
   const event = decodeStationEvent(rawEvent)
   const programAddress = address(programId)
-  const [config] = await getProgramDerivedAddress({ programAddress, seeds: [CONFIG_SEED, event.deploymentId] })
-  const [animal] = await getProgramDerivedAddress({ programAddress, seeds: [ANIMAL_SEED, event.deploymentId, event.animalId] })
-  const requiredSigner = getAddressDecoder().decode(event.action === 1 ? event.toCustodian : event.fromCustodian)
+  const [config] = await getProgramDerivedAddress({
+    programAddress,
+    seeds: [CONFIG_SEED, event.deploymentId],
+  })
+  const [animal] = await getProgramDerivedAddress({
+    programAddress,
+    seeds: [ANIMAL_SEED, event.deploymentId, event.animalId],
+  })
+  const requiredSigner = getAddressDecoder().decode(
+    event.action === 1 ? event.toCustodian : event.fromCustodian,
+  )
 
   let accounts: ExpectedAccountMeta[]
   if (event.action === 1) {
-    const [binding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.newRfidHash] })
+    const [binding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.newRfidHash],
+    })
     accounts = [
       expectedMeta(requiredSigner, true, true),
       expectedMeta(config, false, false),
@@ -208,7 +281,10 @@ async function expectedEventEnvelope(
       expectedMeta(SYSTEM_PROGRAM_ID, false, false),
     ]
   } else if (event.action === 2) {
-    const [binding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash] })
+    const [binding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash],
+    })
     accounts = [
       expectedMeta(requiredSigner, true, false),
       expectedMeta(config, false, false),
@@ -217,8 +293,14 @@ async function expectedEventEnvelope(
       expectedMeta(INSTRUCTIONS_SYSVAR_ID, false, false),
     ]
   } else {
-    const [oldBinding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash] })
-    const [newBinding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.newRfidHash] })
+    const [oldBinding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash],
+    })
+    const [newBinding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.newRfidHash],
+    })
     accounts = [
       expectedMeta(requiredSigner, true, true),
       expectedMeta(config, false, false),
@@ -259,20 +341,40 @@ function verifyCompiledMessage(
   requiredSigner: string,
   expectedInstructions: readonly ExpectedInstruction[],
 ): void {
-  if (message.addressTableLookups !== undefined
-    && (!Array.isArray(message.addressTableLookups) || message.addressTableLookups.length !== 0)) {
+  if (
+    message.addressTableLookups !== undefined &&
+    (!Array.isArray(message.addressTableLookups) || message.addressTableLookups.length !== 0)
+  ) {
     throw new Error('Evidence transaction unexpectedly uses address table lookups')
   }
-  if (!Array.isArray(message.accountKeys) || !message.accountKeys.every((value) => typeof value === 'string')) {
+  if (
+    !Array.isArray(message.accountKeys) ||
+    !message.accountKeys.every((value) => typeof value === 'string')
+  ) {
     throw new Error('Evidence transaction account keys are invalid')
   }
   const accountKeys = message.accountKeys as string[]
   if (!isRecord(message.header)) throw new Error('Evidence transaction header is invalid')
-  const requiredSignatures = integerField(message.header.numRequiredSignatures, 'numRequiredSignatures')
-  const readonlySigned = integerField(message.header.numReadonlySignedAccounts, 'numReadonlySignedAccounts')
-  const readonlyUnsigned = integerField(message.header.numReadonlyUnsignedAccounts, 'numReadonlyUnsignedAccounts')
-  if (requiredSignatures !== 1 || readonlySigned > requiredSignatures || accountKeys[0] !== requiredSigner) {
-    throw new Error('Evidence transaction signer header does not match canonical custodian authority')
+  const requiredSignatures = integerField(
+    message.header.numRequiredSignatures,
+    'numRequiredSignatures',
+  )
+  const readonlySigned = integerField(
+    message.header.numReadonlySignedAccounts,
+    'numReadonlySignedAccounts',
+  )
+  const readonlyUnsigned = integerField(
+    message.header.numReadonlyUnsignedAccounts,
+    'numReadonlyUnsignedAccounts',
+  )
+  if (
+    requiredSignatures !== 1 ||
+    readonlySigned > requiredSignatures ||
+    accountKeys[0] !== requiredSigner
+  ) {
+    throw new Error(
+      'Evidence transaction signer header does not match canonical custodian authority',
+    )
   }
   if (readonlyUnsigned > accountKeys.length - requiredSignatures) {
     throw new Error('Evidence transaction account header is inconsistent')
@@ -286,7 +388,8 @@ function verifyCompiledMessage(
       mergeRole(roles, account.address, account.isSigner, account.isWritable)
     }
   }
-  if (roles.size !== accountKeys.length) throw new Error('Evidence transaction contains unexpected accounts')
+  if (roles.size !== accountKeys.length)
+    throw new Error('Evidence transaction contains unexpected accounts')
   for (let index = 0; index < accountKeys.length; index += 1) {
     const signer = index < requiredSignatures
     const writable = signer
@@ -298,44 +401,71 @@ function verifyCompiledMessage(
     }
   }
 
-  if (!Array.isArray(message.instructions) || message.instructions.length !== expectedInstructions.length) {
-    throw new Error('Evidence transaction must contain exactly the frozen two-instruction Lastro envelope')
+  if (
+    !Array.isArray(message.instructions) ||
+    message.instructions.length !== expectedInstructions.length
+  ) {
+    throw new Error(
+      'Evidence transaction must contain exactly the frozen two-instruction Lastro envelope',
+    )
   }
-  for (let instructionIndex = 0; instructionIndex < expectedInstructions.length; instructionIndex += 1) {
+  for (
+    let instructionIndex = 0;
+    instructionIndex < expectedInstructions.length;
+    instructionIndex += 1
+  ) {
     const actual = message.instructions[instructionIndex]
     const expected = expectedInstructions[instructionIndex]!
-    if (!isRecord(actual)) throw new Error('Evidence transaction contains an invalid compiled instruction')
+    if (!isRecord(actual))
+      throw new Error('Evidence transaction contains an invalid compiled instruction')
     const programIdIndex = integerField(actual.programIdIndex, 'programIdIndex')
     if (accountKeys[programIdIndex] !== expected.programId) {
-      throw new Error(`Evidence transaction instruction ${instructionIndex} targets the wrong program`)
+      throw new Error(
+        `Evidence transaction instruction ${instructionIndex} targets the wrong program`,
+      )
     }
     if (!Array.isArray(actual.accounts) || actual.accounts.length !== expected.accounts.length) {
-      throw new Error(`Evidence transaction instruction ${instructionIndex} has the wrong account count`)
+      throw new Error(
+        `Evidence transaction instruction ${instructionIndex} has the wrong account count`,
+      )
     }
     for (let accountIndex = 0; accountIndex < expected.accounts.length; accountIndex += 1) {
       const keyIndex = integerField(actual.accounts[accountIndex], 'account index')
       if (accountKeys[keyIndex] !== expected.accounts[accountIndex]!.address) {
-        throw new Error(`Evidence transaction instruction ${instructionIndex} account order is invalid`)
+        throw new Error(
+          `Evidence transaction instruction ${instructionIndex} account order is invalid`,
+        )
       }
     }
-    if (typeof actual.data !== 'string') throw new Error('Evidence transaction instruction data is invalid')
+    if (typeof actual.data !== 'string')
+      throw new Error('Evidence transaction instruction data is invalid')
     const actualData = decodeCanonicalBase58(actual.data, expected.data.length, 'instruction data')
     if (!equalBytes(actualData, expected.data)) {
-      throw new Error(`Evidence transaction instruction ${instructionIndex} bytes do not match the exact StationEvent envelope`)
+      throw new Error(
+        `Evidence transaction instruction ${instructionIndex} bytes do not match the exact StationEvent envelope`,
+      )
     }
   }
 }
 
-function withTimeout(fetchFn: typeof fetch, timeoutMs: number): typeof fetch {
-  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0) throw new Error('RPC timeout must be a positive finite number')
+function withTimeout(
+  fetchFn: typeof fetch,
+  timeoutMs: number,
+  totalBudgetMs: number,
+): typeof fetch {
+  if (!Number.isFinite(timeoutMs) || timeoutMs <= 0)
+    throw new Error('RPC timeout must be a positive finite number')
+  const deadline = Date.now() + totalBudgetMs
   return (async (input: RequestInfo | URL, init?: RequestInit): Promise<Response> => {
-    const controller = new AbortController()
-    const timeout = window.setTimeout(() => controller.abort(), timeoutMs)
-    try {
-      return await fetchFn(input, { ...init, signal: controller.signal })
-    } finally {
-      window.clearTimeout(timeout)
+    const remainingMs = deadline - Date.now()
+    if (remainingMs <= 0) {
+      throw new RpcUnavailableError('Solana RPC verification exceeded its total time budget')
     }
+    // The signal remains live while the caller reads the response body.
+    return fetchFn(input, {
+      ...init,
+      signal: AbortSignal.timeout(Math.min(timeoutMs, remainingMs)),
+    })
   }) as typeof fetch
 }
 
@@ -355,16 +485,29 @@ async function rpcResult(
   } catch {
     throw new RpcUnavailableError('Solana RPC is unavailable; canonical state was not checked')
   }
-  if (!response.ok) throw new RpcUnavailableError('Solana RPC returned an HTTP error; canonical state was not checked')
+  if (!response.ok)
+    throw new RpcUnavailableError(
+      'Solana RPC returned an HTTP error; canonical state was not checked',
+    )
   let body: unknown
-  try { body = await response.json() } catch { throw new RpcUnavailableError('Solana RPC returned invalid JSON; canonical state was not checked') }
+  try {
+    body = await response.json()
+  } catch {
+    throw new RpcUnavailableError(
+      'Solana RPC returned invalid JSON; canonical state was not checked',
+    )
+  }
   if (!isRecord(body) || body.error !== undefined || !('result' in body)) {
     throw new RpcUnavailableError('Solana RPC returned an error; canonical state was not checked')
   }
   return body.result
 }
 
-function expectedMeta(value: Address | string, isSigner: boolean, isWritable: boolean): ExpectedAccountMeta {
+function expectedMeta(
+  value: Address | string,
+  isSigner: boolean,
+  isWritable: boolean,
+): ExpectedAccountMeta {
   return { address: String(value), isSigner, isWritable }
 }
 
@@ -379,14 +522,15 @@ function mergeRole(
 }
 
 function integerField(value: unknown, name: string): number {
-  if (!Number.isSafeInteger(value) || (value as number) < 0) throw new Error(`Evidence transaction ${name} is invalid`)
+  if (!Number.isSafeInteger(value) || (value as number) < 0)
+    throw new Error(`Evidence transaction ${name} is invalid`)
   return value as number
 }
 
 function decodeCanonicalBase58(value: string, expectedBytes: number, label: string): Uint8Array {
   let decoded: Uint8Array
   try {
-    decoded = getBase58Encoder().encode(value)
+    decoded = new Uint8Array(getBase58Encoder().encode(value))
   } catch {
     throw new Error(`Evidence ${label} is not valid base58`)
   }
@@ -397,7 +541,9 @@ function decodeCanonicalBase58(value: string, expectedBytes: number, label: stri
 }
 
 async function hashDiscriminator(value: string): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value))).subarray(0, 8)
+  return new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(value)),
+  ).subarray(0, 8)
 }
 
 async function loadBinding(
@@ -415,7 +561,8 @@ async function loadBinding(
   const data = await getOwnedAccount(pda, 74, programId, rpcUrl, fetchFn)
   await requireDiscriminator(data, 'RfidBinding')
   if (data[73] !== bump) throw new Error('Canonical RfidBinding PDA bump is invalid')
-  if (data[72] !== 1 && data[72] !== 2) throw new Error('Canonical RfidBinding has an invalid status')
+  if (data[72] !== 1 && data[72] !== 2)
+    throw new Error('Canonical RfidBinding has an invalid status')
   return data
 }
 
@@ -431,29 +578,49 @@ async function getOwnedAccount(
     response = await fetchFn(rpcUrl, {
       method: 'POST',
       headers: { 'content-type': 'application/json' },
-      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'getAccountInfo', params: [accountAddress, { commitment: 'finalized', encoding: 'base64' }] }),
+      body: JSON.stringify({
+        jsonrpc: '2.0',
+        id: 1,
+        method: 'getAccountInfo',
+        params: [accountAddress, { commitment: 'finalized', encoding: 'base64' }],
+      }),
     })
   } catch {
     throw new RpcUnavailableError('Solana RPC is unavailable; canonical state was not checked')
   }
-  if (!response.ok) throw new RpcUnavailableError('Solana RPC returned an HTTP error; canonical state was not checked')
+  if (!response.ok)
+    throw new RpcUnavailableError(
+      'Solana RPC returned an HTTP error; canonical state was not checked',
+    )
   let body: unknown
-  try { body = await response.json() } catch { throw new RpcUnavailableError('Solana RPC returned invalid JSON; canonical state was not checked') }
-  if (!isRecord(body) || body.error !== undefined) throw new RpcUnavailableError('Solana RPC returned an error; canonical state was not checked')
+  try {
+    body = await response.json()
+  } catch {
+    throw new RpcUnavailableError(
+      'Solana RPC returned invalid JSON; canonical state was not checked',
+    )
+  }
+  if (!isRecord(body) || body.error !== undefined)
+    throw new RpcUnavailableError('Solana RPC returned an error; canonical state was not checked')
   const result = body.result
-  if (!isRecord(result) || !isRecord(result.value)) throw new Error('Canonical Solana account does not exist')
+  if (!isRecord(result) || !isRecord(result.value))
+    throw new Error('Canonical Solana account does not exist')
   const account = result.value as unknown as RpcAccount
   if (account.owner !== programId || account.executable !== false) {
     throw new Error('Canonical account owner/layout does not match the configured Lastro program')
   }
-  if (!Array.isArray(account.data) || account.data.length !== 2 || account.data[1] !== 'base64') throw new Error('Canonical account data is not base64 encoded')
+  if (!Array.isArray(account.data) || account.data.length !== 2 || account.data[1] !== 'base64')
+    throw new Error('Canonical account data is not base64 encoded')
   const data = decodeBase64(account.data[0], expectedLength)
   return data
 }
 
 async function requireDiscriminator(data: Uint8Array, accountName: string): Promise<void> {
-  const expected = new Uint8Array(await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`account:${accountName}`))).subarray(0, 8)
-  if (!equalBytes(data.subarray(0, 8), expected)) throw new Error(`Canonical ${accountName} discriminator is invalid`)
+  const expected = new Uint8Array(
+    await crypto.subtle.digest('SHA-256', new TextEncoder().encode(`account:${accountName}`)),
+  ).subarray(0, 8)
+  if (!equalBytes(data.subarray(0, 8), expected))
+    throw new Error(`Canonical ${accountName} discriminator is invalid`)
 }
 
 function readU32(data: Uint8Array, offset: number): number {
@@ -465,16 +632,23 @@ function readU64(data: Uint8Array, offset: number): bigint {
 }
 
 function decodeHex(value: string, bytes: number): Uint8Array {
-  if (!new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value)) throw new Error(`Expected ${bytes} lowercase hex bytes`)
+  if (!new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value))
+    throw new Error(`Expected ${bytes} lowercase hex bytes`)
   const out = new Uint8Array(bytes)
-  for (let index = 0; index < bytes; index += 1) out[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
+  for (let index = 0; index < bytes; index += 1)
+    out[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
   return out
 }
 
 function decodeBase64(value: string, bytes: number): Uint8Array {
   let binary: string
-  try { binary = atob(value) } catch { throw new Error('Canonical account contains invalid base64') }
-  if (btoa(binary) !== value || binary.length !== bytes) throw new Error(`Canonical account must contain exactly ${bytes} bytes`)
+  try {
+    binary = atob(value)
+  } catch {
+    throw new Error('Canonical account contains invalid base64')
+  }
+  if (btoa(binary) !== value || binary.length !== bytes)
+    throw new Error(`Canonical account must contain exactly ${bytes} bytes`)
   return Uint8Array.from(binary, (character) => character.charCodeAt(0))
 }
 

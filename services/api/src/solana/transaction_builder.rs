@@ -7,7 +7,7 @@
 
 use std::{collections::HashSet, str::FromStr};
 
-use base64::{engine::general_purpose::STANDARD as BASE64_STANDARD, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
 use lastro_protocol::{Action, StationEvent};
 use sha2::{Digest, Sha256};
 use solana_pubkey::Pubkey;
@@ -17,7 +17,7 @@ use crate::{
     model::{AccountMetaDto, InstructionDto, TransactionDataResponse, TransactionVersionDto},
     repository::events::EventRecord,
     solana::secp256r1::{
-        build_secp256r1_instruction_data, Secp256r1Descriptor, SECP256R1_PROGRAM_ID,
+        SECP256R1_PROGRAM_ID, Secp256r1Descriptor, build_secp256r1_instruction_data,
     },
 };
 
@@ -105,7 +105,9 @@ pub fn lastro_instruction_discriminator(action: Action) -> [u8; 8] {
         Action::Reidentify => "reidentify",
     };
     let digest = Sha256::digest(format!("global:{name}").as_bytes());
-    digest[..8].try_into().expect("SHA-256 output always contains eight bytes")
+    digest[..8]
+        .try_into()
+        .expect("SHA-256 output always contains eight bytes")
 }
 
 fn build_lastro_instruction_data(action_event: &StationEvent, event_bytes: &[u8; 276]) -> Vec<u8> {
@@ -120,9 +122,7 @@ fn unique_event_offset(data: &[u8], event: &[u8; 276]) -> Result<u16, ApiError> 
         .windows(event.len())
         .enumerate()
         .filter_map(|(offset, candidate)| (candidate == event).then_some(offset));
-    let offset = offsets
-        .next()
-        .ok_or_else(|| ApiError::Internal)?;
+    let offset = offsets.next().ok_or_else(|| ApiError::Internal)?;
     if offsets.next().is_some() {
         return Err(ApiError::Internal);
     }
@@ -137,16 +137,28 @@ fn required_signer(event: &StationEvent) -> Pubkey {
     Pubkey::new_from_array(bytes)
 }
 
-fn instruction_accounts(program_id: &Pubkey, event: &StationEvent) -> Result<Vec<AccountMetaDto>, ApiError> {
+fn instruction_accounts(
+    program_id: &Pubkey,
+    event: &StationEvent,
+) -> Result<Vec<AccountMetaDto>, ApiError> {
     let signer = required_signer(event).to_string();
     let (config, _) = protocol_config_address(program_id, &event.deployment_id);
     let (animal, _) = animal_state_address(program_id, &event.deployment_id, &event.animal_id);
-    let sysvar = AccountMetaDto { address: INSTRUCTIONS_SYSVAR_ID.into(), is_signer: false, is_writable: false };
-    let system = AccountMetaDto { address: SYSTEM_PROGRAM_ID.into(), is_signer: false, is_writable: false };
+    let sysvar = AccountMetaDto {
+        address: INSTRUCTIONS_SYSVAR_ID.into(),
+        is_signer: false,
+        is_writable: false,
+    };
+    let system = AccountMetaDto {
+        address: SYSTEM_PROGRAM_ID.into(),
+        is_signer: false,
+        is_writable: false,
+    };
 
     let accounts = match event.action {
         Action::Origin => {
-            let (binding, _) = rfid_binding_address(program_id, &event.deployment_id, &event.new_rfid_hash);
+            let (binding, _) =
+                rfid_binding_address(program_id, &event.deployment_id, &event.new_rfid_hash);
             vec![
                 meta(signer, true, true),
                 meta(config.to_string(), false, false),
@@ -157,7 +169,8 @@ fn instruction_accounts(program_id: &Pubkey, event: &StationEvent) -> Result<Vec
             ]
         }
         Action::Transfer => {
-            let (binding, _) = rfid_binding_address(program_id, &event.deployment_id, &event.old_rfid_hash);
+            let (binding, _) =
+                rfid_binding_address(program_id, &event.deployment_id, &event.old_rfid_hash);
             vec![
                 meta(signer, true, false),
                 meta(config.to_string(), false, false),
@@ -167,8 +180,10 @@ fn instruction_accounts(program_id: &Pubkey, event: &StationEvent) -> Result<Vec
             ]
         }
         Action::Reidentify => {
-            let (old_binding, _) = rfid_binding_address(program_id, &event.deployment_id, &event.old_rfid_hash);
-            let (new_binding, _) = rfid_binding_address(program_id, &event.deployment_id, &event.new_rfid_hash);
+            let (old_binding, _) =
+                rfid_binding_address(program_id, &event.deployment_id, &event.old_rfid_hash);
+            let (new_binding, _) =
+                rfid_binding_address(program_id, &event.deployment_id, &event.new_rfid_hash);
             vec![
                 meta(signer, true, true),
                 meta(config.to_string(), false, false),
@@ -184,7 +199,11 @@ fn instruction_accounts(program_id: &Pubkey, event: &StationEvent) -> Result<Vec
 }
 
 fn meta(address: String, is_signer: bool, is_writable: bool) -> AccountMetaDto {
-    AccountMetaDto { address, is_signer, is_writable }
+    AccountMetaDto {
+        address,
+        is_signer,
+        is_writable,
+    }
 }
 
 /// Measure the exact serialized length of the legacy transaction represented by the response.
@@ -205,18 +224,26 @@ fn measure_legacy_transaction(instructions: &[InstructionDto], fee_payer: &Pubke
     let account_keys = shortvec_len(keys.len()) + 32 * keys.len();
     let recent_blockhash = 32usize;
     let instruction_count = shortvec_len(instructions.len());
-    let compiled_instructions = instructions.iter().map(|instruction| {
-        let data_len = BASE64_STANDARD
-            .decode(&instruction.data_base64)
-            .expect("builder only measures its own canonical base64")
-            .len();
-        1 + shortvec_len(instruction.accounts.len())
-            + instruction.accounts.len()
-            + shortvec_len(data_len)
-            + data_len
-    }).sum::<usize>();
+    let compiled_instructions = instructions
+        .iter()
+        .map(|instruction| {
+            let data_len = BASE64_STANDARD
+                .decode(&instruction.data_base64)
+                .expect("builder only measures its own canonical base64")
+                .len();
+            1 + shortvec_len(instruction.accounts.len())
+                + instruction.accounts.len()
+                + shortvec_len(data_len)
+                + data_len
+        })
+        .sum::<usize>();
 
-    signatures + message_header + account_keys + recent_blockhash + instruction_count + compiled_instructions
+    signatures
+        + message_header
+        + account_keys
+        + recent_blockhash
+        + instruction_count
+        + compiled_instructions
 }
 
 fn shortvec_len(mut value: usize) -> usize {
@@ -234,8 +261,14 @@ mod tests {
 
     #[test]
     fn anchor_discriminators_are_action_specific() {
-        assert_ne!(lastro_instruction_discriminator(Action::Origin), lastro_instruction_discriminator(Action::Transfer));
-        assert_ne!(lastro_instruction_discriminator(Action::Transfer), lastro_instruction_discriminator(Action::Reidentify));
+        assert_ne!(
+            lastro_instruction_discriminator(Action::Origin),
+            lastro_instruction_discriminator(Action::Transfer)
+        );
+        assert_ne!(
+            lastro_instruction_discriminator(Action::Transfer),
+            lastro_instruction_discriminator(Action::Reidentify)
+        );
     }
 
     #[test]

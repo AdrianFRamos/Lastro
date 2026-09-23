@@ -18,7 +18,9 @@ describe('components/CustodyTimeline', () => {
     ]
     const wrapper = mount(CustodyTimeline, { props: { events } })
 
-    expect(wrapper.findAll('.timeline__label').map((item) => item.text())).toEqual(events.map((event) => event.label))
+    expect(wrapper.findAll('.timeline__label').map((item) => item.text())).toEqual(
+      events.map((event) => event.label),
+    )
     expect(wrapper.text()).toContain('REIDENTIFY')
     expect(wrapper.text()).toContain('revision 1')
     wrapper.unmount()
@@ -36,11 +38,17 @@ describe('components/CustodyTimeline', () => {
     const wrapper = mount(CustodyTimeline, { props: { events: [first, second] } })
 
     expect(wrapper.findAll('li')).toHaveLength(2)
-    expect(wrapper.findAll('.timeline__label').map((item) => item.text())).toEqual([first.label, second.label])
+    expect(wrapper.findAll('.timeline__label').map((item) => item.text())).toEqual([
+      first.label,
+      second.label,
+    ])
 
     await wrapper.setProps({ events: [second, first] })
     expect(wrapper.findAll('li')).toHaveLength(2)
-    expect(wrapper.findAll('.timeline__label').map((item) => item.text())).toEqual([second.label, first.label])
+    expect(wrapper.findAll('.timeline__label').map((item) => item.text())).toEqual([
+      second.label,
+      first.label,
+    ])
     wrapper.unmount()
   })
 })

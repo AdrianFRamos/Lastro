@@ -27,6 +27,8 @@ class Case:
 
 
 def is_test_path(path: Path) -> bool:
+    if any(part in {"node_modules", ".git", "target", "build", "dist", ".venv", "venv"} for part in path.parts):
+        return False
     return any(part in TEST_DIR_NAMES for part in path.parts) and path.name not in SKIP_FILES
 
 
@@ -87,7 +89,7 @@ def render(cases: list[Case]) -> str:
         "",
         "This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.",
         "",
-        f"**Declared cases:** {len(cases)}  ",
+        f"**Declared cases:** {len(cases)}",
         f"**Files containing test cases:** {len(by_file)}",
         "",
         "Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.",

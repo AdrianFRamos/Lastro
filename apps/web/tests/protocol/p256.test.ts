@@ -49,8 +49,14 @@ describe('protocol/p256', () => {
    */
   it('rejects a signature when one StationEvent byte changes', () => {
     const event = hex(vectors.events.origin.event_bytes_hex)
-    event[100] ^= 1
-    expect(verifyStationSignature(event, hex(vectors.station.pubkey_compressed_hex), hex(vectors.events.origin.station_signature_hex))).toBe(false)
+    event[100] = event[100]! ^ 1
+    expect(
+      verifyStationSignature(
+        event,
+        hex(vectors.station.pubkey_compressed_hex),
+        hex(vectors.events.origin.station_signature_hex),
+      ),
+    ).toBe(false)
   })
 
   /**
@@ -61,8 +67,14 @@ describe('protocol/p256', () => {
    */
   it('rejects an otherwise valid signature under a different Station public key', () => {
     const wrongKey = hex(vectors.station.pubkey_compressed_hex)
-    wrongKey[32] ^= 1
-    expect(verifyStationSignature(hex(vectors.events.origin.event_bytes_hex), wrongKey, hex(vectors.events.origin.station_signature_hex))).toBe(false)
+    wrongKey[32] = wrongKey[32]! ^ 1
+    expect(
+      verifyStationSignature(
+        hex(vectors.events.origin.event_bytes_hex),
+        wrongKey,
+        hex(vectors.events.origin.station_signature_hex),
+      ),
+    ).toBe(false)
   })
 
   /**
@@ -76,7 +88,9 @@ describe('protocol/p256', () => {
     const key = hex(vectors.station.pubkey_compressed_hex)
     const signature = hex(vectors.events.origin.station_signature_hex)
     expect(verifyStationSignature(event, key.slice(0, 32), signature)).toBe(false)
-    expect(verifyStationSignature(event, Uint8Array.from([4, ...key.slice(1)]), signature)).toBe(false)
+    expect(verifyStationSignature(event, Uint8Array.from([4, ...key.slice(1)]), signature)).toBe(
+      false,
+    )
     expect(verifyStationSignature(event, key, signature.slice(0, 63))).toBe(false)
   })
 
@@ -90,7 +104,13 @@ describe('protocol/p256', () => {
     const signature = hex(vectors.events.origin.station_signature_hex)
     const highS = ORDER - bytesToBigint(signature.slice(32))
     const malleated = Uint8Array.from([...signature.slice(0, 32), ...bigintTo32(highS)])
-    expect(verifyStationSignature(hex(vectors.events.origin.event_bytes_hex), hex(vectors.station.pubkey_compressed_hex), malleated)).toBe(false)
+    expect(
+      verifyStationSignature(
+        hex(vectors.events.origin.event_bytes_hex),
+        hex(vectors.station.pubkey_compressed_hex),
+        malleated,
+      ),
+    ).toBe(false)
   })
 
   /**
@@ -102,8 +122,12 @@ describe('protocol/p256', () => {
   it('requires raw 276-byte event input and cannot verify by passing event_hash as message', () => {
     const signature = hex(vectors.events.origin.station_signature_hex)
     const key = hex(vectors.station.pubkey_compressed_hex)
-    expect(verifyStationSignature(hex(vectors.events.origin.event_bytes_hex), key, signature)).toBe(true)
-    expect(verifyStationSignature(hex(vectors.events.origin.event_hash_hex), key, signature)).toBe(false)
+    expect(verifyStationSignature(hex(vectors.events.origin.event_bytes_hex), key, signature)).toBe(
+      true,
+    )
+    expect(verifyStationSignature(hex(vectors.events.origin.event_hash_hex), key, signature)).toBe(
+      false,
+    )
   })
 
   /**
@@ -115,7 +139,19 @@ describe('protocol/p256', () => {
   it('maps malformed off-curve public keys to false instead of throwing', () => {
     const malformed = new Uint8Array(33)
     malformed[0] = 2
-    expect(() => verifyStationSignature(hex(vectors.events.origin.event_bytes_hex), malformed, hex(vectors.events.origin.station_signature_hex))).not.toThrow()
-    expect(verifyStationSignature(hex(vectors.events.origin.event_bytes_hex), malformed, hex(vectors.events.origin.station_signature_hex))).toBe(false)
+    expect(() =>
+      verifyStationSignature(
+        hex(vectors.events.origin.event_bytes_hex),
+        malformed,
+        hex(vectors.events.origin.station_signature_hex),
+      ),
+    ).not.toThrow()
+    expect(
+      verifyStationSignature(
+        hex(vectors.events.origin.event_bytes_hex),
+        malformed,
+        hex(vectors.events.origin.station_signature_hex),
+      ),
+    ).toBe(false)
   })
 })

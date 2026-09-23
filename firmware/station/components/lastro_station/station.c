@@ -7,6 +7,7 @@
 #include "mbedtls/sha256.h"
 
 static const uint8_t STATION_DOMAIN[] = "LASTRO_STATION\0";
+#define LASTRO_RFID_WAIT_TIMEOUT_MS 180000u
 
 static lastro_station_state_t g_state = LASTRO_STATION_IDLE;
 static lastro_command_payload_t g_command;
@@ -19,6 +20,7 @@ static uint8_t g_event_hash[32];
 static bool g_has_observed_rfid;
 static bool g_event_ready_available;
 static bool g_error_available;
+static uint32_t g_rfid_wait_elapsed_ms;
 
 static bool all_zero(const uint8_t *bytes, size_t len)
 {
@@ -99,6 +101,7 @@ static bool derive_station_id(const uint8_t public_key[LASTRO_P256_PUBKEY_COMPRE
 
 static void clear_capture(void)
 {
+    g_rfid_wait_elapsed_ms = 0u;
     memset(&g_command, 0, sizeof(g_command));
     memset(&g_observed_rfid, 0, sizeof(g_observed_rfid));
     memset(&g_event_ready, 0, sizeof(g_event_ready));
@@ -167,7 +170,18 @@ bool lastro_station_submit_command(
     g_has_observed_rfid = false;
     g_event_ready_available = false;
     g_state = LASTRO_STATION_WAIT_RFID;
+    g_rfid_wait_elapsed_ms = 0u;
     return true;
+}
+
+void lastro_station_elapse(uint32_t elapsed_ms)
+{
+    if (g_state != LASTRO_STATION_WAIT_RFID) return;
+    if (elapsed_ms >= LASTRO_RFID_WAIT_TIMEOUT_MS - g_rfid_wait_elapsed_ms) {
+        fail_current_capture(LASTRO_STATION_ERROR_RFID_TIMEOUT);
+    } else {
+        g_rfid_wait_elapsed_ms += elapsed_ms;
+    }
 }
 
 bool lastro_station_observe_rfid(const lastro_canonical_rfid_t *rfid)

@@ -2,12 +2,16 @@ name: devnet
 on:
   workflow_dispatch:
 
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
 
 jobs:
   smoke:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-latest
     timeout-minutes: 45
     environment: devnet
     services:
@@ -18,16 +22,16 @@ jobs:
           POSTGRES_PASSWORD: lastro
           POSTGRES_DB: lastro
         ports:
-          - 5432:5432
+          - 5434:5432
         options: >-
           --health-cmd "pg_isready -U lastro -d lastro"
           --health-interval 5s
           --health-timeout 5s
           --health-retries 10
     env:
-      LASTRO_DATABASE_URL: postgres://lastro:lastro@127.0.0.1:5432/lastro
-      LASTRO_API_BIND: 127.0.0.1:8080
-      LASTRO_SYSTEM_API_URL: http://127.0.0.1:8080
+      LASTRO_DATABASE_URL: postgres://lastro:lastro@127.0.0.1:5434/lastro
+      LASTRO_API_BIND: 127.0.0.1:8082
+      LASTRO_SYSTEM_API_URL: http://127.0.0.1:8082
       LASTRO_PROGRAM_ID: ${{ vars.LASTRO_DEVNET_PROGRAM_ID }}
       LASTRO_DEPLOYMENT_ID_HEX: ${{ vars.LASTRO_DEVNET_DEPLOYMENT_ID_HEX }}
       LASTRO_STATION_PUBKEY_HEX: ${{ vars.LASTRO_DEVNET_STATION_PUBKEY_HEX }}
@@ -39,6 +43,17 @@ jobs:
       LASTRO_DEVNET_TEST: '1'
 
     steps:
+      - name: Reset self-hosted workspace
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE"
+          uid="$(id -u)"
+          gid="$(id -g)"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 \
+            sh -c "chown -R ${uid}:${gid} /workspace"
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
 
       - uses: dtolnay/rust-toolchain@ce678459e9fc7500d337468f904b95f1b5c10b5e # 1.98.1
@@ -64,15 +79,15 @@ jobs:
         run: |
           python -m pip install -r requirements-dev.txt
 
-      - name: Install pinned Solana CLI
+      - name: Install checksum-pinned Anchor and Solana CLIs
         run: |
-          cargo install --git https://github.com/otter-sec/anchor --rev 84a63f9f7112b23581816436fbcf3f6c515779f9 avm --locked --force
-          avm install 1.2.0
-          avm use 1.2.0
-          cd chain
-          avm solana install
-          solana --version | grep -E '^solana-cli 4\.1\.2([[:space:]]|$)'
-          echo "$(dirname "$(command -v solana)")" >> "$GITHUB_PATH"
+          ANCHOR_BIN="$(bash scripts/install_pinned_anchor_cli.sh)"
+          SOLANA_BIN="$(bash scripts/install_pinned_solana_cli.sh)"
+          export PATH="$ANCHOR_BIN:$SOLANA_BIN:$PATH"
+          anchor --version | grep -Fx 'anchor-cli 1.2.0'
+          solana --version | grep -E '^solana-cli 4\.2\.0([[:space:]]|$)'
+          echo "$ANCHOR_BIN" >> "$GITHUB_PATH"
+          echo "$SOLANA_BIN" >> "$GITHUB_PATH"
 
       - name: Materialize ephemeral workflow copies of Devnet wallets
         env:

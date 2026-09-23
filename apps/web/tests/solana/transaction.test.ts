@@ -2,17 +2,26 @@ import { address, getAddressDecoder, getProgramDerivedAddress } from '@solana/ki
 import { describe, expect, it } from 'vitest'
 import vectors from '../../../../test-vectors/vectors.json'
 import type { AccountMetaDto, TransactionData } from '../../src/api/types'
+import { eventHash } from '../../src/protocol/hash'
 import { decodeStationEvent } from '../../src/protocol/stationEvent'
 import { SECP256R1_PROGRAM_ID } from '../../src/solana/constants'
-import { validateLastroTransactionData, validateWalletSigningContext } from '../../src/solana/transaction'
+import {
+  validateLastroTransactionData,
+  validateWalletSigningContext,
+  type ExpectedTransitionIntent,
+} from '../../src/solana/transaction'
 
 const PROGRAM_ID = 'Vote111111111111111111111111111111111111111'
 const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111'
 const INSTRUCTIONS_SYSVAR_ID = 'Sysvar1nstructions1111111111111111111111111'
 const text = new TextEncoder()
 
-function hex(value: string): Uint8Array {
+function decodeHex(value: string): Uint8Array {
   return Uint8Array.from(value.match(/../g) ?? [], (pair) => Number.parseInt(pair, 16))
+}
+
+function encodeHex(value: Uint8Array): string {
+  return Array.from(value, (byte) => byte.toString(16).padStart(2, '0')).join('')
 }
 
 function base64(value: Uint8Array): string {
@@ -24,7 +33,9 @@ function meta(addressValue: string, isSigner: boolean, isWritable: boolean): Acc
 }
 
 async function anchorDiscriminator(name: string): Promise<Uint8Array> {
-  return new Uint8Array(await crypto.subtle.digest('SHA-256', text.encode(`global:${name}`))).subarray(0, 8)
+  return new Uint8Array(
+    await crypto.subtle.digest('SHA-256', text.encode(`global:${name}`)),
+  ).subarray(0, 8)
 }
 
 function secpDescriptor(eventBytes: Uint8Array): Uint8Array {
@@ -33,14 +44,14 @@ function secpDescriptor(eventBytes: Uint8Array): Uint8Array {
   const view = new DataView(out.buffer)
   const fields = [16, 0, 80, 0, 8, 276, 1]
   fields.forEach((value, index) => view.setUint16(2 + index * 2, value, true))
-  out.set(hex(vectors.events.origin.station_signature_hex), 16)
-  out.set(hex(vectors.station.pubkey_compressed_hex), 80)
+  out.set(decodeHex(vectors.events.origin.station_signature_hex), 16)
+  out.set(decodeHex(vectors.station.pubkey_compressed_hex), 80)
   expect(eventBytes).toHaveLength(276)
   return out
 }
 
 async function validTransactionData(): Promise<TransactionData> {
-  const eventBytes = hex(vectors.events.origin.event_bytes_hex)
+  const eventBytes = decodeHex(vectors.events.origin.event_bytes_hex)
   const event = decodeStationEvent(eventBytes)
   const programAddress = address(PROGRAM_ID)
   const [config] = await getProgramDerivedAddress({
@@ -67,7 +78,11 @@ async function validTransactionData(): Promise<TransactionData> {
     measuredSerializedBytes: 900,
     transactionVersion: 'legacy',
     instructions: [
-      { programId: SECP256R1_PROGRAM_ID, accounts: [], dataBase64: base64(secpDescriptor(eventBytes)) },
+      {
+        programId: SECP256R1_PROGRAM_ID,
+        accounts: [],
+        dataBase64: base64(secpDescriptor(eventBytes)),
+      },
       {
         programId: PROGRAM_ID,
         accounts: [
@@ -84,6 +99,18 @@ async function validTransactionData(): Promise<TransactionData> {
   }
 }
 
+async function validExpectedIntent(): Promise<ExpectedTransitionIntent> {
+  const eventBytes = decodeHex(vectors.events.origin.event_bytes_hex)
+  const event = decodeStationEvent(eventBytes)
+  return {
+    action: 'ORIGIN',
+    animalId: vectors.animal_id_hex,
+    deploymentId: vectors.deployment_id_hex,
+    toCustodian: encodeHex(event.toCustodian),
+    eventHash: encodeHex(await eventHash(eventBytes)),
+  }
+}
+
 describe('solana/transaction validation before wallet signing', () => {
   /**
    * ARRANGE: start from valid frozen transaction data and replace only the declared Lastro program id.
@@ -95,6 +122,33 @@ describe('solana/transaction validation before wallet signing', () => {
     const value = await validTransactionData()
     value.lastroProgramId = SYSTEM_PROGRAM_ID
     await expect(validateLastroTransactionData(value)).rejects.toThrow('program id')
+  })
+
+  /**
+   * ARRANGE: keep the API descriptor internally valid while independently changing one field of
+   *          the operation the user actually initiated.
+   * ACTION: validate the descriptor with the expected transition intent before wallet interaction.
+   * ASSERT: action, AnimalID, deployment, destination and event hash must all match independently.
+   * FAILURE MEANS: a compromised API could substitute another valid Station event before the wallet popup.
+   */
+  it('rejects an internally valid transaction when it differs from the independently expected intent', async () => {
+    const value = await validTransactionData()
+    const expected = await validExpectedIntent()
+    await expect(validateLastroTransactionData(value, expected)).resolves.toBeDefined()
+
+    const mismatches: ExpectedTransitionIntent[] = [
+      { ...expected, action: 'TRANSFER' },
+      { ...expected, animalId: 'ff'.repeat(32) },
+      { ...expected, deploymentId: 'ee'.repeat(32) },
+      { ...expected, toCustodian: 'dd'.repeat(32) },
+      { ...expected, eventHash: 'cc'.repeat(32) },
+    ]
+
+    for (const mismatch of mismatches) {
+      await expect(validateLastroTransactionData(value, mismatch)).rejects.toThrow(
+        'expected transition intent',
+      )
+    }
   })
 
   /**
@@ -121,7 +175,7 @@ describe('solana/transaction validation before wallet signing', () => {
   it('preserves validated raw instruction bytes without reserializing StationEvent data', async () => {
     const value = await validTransactionData()
     const validated = await validateLastroTransactionData(value)
-    const expected = hex(vectors.events.origin.event_bytes_hex)
+    const expected = decodeHex(vectors.events.origin.event_bytes_hex)
     expect(validated.rawEvent).toEqual(expected)
     expect(validated.instructions[1].data?.slice(8)).toEqual(expected)
   })
@@ -134,7 +188,9 @@ describe('solana/transaction validation before wallet signing', () => {
    */
   it('rejects Secp256r1 offsets that do not reference the exact serialized StationEvent', async () => {
     const value = await validTransactionData()
-    const descriptor = Uint8Array.from(atob(value.instructions[0].dataBase64), (character) => character.charCodeAt(0))
+    const descriptor = Uint8Array.from(atob(value.instructions[0].dataBase64), (character) =>
+      character.charCodeAt(0),
+    )
     new DataView(descriptor.buffer).setUint16(10, 9, true)
     value.instructions[0].dataBase64 = base64(descriptor)
     await expect(validateLastroTransactionData(value)).rejects.toThrow('exact StationEvent')
@@ -164,16 +220,20 @@ describe('solana/transaction validation before wallet signing', () => {
    */
   it('requires connected wallet to equal the transition authority encoded by current state', async () => {
     const value = await validTransactionData()
-    expect(() => validateWalletSigningContext(value, {
-      accountAddress: value.requiredSigner,
-      supportedTransactionVersions: new Set(['legacy']),
-      canSignTransactions: true,
-    })).not.toThrow()
-    expect(() => validateWalletSigningContext(value, {
-      accountAddress: SYSTEM_PROGRAM_ID,
-      supportedTransactionVersions: new Set(['legacy']),
-      canSignTransactions: true,
-    })).toThrow('current custodian')
+    expect(() =>
+      validateWalletSigningContext(value, {
+        accountAddress: value.requiredSigner,
+        supportedTransactionVersions: new Set(['legacy']),
+        canSignTransactions: true,
+      }),
+    ).not.toThrow()
+    expect(() =>
+      validateWalletSigningContext(value, {
+        accountAddress: SYSTEM_PROGRAM_ID,
+        supportedTransactionVersions: new Set(['legacy']),
+        canSignTransactions: true,
+      }),
+    ).toThrow('current custodian')
   })
 
   /**
@@ -184,15 +244,19 @@ describe('solana/transaction validation before wallet signing', () => {
    */
   it('requires connected wallet to support the requested transaction version', async () => {
     const value = await validTransactionData()
-    expect(() => validateWalletSigningContext(value, {
-      accountAddress: value.requiredSigner,
-      supportedTransactionVersions: new Set([0]),
-      canSignTransactions: true,
-    })).toThrow('does not support legacy')
-    expect(validateWalletSigningContext(value, {
-      accountAddress: value.requiredSigner,
-      supportedTransactionVersions: new Set(['legacy']),
-      canSignTransactions: true,
-    })).toBe('legacy')
+    expect(() =>
+      validateWalletSigningContext(value, {
+        accountAddress: value.requiredSigner,
+        supportedTransactionVersions: new Set([0]),
+        canSignTransactions: true,
+      }),
+    ).toThrow('does not support legacy')
+    expect(
+      validateWalletSigningContext(value, {
+        accountAddress: value.requiredSigner,
+        supportedTransactionVersions: new Set(['legacy']),
+        canSignTransactions: true,
+      }),
+    ).toBe('legacy')
   })
 })

@@ -54,11 +54,12 @@ def test_full_local_database_never_advances_before_rpc_confirmation():
         animal = harness.api.post("/api/animals", {"visualRecoveryId": visual})
         animal_id = animal["animalId"]
         harness.station.queue_observation(1, fresh_rfid_hex())
-        capture = harness.api.post("/api/captures", {
-            "action": "ORIGIN",
-            "animalId": animal_id,
-            "nextCustodian": harness.wallet_a.custodian_hex,
-        })
+        capture = harness.reserve_capture(
+            action="ORIGIN",
+            animal_id=animal_id,
+            wallet=harness.wallet_a,
+            next_custodian=harness.wallet_a.custodian_hex,
+        )
         accepted = harness.wait_capture(capture["captureId"])
         harness.station.wait_ack(capture["captureId"])
         descriptor = harness.api.get(f"/api/events/{accepted['eventHash']}/transaction-data")

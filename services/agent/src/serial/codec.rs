@@ -66,7 +66,9 @@ pub fn decode_next(buffer: &mut BytesMut) -> Result<Option<Frame>, AgentError> {
     let reserved = u16::from_le_bytes([buffer[6], buffer[7]]);
     if reserved != 0 {
         buffer.advance(1);
-        return Err(AgentError::Serial("serial reserved bytes must be zero".into()));
+        return Err(AgentError::Serial(
+            "serial reserved bytes must be zero".into(),
+        ));
     }
 
     let payload_len = u32::from_le_bytes(buffer[8..12].try_into().expect("fixed header")) as usize;
@@ -113,7 +115,10 @@ fn resynchronize_to_magic(buffer: &mut BytesMut) {
         return;
     }
 
-    if let Some(index) = buffer.windows(MAGIC.len()).position(|window| window == MAGIC) {
+    if let Some(index) = buffer
+        .windows(MAGIC.len())
+        .position(|window| window == MAGIC)
+    {
         buffer.advance(index);
         return;
     }

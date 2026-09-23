@@ -32,6 +32,7 @@ typedef enum {
     LASTRO_STATION_ERROR_INVALID_EVENT_CONTEXT = 3,
     LASTRO_STATION_ERROR_SIGNING_FAILED = 4,
     LASTRO_STATION_ERROR_BUSY = 5,
+    LASTRO_STATION_ERROR_RFID_TIMEOUT = 6,
 } lastro_station_error_code_t;
 
 typedef struct {

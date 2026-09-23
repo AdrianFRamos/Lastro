@@ -16,9 +16,12 @@
 
     <div class="page-intro">
       <div>
-        <p class="eyebrow">PROVEN TODAY / INDEPENDENT VERIFICATION</p>
+        <p class="eyebrow">SOFTWARE DEMO / INDEPENDENT VERIFICATION</p>
         <h1>Verify evidence without trusting the interface.</h1>
-        <p>Load a portable EvidencePackage or request one by AnimalID. Local evidence checks run before canonical Solana comparison.</p>
+        <p>
+          Load a portable EvidencePackage or request one by AnimalID. Local evidence checks run
+          before canonical Solana comparison.
+        </p>
       </div>
     </div>
 
@@ -27,7 +30,9 @@
         <header class="app-card__header">
           <div>
             <h2>Evidence source</h2>
-            <p class="app-card__description">Use either an AnimalID lookup or a local exported package.</p>
+            <p class="app-card__description">
+              Use either an AnimalID lookup or a local exported package.
+            </p>
           </div>
         </header>
 
@@ -45,7 +50,9 @@
                 :disabled="busy"
               />
             </div>
-            <AppButton :disabled="busy || !animalId" :busy="busy" @click="loadFromApi">Verify AnimalID</AppButton>
+            <AppButton :disabled="busy || !animalId" :busy="busy" @click="loadFromApi"
+              >Verify AnimalID</AppButton
+            >
           </div>
 
           <div class="file-control">
@@ -71,7 +78,9 @@
         <span class="status-badge" :data-tone="overallTone">{{ overall }}</span>
       </section>
 
-      <p v-if="message" class="status-message" :data-tone="messageTone" aria-live="polite">{{ message }}</p>
+      <p v-if="message" class="status-message" :data-tone="messageTone" aria-live="polite">
+        {{ message }}
+      </p>
 
       <VerificationPanel :layers="layers" />
 
@@ -79,16 +88,32 @@
         <details class="evidence-details">
           <summary>Advanced evidence details</summary>
           <dl class="data-list evidence-details__summary">
-            <dt>AnimalID</dt><dd class="mono break-all">{{ verifiedPackage.animalId }}</dd>
-            <dt>Deployment</dt><dd class="mono break-all">{{ verifiedPackage.deploymentId }}</dd>
-            <dt>Event count</dt><dd>{{ verifiedPackage.events.length }}</dd>
+            <dt>AnimalID</dt>
+            <dd class="mono break-all">{{ verifiedPackage.animalId }}</dd>
+            <dt>Deployment</dt>
+            <dd class="mono break-all">{{ verifiedPackage.deploymentId }}</dd>
+            <dt>Event count</dt>
+            <dd>{{ verifiedPackage.events.length }}</dd>
           </dl>
           <div class="evidence-events">
-            <article v-for="(event, index) in verifiedPackage.events" :key="index + '-' + event.stationSignatureHex" class="evidence-event">
-              <p><strong>Sequence {{ index + 1 }}</strong></p>
-              <p>Observed RFID: <code class="break-all">{{ event.observedRfidHex }}</code></p>
-              <p>Station key: <code class="break-all">{{ event.stationPubkeyHex }}</code></p>
-              <p>Transaction: <code class="break-all">{{ event.txSignature ?? 'Not finalized' }}</code></p>
+            <article
+              v-for="(event, index) in verifiedPackage.events"
+              :key="index + '-' + event.stationSignatureHex"
+              class="evidence-event"
+            >
+              <p>
+                <strong>Sequence {{ index + 1 }}</strong>
+              </p>
+              <p>
+                Observed RFID: <code class="break-all">{{ event.observedRfidHex }}</code>
+              </p>
+              <p>
+                Station key: <code class="break-all">{{ event.stationPubkeyHex }}</code>
+              </p>
+              <p>
+                Transaction:
+                <code class="break-all">{{ event.txSignature ?? 'Not finalized' }}</code>
+              </p>
             </article>
           </div>
         </details>
@@ -160,10 +185,11 @@ async function run(load: () => Promise<EvidencePackage>): Promise<void> {
       return
     }
     const onChain = await verifyCanonicalChainState(pkg)
-    layers.value = local.layers.map((layer) => layer.layer === 'ON_CHAIN_STATE' ? onChain : layer)
-    message.value = onChain.status === 'VALID'
-      ? 'Evidence and canonical Solana state agree.'
-      : 'Local evidence verification completed; canonical Solana verification did not validate.'
+    layers.value = local.layers.map((layer) => (layer.layer === 'ON_CHAIN_STATE' ? onChain : layer))
+    message.value =
+      onChain.status === 'VALID'
+        ? 'Evidence and canonical Solana state agree.'
+        : 'Local evidence verification completed; canonical Solana verification did not validate.'
   } catch (error) {
     layers.value = uncheckedLayers()
     message.value = error instanceof Error ? error.message : 'Verification failed'

@@ -11,7 +11,10 @@ fn transfer_keeps_same_rfid() {
     // FAILURE MEANS: RFID can change without a REIDENTIFY revision.
     let mut event = common::event("transfer");
     event.new_rfid_hash[0] ^= 1;
-    assert_eq!(event.validate_semantics(), Err(ProtocolError::InvalidSemantics));
+    assert_eq!(
+        event.validate_semantics(),
+        Err(ProtocolError::InvalidSemantics)
+    );
 }
 
 #[test]
@@ -24,7 +27,10 @@ fn transfer_keeps_revision() {
     assert!(transfer.validate_successor(&origin).is_ok());
     let mut changed = transfer;
     changed.identity_revision += 1;
-    assert_eq!(changed.validate_successor(&origin), Err(ProtocolError::InvalidSuccessor));
+    assert_eq!(
+        changed.validate_successor(&origin),
+        Err(ProtocolError::InvalidSuccessor)
+    );
 }
 
 #[test]
@@ -34,5 +40,8 @@ fn transfer_rejects_self_destination() {
     // FAILURE MEANS: Event sequence can advance without changing custody.
     let mut event = common::event("transfer");
     event.to_custodian = event.from_custodian;
-    assert_eq!(event.validate_semantics(), Err(ProtocolError::InvalidSemantics));
+    assert_eq!(
+        event.validate_semantics(),
+        Err(ProtocolError::InvalidSemantics)
+    );
 }

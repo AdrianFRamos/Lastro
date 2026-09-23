@@ -32,9 +32,11 @@ describe('VerificationPanel', () => {
    * FAILURE MEANS: verifier UI could hide why evidence failed.
    */
   it('keeps the invalid layer and concrete failure reason visible', () => {
-    const invalid = layers.map((layer) => layer.layer === 'STATION_SIGNATURE'
-      ? { ...layer, status: 'INVALID' as const, detail: 'P-256 signature is invalid' }
-      : layer)
+    const invalid = layers.map((layer) =>
+      layer.layer === 'STATION_SIGNATURE'
+        ? { ...layer, status: 'INVALID' as const, detail: 'P-256 signature is invalid' }
+        : layer,
+    )
     const wrapper = mount(VerificationPanel, { props: { layers: invalid } })
     expect(wrapper.text()).toContain('INVALID')
     expect(wrapper.text()).toContain('P-256 signature is invalid')

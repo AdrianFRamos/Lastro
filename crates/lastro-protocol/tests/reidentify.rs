@@ -11,7 +11,10 @@ fn reidentify_requires_new_rfid() {
     // FAILURE MEANS: Revision can advance without replacing the physical identifier.
     let mut event = common::event("reidentify");
     event.new_rfid_hash = event.old_rfid_hash;
-    assert_eq!(event.validate_semantics(), Err(ProtocolError::InvalidSemantics));
+    assert_eq!(
+        event.validate_semantics(),
+        Err(ProtocolError::InvalidSemantics)
+    );
 }
 
 #[test]
@@ -21,7 +24,10 @@ fn reidentify_keeps_custodian() {
     // FAILURE MEANS: One event can combine two independent authority changes.
     let mut event = common::event("reidentify");
     event.to_custodian[0] ^= 1;
-    assert_eq!(event.validate_semantics(), Err(ProtocolError::InvalidSemantics));
+    assert_eq!(
+        event.validate_semantics(),
+        Err(ProtocolError::InvalidSemantics)
+    );
 }
 
 #[test]
@@ -34,5 +40,8 @@ fn reidentify_advances_revision_exactly_once() {
     assert!(reidentify.validate_successor(&transfer).is_ok());
     let mut skipped = reidentify;
     skipped.identity_revision += 1;
-    assert_eq!(skipped.validate_successor(&transfer), Err(ProtocolError::InvalidSuccessor));
+    assert_eq!(
+        skipped.validate_successor(&transfer),
+        Err(ProtocolError::InvalidSuccessor)
+    );
 }

@@ -14,11 +14,31 @@ interface DecodedEvidence {
 }
 
 export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<VerificationResult> {
-  const rfid = result('RFID_EVIDENCE', 'VALID', 'Every observed RFID explains the signed new RFID hash')
-  const station = result('STATION_SIGNATURE', 'VALID', 'Every Station signature and StationID binding is valid')
-  const identity = result('IDENTITY_CONTINUITY', 'VALID', 'AnimalID, sequence, predecessor, revision, and RFID continuity are linear')
-  const custody = result('CUSTODY', 'VALID', 'Custody transitions form one authorized local history')
-  const onChain = result('ON_CHAIN_STATE', 'NOT_CHECKED', 'Canonical Solana state has not been checked yet')
+  const rfid = result(
+    'RFID_EVIDENCE',
+    'VALID',
+    'Every observed RFID explains the signed new RFID hash',
+  )
+  const station = result(
+    'STATION_SIGNATURE',
+    'VALID',
+    'Every Station signature and StationID binding is valid',
+  )
+  const identity = result(
+    'IDENTITY_CONTINUITY',
+    'VALID',
+    'AnimalID, sequence, predecessor, revision, and RFID continuity are linear',
+  )
+  const custody = result(
+    'CUSTODY',
+    'VALID',
+    'Custody transitions form one authorized local history',
+  )
+  const onChain = result(
+    'ON_CHAIN_STATE',
+    'NOT_CHECKED',
+    'Canonical Solana state has not been checked yet',
+  )
 
   const decoded: Array<DecodedEvidence | null> = Array(pkg.events.length).fill(null)
   for (let index = 0; index < pkg.events.length; index += 1) {
@@ -49,7 +69,10 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
       continue
     }
 
-    if (!equalHex(current.event.deploymentId, pkg.deploymentId) || !equalHex(current.event.animalId, pkg.animalId)) {
+    if (
+      !equalHex(current.event.deploymentId, pkg.deploymentId) ||
+      !equalHex(current.event.animalId, pkg.animalId)
+    ) {
       identity.status = 'INVALID'
       identity.detail = `Event ${index + 1} does not belong to the package deployment and AnimalID`
     }
@@ -108,9 +131,10 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
       identity.status = 'INVALID'
       identity.detail = `Event ${index + 1} does not continue from the previous current RFID`
     }
-    const expectedRevision = current.event.action === 3
-      ? previous.event.identityRevision + 1
-      : previous.event.identityRevision
+    const expectedRevision =
+      current.event.action === 3
+        ? previous.event.identityRevision + 1
+        : previous.event.identityRevision
     if (current.event.identityRevision !== expectedRevision) {
       identity.status = 'INVALID'
       identity.detail = `Event ${index + 1} identityRevision is invalid for its action`
@@ -120,34 +144,51 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
       custody.status = 'INVALID'
       custody.detail = `Event ${index + 1} is not authorized by the previous current custodian`
     }
-    if (current.event.action === 2 && equalBytes(current.event.fromCustodian, current.event.toCustodian)) {
+    if (
+      current.event.action === 2 &&
+      equalBytes(current.event.fromCustodian, current.event.toCustodian)
+    ) {
       custody.status = 'INVALID'
       custody.detail = `Event ${index + 1} TRANSFER does not change custodian`
     }
-    if (current.event.action === 3 && !equalBytes(current.event.fromCustodian, current.event.toCustodian)) {
+    if (
+      current.event.action === 3 &&
+      !equalBytes(current.event.fromCustodian, current.event.toCustodian)
+    ) {
       custody.status = 'INVALID'
       custody.detail = `Event ${index + 1} REIDENTIFY changes custodian`
     }
   }
 
   const layers = [rfid, station, identity, custody, onChain]
-  return { animalId: pkg.animalId, layers, valid: layers.every((layer) => layer.status === 'VALID') }
+  return {
+    animalId: pkg.animalId,
+    layers,
+    valid: layers.every((layer) => layer.status === 'VALID'),
+  }
 }
 
-function result(layer: VerificationLayerResult['layer'], status: VerificationLayerResult['status'], detail: string): VerificationLayerResult {
+function result(
+  layer: VerificationLayerResult['layer'],
+  status: VerificationLayerResult['status'],
+  detail: string,
+): VerificationLayerResult {
   return { layer, status, detail }
 }
 
 function decodeHex(value: string, bytes: number): Uint8Array {
-  if (!new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value)) throw new Error(`expected ${bytes} lowercase hex bytes`)
+  if (!new RegExp(`^[0-9a-f]{${bytes * 2}}$`).test(value))
+    throw new Error(`expected ${bytes} lowercase hex bytes`)
   const out = new Uint8Array(bytes)
-  for (let index = 0; index < bytes; index += 1) out[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
+  for (let index = 0; index < bytes; index += 1)
+    out[index] = Number.parseInt(value.slice(index * 2, index * 2 + 2), 16)
   return out
 }
 
 function decodeBase64(value: string, bytes: number): Uint8Array {
   const binary = atob(value)
-  if (btoa(binary) !== value || binary.length !== bytes) throw new Error(`expected canonical base64 for ${bytes} bytes`)
+  if (btoa(binary) !== value || binary.length !== bytes)
+    throw new Error(`expected canonical base64 for ${bytes} bytes`)
   return Uint8Array.from(binary, (character) => character.charCodeAt(0))
 }
 
@@ -156,8 +197,13 @@ function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
 }
 
 function equalHex(bytes: Uint8Array, expected: string): boolean {
-  return bytes.length * 2 === expected.length
-    && bytes.every((byte, index) => byte.toString(16).padStart(2, '0') === expected.slice(index * 2, index * 2 + 2))
+  return (
+    bytes.length * 2 === expected.length &&
+    bytes.every(
+      (byte, index) =>
+        byte.toString(16).padStart(2, '0') === expected.slice(index * 2, index * 2 + 2),
+    )
+  )
 }
 
 function eventDetail(index: number, error: unknown): string {

@@ -1,6 +1,6 @@
 //! EvidencePackage assembly from immutable event rows.
 
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_protocol::evidence::{EvidenceEvent, EvidencePackage};
 use sqlx::PgPool;
 
@@ -11,9 +11,14 @@ pub async fn assemble_package(
     deployment_id: [u8; 32],
     animal_id: [u8; 32],
 ) -> Result<EvidencePackage, ApiError> {
-    let rows = events::list_for_animal(pool, animal_id).await?;
+    let rows = events::list_finalized_for_animal(pool, animal_id).await?;
     if rows.is_empty() {
         return Err(ApiError::NotFound("animal has no evidence events".into()));
+    }
+    if rows.len() > 128 {
+        return Err(ApiError::Conflict(
+            "evidence history exceeds the 128-event verification limit".into(),
+        ));
     }
 
     let mut expected_sequence = 1u64;
@@ -23,10 +28,9 @@ pub async fn assemble_package(
             return Err(ApiError::Conflict("event history is not contiguous".into()));
         }
         if row.event.animal_id != animal_id || row.event.deployment_id != deployment_id {
-            return Err(ApiError::Conflict("event history contains a foreign identity/deployment".into()));
-        }
-        if row.status != "FINALIZED" {
-            return Err(ApiError::Conflict("evidence package requires finalized event history".into()));
+            return Err(ApiError::Conflict(
+                "event history contains a foreign identity/deployment".into(),
+            ));
         }
         let tx_signature = row.tx_signature.ok_or_else(|| {
             ApiError::Conflict("finalized event is missing its transaction signature".into())
@@ -47,8 +51,8 @@ pub async fn assemble_package(
         animal_id: hex::encode(animal_id),
         events: package_events,
     };
-    package
-        .validate_off_chain_chain()
-        .map_err(|error| ApiError::Conflict(format!("stored evidence chain is invalid: {error}")))?;
+    package.validate_off_chain_chain().map_err(|error| {
+        ApiError::Conflict(format!("stored evidence chain is invalid: {error}"))
+    })?;
     Ok(package)
 }

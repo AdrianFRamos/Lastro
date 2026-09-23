@@ -11,9 +11,15 @@ import {
 } from './support/system'
 
 test.describe('Retry and failure recovery', () => {
-  test.skip(requireFullStack, 'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment')
+  test.skip(
+    requireFullStack,
+    'Set LASTRO_E2E_SYSTEM=1 only with the declared API/PostgreSQL/Solana/Agent environment',
+  )
 
-  test('lost API response followed by Agent retry does not create duplicate evidence or transitions', async ({ page, system }) => {
+  test('lost API response followed by Agent retry does not create duplicate evidence or transitions', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove ambiguous network delivery is recovered by immutable Agent/API idempotency instead of duplicating evidence.
     // ARRANGE: Create an unoriginated animal and arm the Agent-only proxy to drop the next evidence HTTP response after API acceptance.
     await page.goto('/demo')
@@ -25,7 +31,9 @@ test.describe('Retry and failure recovery', () => {
 
     // ACTION: Execute ORIGIN normally through the browser; the Agent must retry the same durable evidence after the dropped response.
     await runAction(page, system, 'ORIGIN', rfidA)
-    await expect.poll(async () => (await system.metrics()).agentEvidencePosts, { timeout: 30_000 }).toBeGreaterThanOrEqual(beforeMetrics.agentEvidencePosts + 2)
+    await expect
+      .poll(async () => (await system.metrics()).agentEvidencePosts, { timeout: 30_000 })
+      .toBeGreaterThanOrEqual(beforeMetrics.agentEvidencePosts + 2)
 
     // ASSERT: Exactly one response was faulted, canonical sequence advanced once, and exported finalized history contains one event.
     const afterMetrics = await system.metrics()
@@ -39,7 +47,10 @@ test.describe('Retry and failure recovery', () => {
     // FAILURE MEANS: normal network retry can fork, overwrite, or consume a physical Station event more than once.
   })
 
-  test('page reload reconstructs UI from durable projection/evidence rather than browser memory', async ({ page, system }) => {
+  test('page reload reconstructs UI from durable projection/evidence rather than browser memory', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Ensure a browser refresh cannot be required to remember canonical-looking state that exists only in Vue memory.
     // ARRANGE: Complete ORIGIN and A->B, then snapshot API and canonical Solana state.
     await page.goto('/demo')
@@ -52,28 +63,42 @@ test.describe('Retry and failure recovery', () => {
     const canonical = await system.canonicalAnimal(created.animalId)
     const restoredRequests: string[] = []
     page.on('request', (request) => {
-      if (request.url().includes(`/api/animals/${created.animalId}`)) restoredRequests.push(request.url())
+      if (request.url().includes(`/api/animals/${created.animalId}`))
+        restoredRequests.push(request.url())
     })
 
     // ACTION: Hard reload the URL, preserving only the AnimalID query parameter written by the app.
     await page.reload()
 
     // ASSERT: The page refetches projection/history, restores the exact state/timeline, and still agrees with canonical Solana state.
-    await expect(page.getByText(`Restored AnimalID ${created.animalId} from durable API projection and evidence history.`)).toBeVisible()
+    await expect(
+      page.getByText(
+        `Restored AnimalID ${created.animalId} from durable API projection and evidence history.`,
+      ),
+    ).toBeVisible()
     await expect(definitionValue(page, 'AnimalID')).toHaveText(created.animalId)
     await expect(definitionValue(page, 'Current RFID')).toHaveText(projection.currentRfidHash!)
     await expect(definitionValue(page, 'Custodian')).toHaveText(projection.currentCustodian!)
     await expect(definitionValue(page, 'Revision')).toHaveText(String(projection.identityRevision))
     await expect(definitionValue(page, 'Sequence')).toHaveText(String(projection.eventSequence))
     await expect(timelineItems(page)).toHaveCount(2)
-    expect(restoredRequests.some((url) => url.endsWith(`/api/animals/${created.animalId}`))).toBe(true)
-    expect(restoredRequests.some((url) => url.endsWith(`/api/animals/${created.animalId}/evidence-package`))).toBe(true)
+    expect(restoredRequests.some((url) => url.endsWith(`/api/animals/${created.animalId}`))).toBe(
+      true,
+    )
+    expect(
+      restoredRequests.some((url) =>
+        url.endsWith(`/api/animals/${created.animalId}/evidence-package`),
+      ),
+    ).toBe(true)
     expect(projection).toMatchObject(canonical)
 
     // FAILURE MEANS: demo correctness depends on ephemeral browser state instead of durable API projection plus canonical chain state.
   })
 
-  test('wallet rejection leaves accepted physical evidence non-finalized and canonical state unchanged', async ({ page, system }) => {
+  test('wallet rejection leaves accepted physical evidence non-finalized and canonical state unchanged', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Prove wallet authorization is mandatory after valid physical evidence and before any canonical/projection transition.
     // ARRANGE: Originate with Wallet A, snapshot state, then prepare a valid A->B physical capture while making Wallet A reject signing.
     await page.goto('/demo')
@@ -97,7 +122,9 @@ test.describe('Retry and failure recovery', () => {
 
     // ACTION: Submit TRANSFER and reject the signing request at the Wallet Standard boundary.
     await page.getByRole('button', { name: 'Transfer', exact: true }).click()
-    await expect(page.getByText(/Wallet A rejected transaction signing/i)).toBeVisible({ timeout: 30_000 })
+    await expect(page.getByText(/Wallet A rejected transaction signing/i)).toBeVisible({
+      timeout: 30_000,
+    })
 
     // ASSERT: Physical evidence reached EVIDENCE_ACCEPTED, but no confirm call, projection update, or Solana mutation occurred.
     await expect(page.getByLabel('Station status')).toContainText('EVIDENCE_ACCEPTED')
@@ -109,7 +136,10 @@ test.describe('Retry and failure recovery', () => {
 
     // FAILURE MEANS: unsigned/rejected evidence can be presented or persisted as a canonical custody transition.
   })
-  test('reload after wallet broadcast but before SUBMITTED registration reuses the same transaction signature', async ({ page, system }) => {
+  test('reload after wallet broadcast but before SUBMITTED registration reuses the same transaction signature', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Close the reload window after the wallet broadcasts but before confirmed RPC registration reaches the API.
     // ARRANGE: Start ORIGIN and abort exactly the first browser POST to /submit after Wallet A has signed the real transaction.
     await page.goto('/demo')
@@ -130,15 +160,25 @@ test.describe('Retry and failure recovery', () => {
 
     // ACTION: Authorize once, lose the submission-registration request, then reload the same browser storage/session.
     await page.getByRole('button', { name: 'Origin', exact: true }).click()
-    await expect.poll(() => system.walletSignatureCount('Wallet A'), { timeout: 30_000 }).toBe(signaturesBefore + 1)
+    await expect
+      .poll(() => system.walletSignatureCount('Wallet A'), { timeout: 30_000 })
+      .toBe(signaturesBefore + 1)
     await expect(page.getByLabel('Station status')).toContainText('EVIDENCE_ACCEPTED')
     const captureId = await captureIdFromStatus(page)
-    await expect.poll(async () => (await system.apiGet<{ eventStatus: string | null }>(`/api/captures/${captureId}`)).eventStatus).toBe('EVIDENCE_ACCEPTED')
+    await expect
+      .poll(
+        async () =>
+          (await system.apiGet<{ eventStatus: string | null }>(`/api/captures/${captureId}`))
+            .eventStatus,
+      )
+      .toBe('EVIDENCE_ACCEPTED')
     expect(droppedSubmit).toBe(true)
     await page.reload()
 
     // ASSERT: local durable browser metadata is revalidated through /submit, finalization completes, and Wallet A never signs twice.
-    await expect(page.getByText('ORIGIN finalized and canonical state verified after reload.')).toBeVisible({ timeout: 90_000 })
+    await expect(
+      page.getByText('ORIGIN finalized and canonical state verified after reload.'),
+    ).toBeVisible({ timeout: 90_000 })
     expect(system.walletSignatureCount('Wallet A')).toBe(signaturesBefore + 1)
     const projection = await system.animal(created.animalId)
     expect(projection.eventSequence).toBe(1)
@@ -147,7 +187,10 @@ test.describe('Retry and failure recovery', () => {
     // FAILURE MEANS: a reload can lose the broadcast signature and produce a second wallet transaction for one StationEvent.
   })
 
-  test('reload after durable SUBMITTED state resumes finalization without a second wallet signature', async ({ page, system }) => {
+  test('reload after durable SUBMITTED state resumes finalization without a second wallet signature', async ({
+    page,
+    system,
+  }) => {
     // PURPOSE: Close the reload window after confirmed RPC registration but before finalized projection confirmation.
     // ARRANGE: Start ORIGIN, let /submit succeed, and abort exactly the first browser POST to /confirm before it reaches the API.
     await page.goto('/demo')
@@ -168,15 +211,26 @@ test.describe('Retry and failure recovery', () => {
 
     // ACTION: Let the API persist SUBMITTED, lose the first finalization request, and reload.
     await page.getByRole('button', { name: 'Origin', exact: true }).click()
-    await expect.poll(() => system.walletSignatureCount('Wallet A'), { timeout: 30_000 }).toBe(signaturesBefore + 1)
+    await expect
+      .poll(() => system.walletSignatureCount('Wallet A'), { timeout: 30_000 })
+      .toBe(signaturesBefore + 1)
     await expect(page.getByLabel('Station status')).toContainText('EVIDENCE_ACCEPTED')
     const captureId = await captureIdFromStatus(page)
-    await expect.poll(async () => (await system.apiGet<{ eventStatus: string | null }>(`/api/captures/${captureId}`)).eventStatus, { timeout: 30_000 }).toBe('SUBMITTED')
+    await expect
+      .poll(
+        async () =>
+          (await system.apiGet<{ eventStatus: string | null }>(`/api/captures/${captureId}`))
+            .eventStatus,
+        { timeout: 30_000 },
+      )
+      .toBe('SUBMITTED')
     expect(droppedConfirm).toBe(true)
     await page.reload()
 
     // ASSERT: server-stored verified signature drives recovery and finalization; no transaction preparation/signing repeats.
-    await expect(page.getByText('ORIGIN finalized and canonical state verified after reload.')).toBeVisible({ timeout: 90_000 })
+    await expect(
+      page.getByText('ORIGIN finalized and canonical state verified after reload.'),
+    ).toBeVisible({ timeout: 90_000 })
     expect(system.walletSignatureCount('Wallet A')).toBe(signaturesBefore + 1)
     const projection = await system.animal(created.animalId)
     expect(projection.eventSequence).toBe(1)
@@ -184,13 +238,13 @@ test.describe('Retry and failure recovery', () => {
 
     // FAILURE MEANS: durable SUBMITTED state cannot survive browser loss without asking the custodian to sign again.
   })
-
 })
-
 
 async function captureIdFromStatus(page: import('@playwright/test').Page): Promise<string> {
   const text = await page.getByLabel('Station status').textContent()
-  const match = text?.match(/:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/i)
+  const match = text?.match(
+    /:\s*([0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12})\s*$/i,
+  )
   if (!match) throw new Error(`Station status does not contain a capture UUID: ${text ?? '<null>'}`)
   return match[1]!
 }

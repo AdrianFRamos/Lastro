@@ -127,8 +127,8 @@ def doctor(*, for_tests: bool = False) -> None:
 
     for tool in ("solana", "solana-keygen", "solana-test-validator", "anchor", "cargo", "rustc", "docker"):
         require_command(tool)
-    _require_version(("solana", "--version"), r"\b4\.1\.2\b", "Solana CLI 4.1.2")
-    _require_version(("solana-test-validator", "--version"), r"\b4\.1\.2\b", "solana-test-validator 4.1.2")
+    _require_version(("solana", "--version"), r"\b4\.2\.0\b", "Solana CLI 4.2.0")
+    _require_version(("solana-test-validator", "--version"), r"\b4\.2\.0\b", "solana-test-validator 4.2.0")
     _require_version(("anchor", "--version"), r"\b1\.2\.0\b", "Anchor CLI 1.2.0")
     _require_version(("rustc", "--version"), r"^rustc 1\.98\.1\b", "rustc 1.98.1")
     run(("docker", "compose", "version"), capture=True)
@@ -201,6 +201,8 @@ def local_env_values(*, program_id: str, agent_token: str) -> dict[str, str]:
         "VITE_SOLANA_RPC_URL": HOST_RPC_URL,
         "VITE_SOLANA_CHAIN": "solana:localnet",
         "VITE_LASTRO_PROGRAM_ID": program_id,
+        "VITE_LASTRO_DEPLOYMENT_ID_HEX": DEPLOYMENT_ID_HEX,
+        "VITE_LASTRO_AUTHORITY": keypair_pubkey(WALLET_PATHS["A"]) if WALLET_PATHS["A"].is_file() else "",
         "LASTRO_SYSTEM_API_URL": API_URL,
         "LASTRO_SYSTEM_SOLANA_RPC_URL": HOST_RPC_URL,
         "LASTRO_SYSTEM_AGENT_BIN": str((ROOT / "target/debug/lastro-agent").resolve()),
@@ -619,6 +621,7 @@ def test_environment(*, headed: bool = False) -> None:
                 "VITE_SOLANA_RPC_URL": HOST_RPC_URL,
                 "VITE_SOLANA_CHAIN": "solana:localnet",
                 "VITE_LASTRO_PROGRAM_ID": keypair_pubkey(PROGRAM_KEYPAIR),
+                "VITE_LASTRO_AUTHORITY": keypair_pubkey(WALLET_PATHS["A"]),
             }
         )
         run(

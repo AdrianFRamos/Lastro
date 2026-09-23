@@ -1,3 +1,4 @@
+import type { Base64EncodedWireTransaction } from '@solana/kit'
 import type { CaptureAction, Hex32 } from '../api/types'
 
 const STORAGE_KEY = 'lastro.pending-operation'
@@ -7,8 +8,11 @@ export interface PendingOperation {
   captureId: string
   action: CaptureAction
   nextCustodian: Hex32 | null
+  expectedToCustodian: Hex32
   eventHash: Hex32 | null
   txSignature: string | null
+  wireTransactionBase64: Base64EncodedWireTransaction | null
+  lastValidBlockHeight?: string | null
 }
 
 export function readPendingOperation(): PendingOperation | null {
@@ -38,9 +42,34 @@ function parsePendingOperation(value: Record<string, unknown>): PendingOperation
     throw new Error('action is invalid')
   }
   const nextCustodian = nullableHex32(value.nextCustodian, 'nextCustodian')
+  const expectedToCustodian = hex32(value.expectedToCustodian, 'expectedToCustodian')
   const eventHash = nullableHex32(value.eventHash, 'eventHash')
-  const txSignature = value.txSignature === null ? null : solanaSignature(value.txSignature, 'txSignature')
-  return { animalId, captureId, action, nextCustodian, eventHash, txSignature }
+  const txSignature =
+    value.txSignature === null ? null : solanaSignature(value.txSignature, 'txSignature')
+  const wireTransactionBase64 =
+    value.wireTransactionBase64 == null
+      ? null
+      : signedWireTransaction(value.wireTransactionBase64, 'wireTransactionBase64')
+  const lastValidBlockHeight = nullableBlockHeight(value.lastValidBlockHeight)
+  return {
+    animalId,
+    captureId,
+    action,
+    nextCustodian,
+    expectedToCustodian,
+    eventHash,
+    txSignature,
+    wireTransactionBase64,
+    lastValidBlockHeight,
+  }
+}
+
+function nullableBlockHeight(value: unknown): string | null {
+  if (value == null) return null
+  if (typeof value !== 'string' || !/^[1-9][0-9]{0,19}$/.test(value)) {
+    throw new Error('lastValidBlockHeight must be a positive decimal integer')
+  }
+  return value
 }
 
 function hex32(value: unknown, name: string): Hex32 {
@@ -55,7 +84,10 @@ function nullableHex32(value: unknown, name: string): Hex32 | null {
 }
 
 function uuid(value: unknown, name: string): string {
-  if (typeof value !== 'string' || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)) {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+  ) {
     throw new Error(`${name} must be a lowercase UUID`)
   }
   return value
@@ -71,4 +103,20 @@ function solanaSignature(value: unknown, name: string): string {
     throw new Error(`${name} must be base58 text for a 64-byte Solana signature`)
   }
   return value
+}
+
+function signedWireTransaction(value: unknown, name: string): Base64EncodedWireTransaction {
+  if (typeof value !== 'string' || value.length === 0 || value.length > 1644) {
+    throw new Error(`${name} must be canonical base64 for a Solana transaction up to 1232 bytes`)
+  }
+  let decoded: string
+  try {
+    decoded = atob(value)
+  } catch {
+    throw new Error(`${name} must be canonical base64 for a Solana transaction up to 1232 bytes`)
+  }
+  if (decoded.length === 0 || decoded.length > 1232 || btoa(decoded) !== value) {
+    throw new Error(`${name} must be canonical base64 for a Solana transaction up to 1232 bytes`)
+  }
+  return value as Base64EncodedWireTransaction
 }

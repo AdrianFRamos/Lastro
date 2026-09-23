@@ -5,6 +5,7 @@ pub enum OutboxState {
     Local,
     Server,
     Finalized,
+    Quarantined,
 }
 
 /// Exact evidence persisted before any POST. These bytes are immutable after insertion.

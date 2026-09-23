@@ -75,7 +75,7 @@ def test_board_entrypoint_wires_agent_transport_while_reader_protocol_stays_isol
 def test_firmware_ci_compiles_efuse_signer_without_provisioning_commands():
     """CI must compile the hardware-backed signer configuration without claiming or mutating physical eFuse state."""
     workflow = (ROOT / '.github/workflows/firmware.yml').read_text(encoding='utf-8')
-    assert 'SDKCONFIG_DEFAULTS: sdkconfig.defaults;sdkconfig.efuse.defaults' in workflow
+    assert '-DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.efuse.defaults"' in workflow
     assert "CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN=y" in workflow
     assert "CONFIG_LASTRO_STATION_USE_EFUSE_KEY=y" in workflow
     assert "CONFIG_LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX=0" in workflow

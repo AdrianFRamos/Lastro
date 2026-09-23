@@ -1,7 +1,7 @@
 //! Append-only cryptographic event persistence.
 
 use lastro_protocol::StationEvent;
-use sqlx::{postgres::PgRow, PgPool, Postgres, Row, Transaction};
+use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::{crypto::VerifiedEvidence, error::ApiError};
@@ -58,7 +58,9 @@ pub async fn insert_or_match_exact(
     .await
     .map_err(db_error)?;
     if rows.len() != 1 {
-        return Err(ApiError::Conflict("event uniqueness collision is not an exact duplicate".into()));
+        return Err(ApiError::Conflict(
+            "event uniqueness collision is not an exact duplicate".into(),
+        ));
     }
     let existing = decode_event(&rows[0])?;
     let exact = existing.capture_id == capture_id
@@ -67,18 +69,36 @@ pub async fn insert_or_match_exact(
         && existing.observed_rfid == evidence.observed_rfid
         && existing.station_pubkey == evidence.station_pubkey33
         && existing.station_signature == evidence.station_signature64;
-    if exact { Ok(false) } else { Err(ApiError::Conflict("event duplicate contains divergent evidence".into())) }
+    if exact {
+        Ok(false)
+    } else {
+        Err(ApiError::Conflict(
+            "event duplicate contains divergent evidence".into(),
+        ))
+    }
 }
 
-pub async fn find_by_hash(pool: &PgPool, event_hash: [u8; 32]) -> Result<Option<EventRecord>, ApiError> {
+pub async fn find_by_hash(
+    pool: &PgPool,
+    event_hash: [u8; 32],
+) -> Result<Option<EventRecord>, ApiError> {
     let row = sqlx::query("SELECT * FROM events WHERE event_hash=$1")
-        .bind(event_hash.to_vec()).fetch_optional(pool).await.map_err(db_error)?;
+        .bind(event_hash.to_vec())
+        .fetch_optional(pool)
+        .await
+        .map_err(db_error)?;
     row.as_ref().map(decode_event).transpose()
 }
 
-pub async fn find_by_capture_id(pool: &PgPool, capture_id: Uuid) -> Result<Option<EventRecord>, ApiError> {
+pub async fn find_by_capture_id(
+    pool: &PgPool,
+    capture_id: Uuid,
+) -> Result<Option<EventRecord>, ApiError> {
     let row = sqlx::query("SELECT * FROM events WHERE capture_id=$1")
-        .bind(capture_id).fetch_optional(pool).await.map_err(db_error)?;
+        .bind(capture_id)
+        .fetch_optional(pool)
+        .await
+        .map_err(db_error)?;
     row.as_ref().map(decode_event).transpose()
 }
 
@@ -97,12 +117,61 @@ pub async fn find_unfinalized_for_animal(
     row.as_ref().map(decode_event).transpose()
 }
 
-pub async fn mark_submitted(pool: &PgPool, event_hash: [u8; 32], tx_signature: &str) -> Result<(), ApiError> {
+pub async fn mark_rejected_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    event_hash: [u8; 32],
+) -> Result<(), ApiError> {
+    let result = sqlx::query(
+        "UPDATE events SET status='REJECTED' WHERE event_hash=$1 AND status='EVIDENCE_ACCEPTED' AND tx_signature IS NULL",
+    )
+    .bind(event_hash.to_vec())
+    .execute(&mut **tx)
+    .await
+    .map_err(db_error)?;
+    if result.rows_affected() == 1 {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "accepted event cannot be superseded after transaction submission".into(),
+        ))
+    }
+}
+
+pub async fn require_active_event_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    event_hash: [u8; 32],
+) -> Result<(), ApiError> {
+    let status: Option<String> =
+        sqlx::query_scalar("SELECT status FROM events WHERE event_hash=$1 FOR UPDATE")
+            .bind(event_hash.to_vec())
+            .fetch_optional(&mut **tx)
+            .await
+            .map_err(db_error)?;
+    if matches!(status.as_deref(), Some("EVIDENCE_ACCEPTED" | "SUBMITTED")) {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "previously accepted evidence changed while authorizing this capture".into(),
+        ))
+    }
+}
+
+pub async fn mark_submitted(
+    pool: &PgPool,
+    event_hash: [u8; 32],
+    tx_signature: &str,
+) -> Result<(), ApiError> {
     let result = sqlx::query(
         "UPDATE events SET tx_signature=$2,status='SUBMITTED' WHERE event_hash=$1 AND status IN ('EVIDENCE_ACCEPTED','SUBMITTED') AND (tx_signature IS NULL OR tx_signature=$2)",
     )
     .bind(event_hash.to_vec()).bind(tx_signature).execute(pool).await.map_err(db_error)?;
-    if result.rows_affected() == 1 { Ok(()) } else { Err(ApiError::Conflict("event cannot be marked submitted".into())) }
+    if result.rows_affected() == 1 {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "event cannot be marked submitted".into(),
+        ))
+    }
 }
 
 pub async fn mark_finalized(
@@ -114,12 +183,38 @@ pub async fn mark_finalized(
         "UPDATE events SET tx_signature=$2,status='FINALIZED' WHERE event_hash=$1 AND status IN ('SUBMITTED','FINALIZED') AND (tx_signature IS NULL OR tx_signature=$2)",
     )
     .bind(event_hash.to_vec()).bind(tx_signature).execute(&mut **tx).await.map_err(db_error)?;
-    if result.rows_affected() == 1 { Ok(()) } else { Err(ApiError::Conflict("event cannot be finalized with this transaction signature".into())) }
+    if result.rows_affected() == 1 {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "event cannot be finalized with this transaction signature".into(),
+        ))
+    }
 }
 
-pub async fn list_for_animal(pool: &PgPool, animal_id: [u8; 32]) -> Result<Vec<EventRecord>, ApiError> {
+pub async fn list_finalized_for_animal(
+    pool: &PgPool,
+    animal_id: [u8; 32],
+) -> Result<Vec<EventRecord>, ApiError> {
+    let rows = sqlx::query(
+        "SELECT * FROM events WHERE animal_id=$1 AND status='FINALIZED' ORDER BY event_sequence ASC LIMIT 129",
+    )
+    .bind(animal_id.to_vec())
+    .fetch_all(pool)
+    .await
+    .map_err(db_error)?;
+    rows.iter().map(decode_event).collect()
+}
+
+pub async fn list_for_animal(
+    pool: &PgPool,
+    animal_id: [u8; 32],
+) -> Result<Vec<EventRecord>, ApiError> {
     let rows = sqlx::query("SELECT * FROM events WHERE animal_id=$1 ORDER BY event_sequence ASC")
-        .bind(animal_id.to_vec()).fetch_all(pool).await.map_err(db_error)?;
+        .bind(animal_id.to_vec())
+        .fetch_all(pool)
+        .await
+        .map_err(db_error)?;
     rows.iter().map(decode_event).collect()
 }
 

@@ -4,19 +4,23 @@ mod common;
 
 use std::{fs, path::PathBuf, sync::Arc};
 
-use axum::{body::Body, http::{header, Request, StatusCode}, Router};
-use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+use axum::{
+    Router,
+    body::Body,
+    http::{Request, StatusCode, header},
+};
+use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_api::{
     repository::{animals, captures, events},
     routes,
 };
-use lastro_protocol::{rfid::hash_canonical_rfid, StationEvent};
+use lastro_protocol::{StationEvent, rfid::hash_canonical_rfid};
 use serde_json::json;
 use tokio::sync::Barrier;
 use tower::ServiceExt;
 
 use common::{
-    app_state, sign_station_event_with_test_scalar, TestDb, TestRpc, AGENT_TOKEN, STATION_PUBKEY,
+    AGENT_TOKEN, STATION_PUBKEY, TestDb, TestRpc, app_state, sign_station_event_with_test_scalar,
 };
 
 const ANIMAL_ID: [u8; 32] = [0x11; 32];
@@ -149,8 +153,17 @@ async fn concurrent_identical_evidence_is_idempotent() {
     let db = TestDb::new().await;
     let (_event, capture_id) = seed_dispatched_origin(&db).await;
     let event_bytes = fixture("origin.bin");
-    let signature: [u8; 64] = hex::decode(ORIGIN_SIGNATURE_HEX).unwrap().try_into().unwrap();
-    let body = evidence_body(capture_id, &event_bytes, &RFID_A, &STATION_PUBKEY, &signature);
+    let signature: [u8; 64] = hex::decode(ORIGIN_SIGNATURE_HEX)
+        .unwrap()
+        .try_into()
+        .unwrap();
+    let body = evidence_body(
+        capture_id,
+        &event_bytes,
+        &RFID_A,
+        &STATION_PUBKEY,
+        &signature,
+    );
     let rpc = Arc::new(TestRpc::with_station_pubkey(STATION_PUBKEY));
     let app = routes::router(app_state(db.pool.clone(), rpc));
     let barrier = Arc::new(Barrier::new(3));
@@ -158,9 +171,15 @@ async fn concurrent_identical_evidence_is_idempotent() {
     let first = tokio::spawn(post_evidence(app.clone(), body.clone(), barrier.clone()));
     let second = tokio::spawn(post_evidence(app, body, barrier.clone()));
     barrier.wait().await;
-    let mut statuses = [first.await.unwrap().as_u16(), second.await.unwrap().as_u16()];
+    let mut statuses = [
+        first.await.unwrap().as_u16(),
+        second.await.unwrap().as_u16(),
+    ];
     statuses.sort_unstable();
-    assert_eq!(statuses, [StatusCode::OK.as_u16(), StatusCode::CREATED.as_u16()]);
+    assert_eq!(
+        statuses,
+        [StatusCode::OK.as_u16(), StatusCode::CREATED.as_u16()]
+    );
 
     let count: i64 = sqlx::query_scalar("SELECT count(*) FROM events WHERE capture_id=$1")
         .bind(capture_id)
@@ -168,7 +187,10 @@ async fn concurrent_identical_evidence_is_idempotent() {
         .await
         .unwrap();
     assert_eq!(count, 1);
-    let stored = events::find_by_capture_id(&db.pool, capture_id).await.unwrap().unwrap();
+    let stored = events::find_by_capture_id(&db.pool, capture_id)
+        .await
+        .unwrap()
+        .unwrap();
     assert_eq!(stored.event_bytes, event_bytes);
     db.cleanup().await;
 }
@@ -181,7 +203,10 @@ async fn concurrent_divergent_same_sequence_has_single_immutable_result() {
     let db = TestDb::new().await;
     let (origin, capture_id) = seed_dispatched_origin(&db).await;
     let original_bytes = fixture("origin.bin");
-    let original_signature: [u8; 64] = hex::decode(ORIGIN_SIGNATURE_HEX).unwrap().try_into().unwrap();
+    let original_signature: [u8; 64] = hex::decode(ORIGIN_SIGNATURE_HEX)
+        .unwrap()
+        .try_into()
+        .unwrap();
 
     let mut alternate = origin;
     alternate.new_rfid_hash = hash_canonical_rfid(&RFID_B);
@@ -210,17 +235,27 @@ async fn concurrent_divergent_same_sequence_has_single_immutable_result() {
     let first = tokio::spawn(post_evidence(app.clone(), original_body, barrier.clone()));
     let second = tokio::spawn(post_evidence(app, alternate_body, barrier.clone()));
     barrier.wait().await;
-    let mut statuses = [first.await.unwrap().as_u16(), second.await.unwrap().as_u16()];
+    let mut statuses = [
+        first.await.unwrap().as_u16(),
+        second.await.unwrap().as_u16(),
+    ];
     statuses.sort_unstable();
-    assert_eq!(statuses, [StatusCode::CREATED.as_u16(), StatusCode::CONFLICT.as_u16()]);
+    assert_eq!(
+        statuses,
+        [StatusCode::CREATED.as_u16(), StatusCode::CONFLICT.as_u16()]
+    );
 
-    let count: i64 = sqlx::query_scalar("SELECT count(*) FROM events WHERE animal_id=$1 AND event_sequence=1")
-        .bind(ANIMAL_ID.to_vec())
-        .fetch_one(&db.pool)
-        .await
-        .unwrap();
+    let count: i64 =
+        sqlx::query_scalar("SELECT count(*) FROM events WHERE animal_id=$1 AND event_sequence=1")
+            .bind(ANIMAL_ID.to_vec())
+            .fetch_one(&db.pool)
+            .await
+            .unwrap();
     assert_eq!(count, 1);
-    let stored = events::find_by_capture_id(&db.pool, capture_id).await.unwrap().unwrap();
+    let stored = events::find_by_capture_id(&db.pool, capture_id)
+        .await
+        .unwrap()
+        .unwrap();
     let original_won = stored.event_bytes == original_bytes
         && stored.observed_rfid == RFID_A
         && stored.station_signature == original_signature;

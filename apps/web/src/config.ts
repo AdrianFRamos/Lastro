@@ -12,6 +12,8 @@ export interface WebConfig {
   solanaRpcUrl: string
   solanaChain: SolanaChainIdentifier
   lastroProgramId: string
+  lastroDeploymentId: string
+  lastroAuthority: string | null
 }
 
 function required(name: keyof ImportMetaEnv): string {
@@ -44,9 +46,21 @@ function solanaChain(name: 'VITE_SOLANA_CHAIN'): SolanaChainIdentifier {
   return raw as SolanaChainIdentifier
 }
 
+function hex32(name: 'VITE_LASTRO_DEPLOYMENT_ID_HEX'): string {
+  const raw = required(name)
+  if (!/^[0-9a-f]{64}$/.test(raw)) {
+    throw new Error(`${name} must be lowercase 32-byte hex`)
+  }
+  return raw
+}
+
 export const webConfig: WebConfig = Object.freeze({
   apiBaseUrl: httpUrl('VITE_API_BASE_URL').replace(/\/$/, ''),
   solanaRpcUrl: httpUrl('VITE_SOLANA_RPC_URL'),
   solanaChain: solanaChain('VITE_SOLANA_CHAIN'),
   lastroProgramId: required('VITE_LASTRO_PROGRAM_ID'),
+  lastroDeploymentId: hex32('VITE_LASTRO_DEPLOYMENT_ID_HEX'),
+  // This public trust anchor must be provisioned independently of the API and RPC.
+  // Verification cannot return VALID when it is absent.
+  lastroAuthority: import.meta.env.VITE_LASTRO_AUTHORITY || null,
 })

@@ -18,13 +18,9 @@ describe('product storytelling routes', () => {
    */
   it('exposes the intended public information architecture', () => {
     const paths = router.getRoutes().map((route) => route.path)
-    expect(paths).toEqual(expect.arrayContaining([
-      '/',
-      '/problem',
-      '/future',
-      '/demo',
-      '/verify/:animalId?',
-    ]))
+    expect(paths).toEqual(
+      expect.arrayContaining(['/', '/problem', '/future', '/demo', '/verify/:animalId?']),
+    )
   })
 
   /**
@@ -76,7 +72,7 @@ describe('product storytelling routes', () => {
     })
 
     expect(wrapper.get('h1').text()).toContain('Start with what the physical asset is.')
-    expect(wrapper.text()).toContain('PROVEN TODAY')
+    expect(wrapper.text()).toContain('SOFTWARE DEMONSTRATED')
     expect(wrapper.text()).toContain('EXPANSION PATH')
     expect(wrapper.text()).toContain('Lastro starts with identity and custody.')
 
@@ -84,5 +80,4 @@ describe('product storytelling routes', () => {
     expect(text.indexOf('PHYSICAL IDENTITY')).toBeLessThan(text.indexOf('FINANCIAL INFRASTRUCTURE'))
     wrapper.unmount()
   })
-
 })

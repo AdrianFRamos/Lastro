@@ -20,7 +20,9 @@ function eventKind(label: string): TimelineKind {
       <div>
         <p class="eyebrow">CUSTODY / IDENTITY TIMELINE</p>
         <h2>Canonical history</h2>
-        <p class="app-card__description">Custody transitions and physical identity rebinding remain distinct events.</p>
+        <p class="app-card__description">
+          Custody transitions and physical identity rebinding remain distinct events.
+        </p>
       </div>
     </header>
 
@@ -39,8 +41,14 @@ function eventKind(label: string): TimelineKind {
               v-if="eventKind(event.label) === 'REIDENTIFY'"
               class="status-badge"
               data-tone="proof"
-            >IDENTITY</span>
-            <span v-else-if="eventKind(event.label) === 'TRANSFER'" class="status-badge" data-tone="chain">CUSTODY</span>
+              >IDENTITY</span
+            >
+            <span
+              v-else-if="eventKind(event.label) === 'TRANSFER'"
+              class="status-badge"
+              data-tone="chain"
+              >CUSTODY</span
+            >
           </div>
           <p class="timeline__label">{{ event.label }}</p>
           <p v-if="eventKind(event.label) === 'REIDENTIFY'" class="timeline__note">
@@ -52,7 +60,10 @@ function eventKind(label: string): TimelineKind {
 
     <div v-else class="empty-state">
       <strong>No canonical events yet.</strong>
-      <p>ORIGIN will create the first custody and physical identity binding after finalized Solana confirmation.</p>
+      <p>
+        ORIGIN will create the first custody and physical identity binding after finalized Solana
+        confirmation.
+      </p>
     </div>
   </AppCard>
 </template>

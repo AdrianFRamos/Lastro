@@ -27,8 +27,28 @@ impl SerialStationTransport {
     pub fn open(path: &Path, baud: u32) -> Result<Self, AgentError> {
         let stream = tokio_serial::new(path.to_string_lossy(), baud)
             .open_native_async()
-            .map_err(|error| AgentError::Serial(format!("cannot open Station serial port: {error}")))?;
-        Ok(Self { stream, read_buffer: BytesMut::with_capacity(512) })
+            .map_err(|error| {
+                AgentError::Serial(format!("cannot open Station serial port: {error}"))
+            })?;
+        Ok(Self {
+            stream,
+            read_buffer: BytesMut::with_capacity(512),
+        })
+    }
+}
+
+fn decode_buffered_frame(buffer: &mut BytesMut) -> Result<Option<Frame>, AgentError> {
+    loop {
+        match codec::decode_next(buffer) {
+            Ok(frame) => return Ok(frame),
+            Err(AgentError::Serial(message)) => {
+                tracing::warn!(
+                    error = %message,
+                    "discarded corrupt Station serial prefix; continuing from resynchronized buffer"
+                );
+            }
+            Err(error) => return Err(error),
+        }
     }
 }
 
@@ -49,14 +69,8 @@ impl StationTransport for SerialStationTransport {
 
     async fn receive(&mut self) -> Result<Frame, AgentError> {
         loop {
-            match codec::decode_next(&mut self.read_buffer) {
-                Ok(Some(frame)) => return Ok(frame),
-                Ok(None) => {}
-                Err(error) => {
-                    // The codec has already discarded the corrupt prefix. Surface the error to the worker;
-                    // a subsequent receive call can continue from the resynchronized buffer.
-                    return Err(error);
-                }
+            if let Some(frame) = decode_buffered_frame(&mut self.read_buffer)? {
+                return Ok(frame);
             }
 
             let mut chunk = [0u8; 512];
@@ -70,5 +84,38 @@ impl StationTransport for SerialStationTransport {
             }
             self.read_buffer.extend_from_slice(&chunk[..count]);
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use bytes::{Bytes, BytesMut};
+
+    use super::{
+        codec::encode_frame,
+        decode_buffered_frame,
+        frame::{Frame, MessageType},
+    };
+
+    #[test]
+    fn buffered_decoder_skips_corrupt_frame_and_returns_following_valid_frame() {
+        // PURPOSE: A recoverable framing error must not discard a valid frame already buffered behind it.
+        // ARRANGE: Concatenate one CRC-corrupted COMMAND frame and one valid byte-identical COMMAND frame.
+        // ACTION: Ask the transport-level buffered decoder for the next usable frame.
+        // ASSERT: It skips the corrupted frame using codec resynchronization and returns the following valid frame.
+        // FAILURE MEANS: one corrupt serial frame still forces reconnect and can strand WAIT_ACK evidence.
+        let expected = Frame {
+            message_type: MessageType::Command,
+            payload: Bytes::from(vec![0u8; MessageType::Command.payload_len()]),
+        };
+        let valid = encode_frame(&expected).unwrap();
+        let mut corrupt = valid.to_vec();
+        corrupt[12] ^= 0x01;
+
+        let mut buffer = BytesMut::from(corrupt.as_slice());
+        buffer.extend_from_slice(&valid);
+
+        assert_eq!(decode_buffered_frame(&mut buffer).unwrap(), Some(expected));
+        assert!(buffer.is_empty());
     }
 }

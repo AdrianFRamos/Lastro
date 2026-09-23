@@ -1,6 +1,10 @@
 <script setup lang="ts">
 import AppCard from './AppCard.vue'
-import type { VerificationLayerName, VerificationLayerResult, VerificationStatus } from '../verify/types'
+import type {
+  VerificationLayerName,
+  VerificationLayerResult,
+  VerificationStatus,
+} from '../verify/types'
 
 defineProps<{ layers: VerificationLayerResult[] }>()
 
@@ -21,7 +25,9 @@ function statusTone(status: VerificationStatus): 'success' | 'danger' | undefine
       <div>
         <p class="eyebrow">VERIFICATION LAYERS</p>
         <h2>Independent checks</h2>
-        <p class="app-card__description">Each layer is evaluated separately; NOT_CHECKED never counts as valid.</p>
+        <p class="app-card__description">
+          Each layer is evaluated separately; NOT_CHECKED never counts as valid.
+        </p>
       </div>
     </header>
 

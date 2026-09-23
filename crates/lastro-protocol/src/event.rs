@@ -5,7 +5,7 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     action::Action,
-    constants::{offset, MAGIC, RESERVED, STATION_EVENT_LEN, VERSION},
+    constants::{MAGIC, RESERVED, STATION_EVENT_LEN, VERSION, offset},
     error::ProtocolError,
     ids::*,
 };
@@ -154,7 +154,11 @@ impl StationEvent {
         if self.action == Action::Origin
             || self.deployment_id != current.deployment_id
             || self.animal_id != current.animal_id
-            || self.event_sequence != current.event_sequence.checked_add(1).ok_or(ProtocolError::InvalidSuccessor)?
+            || self.event_sequence
+                != current
+                    .event_sequence
+                    .checked_add(1)
+                    .ok_or(ProtocolError::InvalidSuccessor)?
             || self.previous_event_hash != current.event_hash()
         {
             return Err(ProtocolError::InvalidSuccessor);

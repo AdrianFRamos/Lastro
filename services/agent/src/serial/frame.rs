@@ -38,7 +38,9 @@ impl TryFrom<u8> for MessageType {
             2 => Ok(Self::EventReady),
             3 => Ok(Self::Ack),
             4 => Ok(Self::Error),
-            _ => Err(AgentError::Serial(format!("unknown serial message type {value}"))),
+            _ => Err(AgentError::Serial(format!(
+                "unknown serial message type {value}"
+            ))),
         }
     }
 }

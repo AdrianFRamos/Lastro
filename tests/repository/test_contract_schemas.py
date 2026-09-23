@@ -43,6 +43,7 @@ def test_openapi_contains_exact_hackathon_surface_and_no_compliance_endpoint():
         '/api/animals/{animalId}',
         '/api/animals/by-recovery/{visualRecoveryId}',
         '/api/animals/by-rfid/{rfidHash}',
+        '/api/captures/authorization-challenge',
         '/api/captures',
         '/api/captures/{captureId}',
         '/api/agent/commands',

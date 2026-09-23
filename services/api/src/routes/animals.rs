@@ -1,15 +1,15 @@
 //! Animal HTTP endpoints. Registration is off-chain only; canonical current state remains on Solana.
 
 use axum::{
+    Json,
     extract::{Path, State},
     http::StatusCode,
-    Json,
 };
 
 use crate::{
     domain::animals::generate_animal_id,
     error::ApiError,
-    model::{parse_hex32, AnimalResponse, CreateAnimalRequest},
+    model::{AnimalResponse, CreateAnimalRequest, parse_hex32},
     repository::animals::{self, AnimalRecord},
     solana::rpc::BindingStatus,
     state::AppState,
@@ -29,7 +29,7 @@ pub async fn create(
     if animal_id == [0; 32] {
         return Err(ApiError::Internal);
     }
-    let record = animals::insert_registration(&state.db, animal_id, visual).await?;
+    let record = animals::insert_public_registration(&state.db, animal_id, visual).await?;
     Ok((StatusCode::CREATED, Json(to_response(record))))
 }
 
@@ -49,7 +49,9 @@ pub async fn by_recovery(
     Path(id): Path<String>,
 ) -> Result<Json<AnimalResponse>, ApiError> {
     if id.is_empty() || id.len() > 64 || id.trim() != id {
-        return Err(ApiError::Validation("invalid visual recovery identifier".into()));
+        return Err(ApiError::Validation(
+            "invalid visual recovery identifier".into(),
+        ));
     }
     let record = animals::find_by_visual_recovery_id(&state.db, &id)
         .await?
@@ -72,7 +74,9 @@ pub async fn by_rfid(
     }
     let record = animals::find_by_current_rfid_hash(&state.db, rfid_hash)
         .await?
-        .ok_or_else(|| ApiError::Conflict("local projection is missing canonical RFID binding".into()))?;
+        .ok_or_else(|| {
+            ApiError::Conflict("local projection is missing canonical RFID binding".into())
+        })?;
     if record.animal_id != binding.animal_id {
         return Err(ApiError::Conflict(
             "local RFID projection disagrees with canonical Solana binding".into(),

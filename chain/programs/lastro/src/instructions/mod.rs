@@ -5,7 +5,7 @@ pub mod origin;
 pub mod reidentify;
 pub mod transfer;
 
-pub use initialize::*;
-pub use origin::*;
-pub use reidentify::*;
-pub use transfer::*;
+pub use initialize::Initialize;
+pub use origin::Origin;
+pub use reidentify::Reidentify;
+pub use transfer::Transfer;

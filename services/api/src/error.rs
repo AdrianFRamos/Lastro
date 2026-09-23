@@ -5,7 +5,11 @@
 //! (401), canonical/state conflict (409), unavailable dependency (503) and unexpected
 //! internal failure (500). Internal responses must never include tokens, DB URLs or keys.
 
-use axum::{http::StatusCode, response::{IntoResponse, Response}, Json};
+use axum::{
+    Json,
+    http::StatusCode,
+    response::{IntoResponse, Response},
+};
 use serde::Serialize;
 
 #[derive(Debug, thiserror::Error)]
@@ -20,6 +24,8 @@ pub enum ApiError {
     NotFound(String),
     #[error("state conflict: {0}")]
     Conflict(String),
+    #[error("rate limit exceeded: {0}")]
+    RateLimited(String),
     #[error("dependency unavailable: {0}")]
     Unavailable(String),
     #[error("internal error")]
@@ -28,18 +34,43 @@ pub enum ApiError {
 
 #[derive(Serialize)]
 #[serde(rename_all = "camelCase")]
-struct ErrorBody<'a> { code: &'a str, message: &'a str }
+struct ErrorBody<'a> {
+    code: &'a str,
+    message: &'a str,
+}
 
 impl IntoResponse for ApiError {
     fn into_response(self) -> Response {
         let (status, code, safe_message) = match &self {
-            ApiError::Config(_) | ApiError::Internal => (StatusCode::INTERNAL_SERVER_ERROR, "INTERNAL", "internal error"),
-            ApiError::Validation(message) => (StatusCode::BAD_REQUEST, "INVALID_REQUEST", message.as_str()),
+            ApiError::Config(_) | ApiError::Internal => (
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "INTERNAL",
+                "internal error",
+            ),
+            ApiError::Validation(message) => {
+                (StatusCode::BAD_REQUEST, "INVALID_REQUEST", message.as_str())
+            }
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "unauthorized"),
             ApiError::NotFound(message) => (StatusCode::NOT_FOUND, "NOT_FOUND", message.as_str()),
             ApiError::Conflict(message) => (StatusCode::CONFLICT, "CONFLICT", message.as_str()),
-            ApiError::Unavailable(message) => (StatusCode::SERVICE_UNAVAILABLE, "UNAVAILABLE", message.as_str()),
+            ApiError::RateLimited(message) => (
+                StatusCode::TOO_MANY_REQUESTS,
+                "RATE_LIMITED",
+                message.as_str(),
+            ),
+            ApiError::Unavailable(message) => (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "UNAVAILABLE",
+                message.as_str(),
+            ),
         };
-        (status, Json(ErrorBody { code, message: safe_message })).into_response()
+        (
+            status,
+            Json(ErrorBody {
+                code,
+                message: safe_message,
+            }),
+        )
+            .into_response()
     }
 }

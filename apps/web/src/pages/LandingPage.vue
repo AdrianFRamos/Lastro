@@ -85,7 +85,7 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
   gap: 10px;
   color: var(--text);
   font: 750 14px/1 var(--font-mono);
-  letter-spacing: .2em;
+  letter-spacing: 0.2em;
   text-decoration: none;
 }
 
@@ -93,7 +93,6 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
   width: 32px;
   height: 32px;
 }
-
 
 .landing-hero__content {
   align-self: center;
@@ -105,7 +104,7 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
   margin: 0 0 20px;
   color: var(--proof);
   font: 700 10px/1.4 var(--font-mono);
-  letter-spacing: .18em;
+  letter-spacing: 0.18em;
 }
 
 .landing-hero h1 {
@@ -113,8 +112,8 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
   margin: 0;
   font-size: clamp(52px, 4.8vw, 78px);
   font-weight: 580;
-  line-height: .99;
-  letter-spacing: -.055em;
+  line-height: 0.99;
+  letter-spacing: -0.055em;
   text-wrap: balance;
 }
 
@@ -139,7 +138,10 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
   color: var(--text);
   font: 700 13px/1 var(--font-mono);
   text-decoration: none;
-  transition: background 150ms ease, border-color 150ms ease, transform 150ms ease;
+  transition:
+    background 150ms ease,
+    border-color 150ms ease,
+    transform 150ms ease;
 }
 
 .landing-hero__cta:hover,
@@ -179,7 +181,6 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
 .landing-path:focus-visible {
   border-top-color: var(--proof);
 }
-
 
 @media (min-width: 1200px) and (min-aspect-ratio: 16 / 10) {
   .landing-hero__frame {

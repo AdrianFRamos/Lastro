@@ -7,17 +7,25 @@ import {
   getAddressDecoder,
   getBase64EncodedWireTransaction,
   getProgramDerivedAddress,
+  getSignatureFromTransaction,
   getTransactionSize,
   pipe,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
   type Address,
+  type Base64EncodedWireTransaction,
   type Instruction,
 } from '@solana/kit'
-import type { AccountMetaDto, InstructionDto, TransactionData } from '../api/types'
+import type {
+  AccountMetaDto,
+  CaptureAction,
+  Hex32,
+  InstructionDto,
+  TransactionData,
+} from '../api/types'
 import { webConfig } from '../config'
-import { stationId } from '../protocol/hash'
+import { eventHash, stationId } from '../protocol/hash'
 import { verifyStationSignature } from '../protocol/p256'
 import { decodeStationEvent, type StationEvent } from '../protocol/stationEvent'
 import { solanaClient } from './client'
@@ -41,9 +49,25 @@ interface ValidatedTransaction {
   event: StationEvent
 }
 
+export interface ExpectedTransitionIntent {
+  action: CaptureAction
+  animalId: Hex32
+  deploymentId: Hex32
+  toCustodian: Hex32
+  eventHash: Hex32
+}
+
+export interface SignedLastroTransaction {
+  signature: string
+  wireTransactionBase64: Base64EncodedWireTransaction
+  lastValidBlockHeight?: bigint
+}
+
+export type SignedLastroTransactionObserver = (signed: SignedLastroTransaction) => void
+
 export interface WalletSigningContext {
   accountAddress: string
-  supportedTransactionVersions: ReadonlySet<'legacy' | 0>
+  supportedTransactionVersions: ReadonlySet<'legacy' | 0 | 1>
   canSignTransactions: boolean
 }
 
@@ -57,10 +81,14 @@ export function validateWalletSigningContext(
   }
   const requestedVersion = transactionData.transactionVersion === 'legacy' ? 'legacy' : 0
   if (!context.supportedTransactionVersions.has(requestedVersion)) {
-    throw new Error(`Connected wallet does not support ${transactionData.transactionVersion} transactions`)
+    throw new Error(
+      `Connected wallet does not support ${transactionData.transactionVersion} transactions`,
+    )
   }
   if (!context.canSignTransactions) {
-    throw new Error('Connected wallet must support signTransaction so Lastro can verify the signed envelope before broadcast')
+    throw new Error(
+      'Connected wallet must support signTransaction so Lastro can verify the signed envelope before broadcast',
+    )
   }
   return requestedVersion
 }
@@ -69,7 +97,10 @@ export function validateWalletSigningContext(
  * Independently validate the complete API transaction descriptor before any wallet popup.
  * The raw 276-byte StationEvent is retained byte-for-byte and becomes instruction 1 data.
  */
-export async function validateLastroTransactionData(transactionData: TransactionData): Promise<ValidatedTransaction> {
+export async function validateLastroTransactionData(
+  transactionData: TransactionData,
+  expectedIntent?: ExpectedTransitionIntent,
+): Promise<ValidatedTransaction> {
   if (transactionData.lastroProgramId !== webProgramId()) {
     throw new Error('Lastro program id does not match browser deployment configuration')
   }
@@ -88,7 +119,10 @@ export async function validateLastroTransactionData(transactionData: Transaction
   if (transactionData.measuredSerializedBytes > SOLANA_LEGACY_V0_MAX_TRANSACTION_BYTES) {
     throw new Error('API transaction measurement exceeds Solana legacy/v0 size limit')
   }
-  if (transactionData.transactionVersion !== 'legacy' && transactionData.transactionVersion !== 'v0') {
+  if (
+    transactionData.transactionVersion !== 'legacy' &&
+    transactionData.transactionVersion !== 'v0'
+  ) {
     throw new Error('Unsupported transaction version requested by API')
   }
 
@@ -105,15 +139,29 @@ export async function validateLastroTransactionData(transactionData: Transaction
   const event = decodeStationEvent(rawEvent)
   await verifyAnchorDiscriminator(lastroData.subarray(0, 8), event.action)
   await verifySecpDescriptor(secpDescriptor, rawEvent, event)
-  await verifyExpectedAccounts(transactionData.instructions[1], transactionData.lastroProgramId, event)
+  await verifyExpectedAccounts(
+    transactionData.instructions[1],
+    transactionData.lastroProgramId,
+    event,
+  )
 
-  const expectedSigner = custodianAddress(event.action === 1 ? event.toCustodian : event.fromCustodian)
+  const expectedSigner = custodianAddress(
+    event.action === 1 ? event.toCustodian : event.fromCustodian,
+  )
   if (transactionData.requiredSigner !== expectedSigner) {
-    throw new Error('Required signer does not match the custodian authority encoded by StationEvent')
+    throw new Error(
+      'Required signer does not match the custodian authority encoded by StationEvent',
+    )
+  }
+  if (expectedIntent) {
+    await verifyExpectedTransitionIntent(rawEvent, event, expectedIntent)
   }
 
   return {
-    instructions: [toInstruction(transactionData.instructions[0]), toInstruction(transactionData.instructions[1])],
+    instructions: [
+      toInstruction(transactionData.instructions[0]),
+      toInstruction(transactionData.instructions[1]),
+    ],
     rawEvent,
     event,
   }
@@ -123,11 +171,16 @@ export async function validateLastroTransactionData(transactionData: Transaction
  * Validate, construct, sign, and submit the frozen Lastro envelope.
  * Signing remains inside the connected Wallet Standard account; private key material never enters Lastro code.
  */
-export async function submitLastroTransaction(transactionData: TransactionData): Promise<string> {
-  const validated = await validateLastroTransactionData(transactionData)
+export async function submitLastroTransaction(
+  transactionData: TransactionData,
+  expectedIntent: ExpectedTransitionIntent,
+  onSigned?: SignedLastroTransactionObserver,
+): Promise<string> {
+  const validated = await validateLastroTransactionData(transactionData, expectedIntent)
   const walletState = solanaClient.wallet.getState()
   const connected = walletState.connected
-  if (!connected?.signer) throw new Error('A signing-capable Wallet Standard account must be connected')
+  if (!connected?.signer)
+    throw new Error('A signing-capable Wallet Standard account must be connected')
   const requestedVersion = validateWalletSigningContext(transactionData, {
     accountAddress: connected.account.address,
     supportedTransactionVersions: connected.supportedTransactionVersions,
@@ -135,21 +188,25 @@ export async function submitLastroTransaction(transactionData: TransactionData):
   })
 
   const latest = await solanaClient.rpc.getLatestBlockhash({ commitment: 'finalized' }).send()
-  let message = pipe(
+  const message = pipe(
     createTransactionMessage({ version: requestedVersion }),
     (value) => setTransactionMessageFeePayerSigner(connected.signer!, value),
     (value) => setTransactionMessageLifetimeUsingBlockhash(latest.value, value),
+    (value) => appendTransactionMessageInstruction(validated.instructions[0], value),
+    (value) => appendTransactionMessageInstruction(validated.instructions[1], value),
   )
-  message = appendTransactionMessageInstruction(validated.instructions[0], message)
-  message = appendTransactionMessageInstruction(validated.instructions[1], message)
 
   const unsignedTransaction = compileTransaction(message)
   const unsignedSize = getTransactionSize(unsignedTransaction)
   if (unsignedSize !== transactionData.measuredSerializedBytes) {
-    throw new Error(`Locally compiled transaction size ${unsignedSize} does not match API measurement ${transactionData.measuredSerializedBytes}`)
+    throw new Error(
+      `Locally compiled transaction size ${unsignedSize} does not match API measurement ${transactionData.measuredSerializedBytes}`,
+    )
   }
   if (unsignedSize > SOLANA_LEGACY_V0_MAX_TRANSACTION_BYTES) {
-    throw new Error(`Serialized Lastro transaction is ${unsignedSize} bytes and exceeds the 1232-byte limit`)
+    throw new Error(
+      `Serialized Lastro transaction is ${unsignedSize} bytes and exceeds the 1232-byte limit`,
+    )
   }
 
   const signedTransaction = await signTransactionMessageWithSigners(message)
@@ -162,14 +219,87 @@ export async function submitLastroTransaction(transactionData: TransactionData):
   }
 
   const wire = getBase64EncodedWireTransaction(signedTransaction)
-  const signature = await solanaClient.rpc.sendTransaction(wire, {
-    encoding: 'base64',
-    preflightCommitment: 'finalized',
-  }).send()
-  return String(signature)
+  const signature = String(getSignatureFromTransaction(signedTransaction))
+  if (onSigned) {
+    onSigned({
+      signature,
+      wireTransactionBase64: wire,
+      lastValidBlockHeight: latest.value.lastValidBlockHeight,
+    })
+  }
+
+  const rpcSignature = String(
+    await solanaClient.rpc
+      .sendTransaction(wire, {
+        encoding: 'base64',
+        preflightCommitment: 'finalized',
+      })
+      .send(),
+  )
+  if (rpcSignature !== signature) {
+    throw new Error(
+      'Solana RPC returned a transaction signature different from the signed envelope',
+    )
+  }
+  return signature
 }
 
-async function verifySecpDescriptor(descriptor: Uint8Array, rawEvent: Uint8Array, event: StationEvent): Promise<void> {
+/** Re-submit the exact signed bytes retained before an ambiguous RPC result. */
+export async function rebroadcastSignedLastroTransaction(
+  signed: SignedLastroTransaction,
+): Promise<string> {
+  const rpcSignature = String(
+    await solanaClient.rpc
+      .sendTransaction(signed.wireTransactionBase64, {
+        encoding: 'base64',
+        preflightCommitment: 'finalized',
+      })
+      .send(),
+  )
+  if (rpcSignature !== signed.signature) {
+    throw new Error(
+      'Solana RPC returned a transaction signature different from the retained signed envelope',
+    )
+  }
+  return signed.signature
+}
+
+async function verifyExpectedTransitionIntent(
+  rawEvent: Uint8Array,
+  event: StationEvent,
+  expected: ExpectedTransitionIntent,
+): Promise<void> {
+  const actualAction: CaptureAction =
+    event.action === 1 ? 'ORIGIN' : event.action === 2 ? 'TRANSFER' : 'REIDENTIFY'
+  const actual = {
+    action: actualAction,
+    animalId: toHex(event.animalId),
+    deploymentId: toHex(event.deploymentId),
+    toCustodian: toHex(event.toCustodian),
+    eventHash: toHex(await eventHash(rawEvent)),
+  }
+  const mismatches: string[] = []
+  if (actual.action !== expected.action) mismatches.push('action')
+  if (actual.animalId !== expected.animalId) mismatches.push('AnimalID')
+  if (actual.deploymentId !== expected.deploymentId) mismatches.push('deployment')
+  if (actual.toCustodian !== expected.toCustodian) mismatches.push('recipient')
+  if (actual.eventHash !== expected.eventHash) mismatches.push('event hash')
+  if (mismatches.length > 0) {
+    throw new Error(
+      `Transaction does not match expected transition intent: ${mismatches.join(', ')}`,
+    )
+  }
+}
+
+function toHex(bytes: Uint8Array): string {
+  return Array.from(bytes, (byte) => byte.toString(16).padStart(2, '0')).join('')
+}
+
+async function verifySecpDescriptor(
+  descriptor: Uint8Array,
+  rawEvent: Uint8Array,
+  event: StationEvent,
+): Promise<void> {
   if (descriptor[0] !== 1 || descriptor[1] !== 0) {
     throw new Error('Secp256r1 descriptor must contain exactly one signature and zero padding')
   }
@@ -177,7 +307,9 @@ async function verifySecpDescriptor(descriptor: Uint8Array, rawEvent: Uint8Array
   const expected = [16, 0, 80, 0, 8, 276, 1]
   for (let index = 0; index < expected.length; index += 1) {
     if (view.getUint16(2 + index * 2, true) !== expected[index]) {
-      throw new Error('Secp256r1 descriptor does not reference the exact StationEvent in instruction 1')
+      throw new Error(
+        'Secp256r1 descriptor does not reference the exact StationEvent in instruction 1',
+      )
     }
   }
   const signature = descriptor.subarray(16, 80)
@@ -186,7 +318,9 @@ async function verifySecpDescriptor(descriptor: Uint8Array, rawEvent: Uint8Array
     throw new Error('Secp256r1 descriptor contains an invalid compressed Station public key')
   }
   if (!verifyStationSignature(rawEvent, publicKey, signature)) {
-    throw new Error('Secp256r1 descriptor contains an invalid Station signature for this StationEvent')
+    throw new Error(
+      'Secp256r1 descriptor contains an invalid Station signature for this StationEvent',
+    )
   }
   const derivedStationId = await stationId(publicKey)
   if (!equalBytes(derivedStationId, event.stationId)) {
@@ -197,39 +331,76 @@ async function verifySecpDescriptor(descriptor: Uint8Array, rawEvent: Uint8Array
   }
 }
 
-async function verifyAnchorDiscriminator(actual: Uint8Array, action: StationEvent['action']): Promise<void> {
+async function verifyAnchorDiscriminator(
+  actual: Uint8Array,
+  action: StationEvent['action'],
+): Promise<void> {
   const actionName = action === 1 ? 'origin' : action === 2 ? 'transfer' : 'reidentify'
   const input = new TextEncoder().encode(`global:${actionName}`)
   const expected = new Uint8Array(await crypto.subtle.digest('SHA-256', input)).subarray(0, 8)
-  if (!equalBytes(actual, expected)) throw new Error('Lastro instruction discriminator does not match StationEvent action')
+  if (!equalBytes(actual, expected))
+    throw new Error('Lastro instruction discriminator does not match StationEvent action')
 }
 
-async function verifyExpectedAccounts(instruction: InstructionDto, programId: string, event: StationEvent): Promise<void> {
+async function verifyExpectedAccounts(
+  instruction: InstructionDto,
+  programId: string,
+  event: StationEvent,
+): Promise<void> {
   const programAddress = address(programId)
-  const [config] = await getProgramDerivedAddress({ programAddress, seeds: [CONFIG_SEED, event.deploymentId] })
-  const [animal] = await getProgramDerivedAddress({ programAddress, seeds: [ANIMAL_SEED, event.deploymentId, event.animalId] })
+  const [config] = await getProgramDerivedAddress({
+    programAddress,
+    seeds: [CONFIG_SEED, event.deploymentId],
+  })
+  const [animal] = await getProgramDerivedAddress({
+    programAddress,
+    seeds: [ANIMAL_SEED, event.deploymentId, event.animalId],
+  })
   const signer = custodianAddress(event.action === 1 ? event.toCustodian : event.fromCustodian)
 
   let expected: AccountMetaDto[]
   if (event.action === 1) {
-    const [binding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.newRfidHash] })
+    const [binding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.newRfidHash],
+    })
     expected = [
-      meta(signer, true, true), meta(config, false, false), meta(animal, false, true),
-      meta(binding, false, true), meta(INSTRUCTIONS_SYSVAR_ID, false, false), meta(SYSTEM_PROGRAM_ID, false, false),
+      meta(signer, true, true),
+      meta(config, false, false),
+      meta(animal, false, true),
+      meta(binding, false, true),
+      meta(INSTRUCTIONS_SYSVAR_ID, false, false),
+      meta(SYSTEM_PROGRAM_ID, false, false),
     ]
   } else if (event.action === 2) {
-    const [binding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash] })
+    const [binding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash],
+    })
     expected = [
-      meta(signer, true, false), meta(config, false, false), meta(animal, false, true),
-      meta(binding, false, false), meta(INSTRUCTIONS_SYSVAR_ID, false, false),
+      meta(signer, true, false),
+      meta(config, false, false),
+      meta(animal, false, true),
+      meta(binding, false, false),
+      meta(INSTRUCTIONS_SYSVAR_ID, false, false),
     ]
   } else {
-    const [oldBinding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash] })
-    const [newBinding] = await getProgramDerivedAddress({ programAddress, seeds: [RFID_SEED, event.deploymentId, event.newRfidHash] })
+    const [oldBinding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.oldRfidHash],
+    })
+    const [newBinding] = await getProgramDerivedAddress({
+      programAddress,
+      seeds: [RFID_SEED, event.deploymentId, event.newRfidHash],
+    })
     expected = [
-      meta(signer, true, true), meta(config, false, false), meta(animal, false, true),
-      meta(oldBinding, false, true), meta(newBinding, false, true),
-      meta(INSTRUCTIONS_SYSVAR_ID, false, false), meta(SYSTEM_PROGRAM_ID, false, false),
+      meta(signer, true, true),
+      meta(config, false, false),
+      meta(animal, false, true),
+      meta(oldBinding, false, true),
+      meta(newBinding, false, true),
+      meta(INSTRUCTIONS_SYSVAR_ID, false, false),
+      meta(SYSTEM_PROGRAM_ID, false, false),
     ]
   }
 
@@ -239,8 +410,14 @@ async function verifyExpectedAccounts(instruction: InstructionDto, programId: st
   for (let index = 0; index < expected.length; index += 1) {
     const actual = instruction.accounts[index]!
     const wanted = expected[index]!
-    if (actual.address !== wanted.address || actual.isSigner !== wanted.isSigner || actual.isWritable !== wanted.isWritable) {
-      throw new Error(`Lastro instruction account ${index} does not match the StationEvent-derived account contract`)
+    if (
+      actual.address !== wanted.address ||
+      actual.isSigner !== wanted.isSigner ||
+      actual.isWritable !== wanted.isWritable
+    ) {
+      throw new Error(
+        `Lastro instruction account ${index} does not match the StationEvent-derived account contract`,
+      )
     }
   }
 }
@@ -283,8 +460,12 @@ function decodeCanonicalBase64(value: string): Uint8Array {
   return Uint8Array.from(binary, (character) => character.charCodeAt(0))
 }
 
-function equalBytes(left: Uint8Array, right: Uint8Array): boolean {
-  return left.length === right.length && left.every((byte, index) => byte === right[index])
+function equalBytes(left: ArrayLike<number>, right: ArrayLike<number>): boolean {
+  if (left.length !== right.length) return false
+  for (let index = 0; index < left.length; index += 1) {
+    if (left[index] !== right[index]) return false
+  }
+  return true
 }
 
 function webProgramId(): string {

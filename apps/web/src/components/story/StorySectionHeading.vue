@@ -18,7 +18,7 @@ defineProps<{
 <style scoped>
 .story-section-heading {
   display: grid;
-  grid-template-columns: minmax(170px, .38fr) minmax(0, .9fr) minmax(280px, .58fr);
+  grid-template-columns: minmax(170px, 0.38fr) minmax(0, 0.9fr) minmax(280px, 0.58fr);
   gap: 42px;
   align-items: start;
   margin-bottom: 38px;
@@ -28,7 +28,7 @@ defineProps<{
   margin: 0;
   color: var(--proof);
   font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: .16em;
+  letter-spacing: 0.16em;
 }
 
 .story-section-heading h2 {
@@ -37,7 +37,7 @@ defineProps<{
   font-size: clamp(30px, 2.7vw, 42px);
   font-weight: 560;
   line-height: 1.05;
-  letter-spacing: -.035em;
+  letter-spacing: -0.035em;
 }
 
 .story-section-heading__description {

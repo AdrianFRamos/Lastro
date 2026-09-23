@@ -52,31 +52,46 @@ function decodedBase64Length(value: unknown): number | null {
 }
 
 function isSolanaSignatureText(value: unknown): value is string {
-  return typeof value === 'string'
-    && value.length >= 64
-    && value.length <= 88
-    && /^[1-9A-HJ-NP-Za-km-z]+$/.test(value)
+  return (
+    typeof value === 'string' &&
+    value.length >= 64 &&
+    value.length <= 88 &&
+    /^[1-9A-HJ-NP-Za-km-z]+$/.test(value)
+  )
 }
 
 function parseEvent(value: unknown): EvidenceEvent {
   if (!isRecord(value) || !hasExactKeys(value, EVENT_KEYS)) {
     throw new Error('invalid EvidenceEvent shape')
   }
-  if (decodedBase64Length(value.eventBytesBase64) !== 276) {
+  if (
+    typeof value.eventBytesBase64 !== 'string' ||
+    decodedBase64Length(value.eventBytesBase64) !== 276
+  ) {
     throw new Error('EvidenceEvent StationEvent must decode to exactly 276 bytes')
   }
-  if (!isLowerHex(value.observedRfidHex, 8)) throw new Error('observed RFID must be 8 lowercase hex bytes')
-  if (!isLowerHex(value.stationPubkeyHex, 33)) throw new Error('Station public key must be 33 lowercase hex bytes')
-  if (!isLowerHex(value.stationSignatureHex, 64)) throw new Error('Station signature must be 64 lowercase hex bytes')
-  if (value.txSignature !== null && !isSolanaSignatureText(value.txSignature)) {
-    throw new Error('transaction signature must be null or canonical-looking base58 for a 64-byte Solana signature')
+  if (!isLowerHex(value.observedRfidHex, 8))
+    throw new Error('observed RFID must be 8 lowercase hex bytes')
+  if (!isLowerHex(value.stationPubkeyHex, 33))
+    throw new Error('Station public key must be 33 lowercase hex bytes')
+  if (!isLowerHex(value.stationSignatureHex, 64))
+    throw new Error('Station signature must be 64 lowercase hex bytes')
+  let txSignature: string | null
+  if (value.txSignature === null) {
+    txSignature = null
+  } else if (isSolanaSignatureText(value.txSignature)) {
+    txSignature = value.txSignature
+  } else {
+    throw new Error(
+      'transaction signature must be null or canonical-looking base58 for a 64-byte Solana signature',
+    )
   }
   return {
     eventBytesBase64: value.eventBytesBase64,
     observedRfidHex: value.observedRfidHex,
     stationPubkeyHex: value.stationPubkeyHex,
     stationSignatureHex: value.stationSignatureHex,
-    txSignature: value.txSignature,
+    txSignature,
   }
 }
 
@@ -85,10 +100,11 @@ export function parseEvidencePackage(value: unknown): EvidencePackage {
     throw new Error('invalid EvidencePackage shape')
   }
   if (value.version !== 1) throw new Error('unsupported EvidencePackage version')
-  if (!isLowerHex(value.deploymentId, 32)) throw new Error('deploymentId must be 32 lowercase hex bytes')
+  if (!isLowerHex(value.deploymentId, 32))
+    throw new Error('deploymentId must be 32 lowercase hex bytes')
   if (!isLowerHex(value.animalId, 32)) throw new Error('animalId must be 32 lowercase hex bytes')
-  if (!Array.isArray(value.events) || value.events.length === 0) {
-    throw new Error('EvidencePackage must contain at least one event')
+  if (!Array.isArray(value.events) || value.events.length === 0 || value.events.length > 128) {
+    throw new Error('EvidencePackage must contain between 1 and 128 events')
   }
 
   return {

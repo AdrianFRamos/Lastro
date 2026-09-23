@@ -4,6 +4,17 @@ import { parseEvidencePackage } from '../../src/protocol/evidence'
 
 describe('protocol/evidence', () => {
   /**
+   * ARRANGE: Expand a valid package with 129 transport events.
+   * ACTION: Parse it before signature verification or RPC allocation.
+   * ASSERT: Parsing rejects the oversized history.
+   * FAILURE MEANS: a hostile package can force unbounded decoding or RPC work.
+   */
+  it('rejects histories above the bounded verification budget before allocating decoded events', () => {
+    const tooMany = structuredClone(validFixture)
+    tooMany.events = Array.from({ length: 129 }, () => structuredClone(validFixture.events[0]!))
+    expect(() => parseEvidencePackage(tooMany)).toThrow('between 1 and 128 events')
+  })
+  /**
    * ARRANGE: load the committed valid EvidencePackage fixture.
    * ACTION: parse it through the strict browser transport parser.
    * ASSERT: every field and event remains byte-for-byte representationally unchanged.
@@ -76,5 +87,4 @@ describe('protocol/evidence', () => {
     oversizedSignature.events[0].txSignature = '1'.repeat(89)
     expect(() => parseEvidencePackage(oversizedSignature)).toThrow('transaction signature')
   })
-
 })

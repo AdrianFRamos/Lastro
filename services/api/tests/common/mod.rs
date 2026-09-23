@@ -1,9 +1,11 @@
+#![allow(dead_code)]
+
 use std::{
     collections::HashMap,
     env,
     sync::{
-        atomic::{AtomicUsize, Ordering},
         Arc, Mutex,
+        atomic::{AtomicUsize, Ordering},
     },
 };
 
@@ -15,14 +17,14 @@ use lastro_api::{
     state::AppState,
 };
 use lastro_protocol::ids::{AnimalId, DeploymentId, RfidHash};
-use sqlx::{postgres::PgPoolOptions, PgPool};
+use sqlx::{PgPool, postgres::PgPoolOptions};
 use uuid::Uuid;
 
 pub const DEPLOYMENT_ID: [u8; 32] = [0xd0; 32];
 pub const STATION_PUBKEY: [u8; 33] = [
-    0x03, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63,
-    0xa4, 0x40, 0xf2, 0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39,
-    0x45, 0xd8, 0x98, 0xc2, 0x96,
+    0x03, 0x6b, 0x17, 0xd1, 0xf2, 0xe1, 0x2c, 0x42, 0x47, 0xf8, 0xbc, 0xe6, 0xe5, 0x63, 0xa4, 0x40,
+    0xf2, 0x77, 0x03, 0x7d, 0x81, 0x2d, 0xeb, 0x33, 0xa0, 0xf4, 0xa1, 0x39, 0x45, 0xd8, 0x98, 0xc2,
+    0x96,
 ];
 pub const PROGRAM_ID: &str = "Vote111111111111111111111111111111111111111";
 pub const AGENT_TOKEN: &str = "0123456789abcdef0123456789abcdef";
@@ -55,9 +57,12 @@ impl TestDb {
             .after_connect(move |connection, _metadata| {
                 let schema = Arc::clone(&schema_for_connections);
                 Box::pin(async move {
-                    sqlx::query(sqlx::AssertSqlSafe(format!(r#"SET search_path TO "{}""#, schema.as_str())))
-                        .execute(connection)
-                        .await?;
+                    sqlx::query(sqlx::AssertSqlSafe(format!(
+                        r#"SET search_path TO "{}""#,
+                        schema.as_str()
+                    )))
+                    .execute(connection)
+                    .await?;
                     Ok(())
                 })
             })
@@ -70,15 +75,22 @@ impl TestDb {
             .await
             .expect("apply API migrations to isolated schema");
 
-        Self { pool, admin, schema }
+        Self {
+            pool,
+            admin,
+            schema,
+        }
     }
 
     pub async fn cleanup(self) {
         self.pool.close().await;
-        sqlx::query(sqlx::AssertSqlSafe(format!(r#"DROP SCHEMA "{}" CASCADE"#, self.schema)))
-            .execute(&self.admin)
-            .await
-            .expect("drop isolated test schema");
+        sqlx::query(sqlx::AssertSqlSafe(format!(
+            r#"DROP SCHEMA "{}" CASCADE"#,
+            self.schema
+        )))
+        .execute(&self.admin)
+        .await
+        .expect("drop isolated test schema");
         self.admin.close().await;
     }
 }
@@ -108,7 +120,10 @@ impl TestRpc {
     }
 
     pub fn set_binding(&self, binding: CanonicalRfidBinding) {
-        self.bindings.lock().unwrap().insert(binding.rfid_hash, binding);
+        self.bindings
+            .lock()
+            .unwrap()
+            .insert(binding.rfid_hash, binding);
     }
 
     pub fn set_confirmed_transaction_match(&self, matches: bool) {
@@ -191,7 +206,7 @@ pub fn sign_station_event_with_test_scalar(
     event: &lastro_protocol::StationEvent,
     scalar: u8,
 ) -> ([u8; 276], [u8; 33], [u8; 64]) {
-    use p256::ecdsa::{signature::Signer, Signature, SigningKey};
+    use p256::ecdsa::{Signature, SigningKey, signature::Signer};
 
     assert!(scalar != 0, "test signing scalar must be non-zero");
     let mut secret = [0u8; 32];

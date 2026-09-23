@@ -17,7 +17,10 @@ async fn response_json(error: ApiError) -> (StatusCode, Value) {
 #[tokio::test]
 async fn validation_errors_are_400_with_stable_public_shape() {
     // PURPOSE: client-correctable input failures must remain distinct from dependency/internal failures.
-    let (status, body) = response_json(ApiError::Validation("animalId must be lowercase hex".into())).await;
+    let (status, body) = response_json(ApiError::Validation(
+        "animalId must be lowercase hex".into(),
+    ))
+    .await;
 
     assert_eq!(status, StatusCode::BAD_REQUEST);
     assert_eq!(body["code"], "INVALID_REQUEST");
@@ -30,7 +33,8 @@ async fn validation_errors_are_400_with_stable_public_shape() {
 #[tokio::test]
 async fn state_conflicts_are_409_with_stable_public_shape() {
     // PURPOSE: canonical/projection conflicts must have deterministic HTTP semantics.
-    let (status, body) = response_json(ApiError::Conflict("canonical predecessor changed".into())).await;
+    let (status, body) =
+        response_json(ApiError::Conflict("canonical predecessor changed".into())).await;
 
     assert_eq!(status, StatusCode::CONFLICT);
     assert_eq!(body["code"], "CONFLICT");
@@ -43,7 +47,8 @@ async fn state_conflicts_are_409_with_stable_public_shape() {
 #[tokio::test]
 async fn unavailable_dependencies_are_503_without_internal_details() {
     // PURPOSE: callers must distinguish retryable dependency failure from an application bug.
-    let (status, body) = response_json(ApiError::Unavailable("Solana RPC request failed".into())).await;
+    let (status, body) =
+        response_json(ApiError::Unavailable("Solana RPC request failed".into())).await;
 
     assert_eq!(status, StatusCode::SERVICE_UNAVAILABLE);
     assert_eq!(body["code"], "UNAVAILABLE");

@@ -5,14 +5,14 @@ services:
       POSTGRES_USER: lastro
       POSTGRES_PASSWORD: lastro
       POSTGRES_DB: lastro
-    ports: ["5432:5432"]
+    ports: ["127.0.0.1:5432:5432"]
     healthcheck:
       test: ["CMD-SHELL", "pg_isready -U lastro -d lastro"]
       interval: 2s
       timeout: 2s
       retries: 20
     volumes:
-      - lastro-postgres:/var/lib/postgresql/data
+      - lastro-postgres:/var/lib/postgresql
 
   api:
     profiles: ["app"]
@@ -41,6 +41,8 @@ services:
         VITE_SOLANA_RPC_URL: ${VITE_SOLANA_RPC_URL:?set VITE_SOLANA_RPC_URL}
         VITE_SOLANA_CHAIN: ${VITE_SOLANA_CHAIN:?set VITE_SOLANA_CHAIN}
         VITE_LASTRO_PROGRAM_ID: ${VITE_LASTRO_PROGRAM_ID:?set VITE_LASTRO_PROGRAM_ID}
+        VITE_LASTRO_DEPLOYMENT_ID_HEX: ${VITE_LASTRO_DEPLOYMENT_ID_HEX:?set VITE_LASTRO_DEPLOYMENT_ID_HEX}
+        VITE_LASTRO_AUTHORITY: ${VITE_LASTRO_AUTHORITY:?set VITE_LASTRO_AUTHORITY from trusted deployment manifest}
     ports: ["8088:80"]
     depends_on: [api]
 
@@ -71,6 +73,7 @@ services:
       LASTRO_AGENT_SQLITE_URL: sqlite:///data/agent.db?mode=rwc
       LASTRO_AGENT_POLL_INTERVAL_MS: "500"
       LASTRO_AGENT_REQUEST_TIMEOUT_MS: "5000"
+      LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS: "3000"
       LASTRO_HARDWARE_SIM_WIRE_HOST: hardware-simulator
       LASTRO_HARDWARE_SIM_WIRE_PORT: "9100"
       RUST_LOG: ${RUST_LOG:-info,lastro_agent=debug}

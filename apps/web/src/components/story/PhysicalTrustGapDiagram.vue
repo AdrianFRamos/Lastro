@@ -52,7 +52,7 @@ const evidenceStores = [
 <style scoped>
 .trust-gap {
   display: grid;
-  grid-template-columns: .72fr 1fr 1.08fr;
+  grid-template-columns: 0.72fr 1fr 1.08fr;
   gap: 22px;
   align-items: stretch;
 }
@@ -85,7 +85,7 @@ const evidenceStores = [
   color: var(--proof);
   box-shadow: inset 0 0 0 18px color-mix(in srgb, var(--proof) 5%, transparent);
   font: 750 21px/1 var(--font-mono);
-  letter-spacing: .1em;
+  letter-spacing: 0.1em;
 }
 
 .trust-gap__asset strong,
@@ -95,7 +95,7 @@ const evidenceStores = [
 
 .trust-gap__asset strong {
   font: 700 12px/1.2 var(--font-mono);
-  letter-spacing: .12em;
+  letter-spacing: 0.12em;
 }
 
 .trust-gap__asset div span {
@@ -157,7 +157,7 @@ const evidenceStores = [
   margin: 0;
   color: var(--muted);
   font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: .12em;
+  letter-spacing: 0.12em;
 }
 
 .trust-gap__stores {
@@ -192,7 +192,7 @@ const evidenceStores = [
 .trust-gap__result strong {
   color: #ffd36a;
   font: 700 12px/1.4 var(--font-mono);
-  letter-spacing: .08em;
+  letter-spacing: 0.08em;
 }
 
 @media (max-width: 980px) {

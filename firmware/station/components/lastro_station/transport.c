@@ -233,7 +233,7 @@ bool lastro_ack_decode(const uint8_t payload[LASTRO_ACK_PAYLOAD_LEN], lastro_ack
 bool lastro_error_encode(const lastro_error_payload_t *value, uint8_t out[LASTRO_ERROR_PAYLOAD_LEN])
 {
     if (value == NULL || out == NULL) return false;
-    if (value->code < LASTRO_STATION_ERROR_INVALID_COMMAND || value->code > LASTRO_STATION_ERROR_BUSY) return false;
+    if (value->code < LASTRO_STATION_ERROR_INVALID_COMMAND || value->code > LASTRO_STATION_ERROR_RFID_TIMEOUT) return false;
     memcpy(out, value->capture_id, 16);
     write_u16_le(out + 16, (uint16_t)value->code);
     out[18] = 0;

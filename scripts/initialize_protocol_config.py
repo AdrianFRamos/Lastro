@@ -2,8 +2,9 @@
 """Initialize or validate Lastro ProtocolConfig for local/Devnet validation.
 
 This helper never creates a program identity and never stores private keys. It either validates
-the immutable ProtocolConfig account or, when an authority keypair is supplied, submits the one
-Anchor `initialize` instruction required to create it.
+the immutable ProtocolConfig account or, when an authority keypair is supplied, submits an
+explicit compute-budget request followed by the one Anchor `initialize` instruction required to
+create it.
 """
 
 from __future__ import annotations
@@ -14,6 +15,7 @@ import hashlib
 import json
 from pathlib import Path
 import sys
+import time
 
 ROOT = Path(__file__).resolve().parents[1]
 if str(ROOT) not in sys.path:
@@ -36,7 +38,20 @@ from tests.system.support import (
 )
 
 SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
+COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111"
+INITIALIZE_COMPUTE_UNIT_LIMIT = 1400000
 PROTOCOL_CONFIG_LENGTH = 106
+
+
+def wait_for_finalized_funding(rpc: SolanaRpcClient, address: str, timeout: float = 30.0) -> None:
+    """Do not simulate an initialize transaction against an unfunded finalized bank."""
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        balance = rpc.call("getBalance", [address, {"commitment": "finalized"}])
+        if isinstance(balance, dict) and isinstance(balance.get("value"), int) and balance["value"] > 0:
+            return
+        time.sleep(0.25)
+    raise SystemContractError("initialize authority funding did not finalize before the deadline")
 
 
 def parse_args() -> argparse.Namespace:
@@ -97,6 +112,14 @@ def initialize(
     station_pubkey: bytes,
     authority: WalletActor,
 ) -> str:
+    wait_for_finalized_funding(rpc, authority.address)
+    compute_budget = {
+        "programId": COMPUTE_BUDGET_PROGRAM_ID,
+        "accounts": [],
+        "dataBase64": base64.b64encode(
+            bytes([2]) + INITIALIZE_COMPUTE_UNIT_LIMIT.to_bytes(4, "little")
+        ).decode(),
+    }
     discriminator = hashlib.sha256(b"global:initialize").digest()[:8]
     instruction = {
         "programId": program_id,
@@ -107,7 +130,7 @@ def initialize(
         ],
         "dataBase64": base64.b64encode(discriminator + deployment_id + station_pubkey).decode(),
     }
-    message = compile_legacy_message(authority.public_key, rpc.latest_blockhash(), [instruction])
+    message = compile_legacy_message(authority.public_key, rpc.latest_blockhash(), [compute_budget, instruction])
     signature = authority.private_key.sign(message)
     wire = encode_shortvec(1) + signature + message
     transaction_signature = b58encode(signature)

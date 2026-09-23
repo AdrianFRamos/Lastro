@@ -14,9 +14,10 @@ use lastro_protocol::{
 };
 use litesvm::{
     LiteSVM,
-    types::{FailedTransactionMetadata, TransactionMetadata, TransactionResult},
+    types::{FailedTransactionMetadata, TransactionMetadata},
 };
 use p256::ecdsa::{Signature, SigningKey, signature::Signer as P256Signer};
+use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
 use solana_message::Message;
@@ -30,16 +31,16 @@ pub const SECP_SIGNATURE_OFFSET: u16 = 16;
 pub const SECP_PUBLIC_KEY_OFFSET: u16 = 80;
 pub const SECP_DATA_LEN: usize = 113;
 pub const LAMPORTS_PER_TEST_WALLET: u64 = 10_000_000_000;
+pub const INITIALIZE_COMPUTE_UNIT_LIMIT: u32 = 1_400_000;
+
+pub type TestTransactionResult = Result<TransactionMetadata, Box<FailedTransactionMetadata>>;
 
 const TEST_PRIVATE_SCALAR: [u8; 32] = [
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
-    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
+    0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 1,
 ];
 const P256_ORDER: [u8; 32] = [
-    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00,
-    0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
-    0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84,
-    0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51,
+    0xff, 0xff, 0xff, 0xff, 0x00, 0x00, 0x00, 0x00, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff, 0xff,
+    0xbc, 0xe6, 0xfa, 0xad, 0xa7, 0x17, 0x9e, 0x84, 0xf3, 0xb9, 0xca, 0xc2, 0xfc, 0x63, 0x25, 0x51,
 ];
 
 pub struct Harness {
@@ -160,11 +161,11 @@ pub fn system_program_id() -> Pubkey {
 }
 
 pub fn instructions_sysvar_id() -> Pubkey {
-    Pubkey::new_from_array(anchor_lang::solana_program::sysvar::instructions::ID.to_bytes())
+    Pubkey::new_from_array(solana_sdk_ids::sysvar::instructions::ID.to_bytes())
 }
 
 pub fn secp256r1_program_id() -> Pubkey {
-    Pubkey::new_from_array(solana_secp256r1_program::ID.to_bytes())
+    Pubkey::new_from_array(solana_sdk_ids::secp256r1_program::ID.to_bytes())
 }
 
 pub fn protocol_config_pda(deployment_id: &[u8; 32]) -> (Pubkey, u8) {
@@ -205,7 +206,7 @@ pub fn send_initialize(
     authority: &Keypair,
     deployment_id: [u8; 32],
     station_pubkey33: [u8; 33],
-) -> TransactionResult {
+) -> TestTransactionResult {
     let (config, _) = protocol_config_pda(&deployment_id);
     let ix = Instruction {
         program_id: program_id(),
@@ -220,7 +221,9 @@ pub fn send_initialize(
         }
         .data(),
     };
-    send_instructions(svm, vec![ix], authority)
+    let compute_budget =
+        ComputeBudgetInstruction::set_compute_unit_limit(INITIALIZE_COMPUTE_UNIT_LIMIT);
+    send_instructions(svm, vec![compute_budget, ix], authority)
 }
 
 pub fn build_lastro_instruction(event: &StationEvent) -> Instruction {
@@ -281,7 +284,8 @@ pub fn signing_key_from_small_scalar(value: u8) -> SigningKey {
     assert!(value != 0, "P-256 private scalar must be nonzero");
     let mut scalar = [0u8; 32];
     scalar[31] = value;
-    SigningKey::from_bytes((&scalar).into()).expect("small deterministic P-256 scalar must be valid")
+    SigningKey::from_bytes((&scalar).into())
+        .expect("small deterministic P-256 scalar must be valid")
 }
 
 pub fn compressed_pubkey(signing_key: &SigningKey) -> [u8; 33] {
@@ -382,7 +386,7 @@ pub fn send_event(
     signing_key: &SigningKey,
     station_pubkey33: &[u8; 33],
     signer: &Keypair,
-) -> TransactionResult {
+) -> TestTransactionResult {
     send_instructions(
         svm,
         build_envelope(event, signing_key, station_pubkey33),
@@ -394,7 +398,7 @@ pub fn send_event_with_envelope(
     svm: &mut LiteSVM,
     instructions: Vec<Instruction>,
     signer: &Keypair,
-) -> TransactionResult {
+) -> TestTransactionResult {
     send_instructions(svm, instructions, signer)
 }
 
@@ -411,9 +415,9 @@ pub fn send_instructions(
     svm: &mut LiteSVM,
     instructions: Vec<Instruction>,
     signer: &Keypair,
-) -> TransactionResult {
+) -> TestTransactionResult {
     let tx = build_transaction(svm, instructions, signer);
-    svm.send_transaction(tx)
+    svm.send_transaction(tx).map_err(Box::new)
 }
 
 pub fn serialized_transaction_len(tx: &Transaction) -> usize {
@@ -422,21 +426,28 @@ pub fn serialized_transaction_len(tx: &Transaction) -> usize {
         .len()
 }
 
-pub fn assert_success(result: TransactionResult) -> TransactionMetadata {
+pub fn assert_success(result: TestTransactionResult) -> TransactionMetadata {
     match result {
         Ok(meta) => meta,
-        Err(err) => panic!("transaction unexpectedly failed: {:?}\n{}", err.err, err.meta.logs.join("\n")),
+        Err(err) => panic!(
+            "transaction unexpectedly failed: {:?}\n{}",
+            err.err,
+            err.meta.logs.join("\n")
+        ),
     }
 }
 
-pub fn assert_failure(result: TransactionResult) -> FailedTransactionMetadata {
+pub fn assert_failure(result: TestTransactionResult) -> FailedTransactionMetadata {
     match result {
         Ok(meta) => panic!("transaction unexpectedly succeeded: {}", meta.pretty_logs()),
-        Err(err) => err,
+        Err(err) => *err,
     }
 }
 
-pub fn assert_failure_contains(result: TransactionResult, needle: &str) -> FailedTransactionMetadata {
+pub fn assert_failure_contains(
+    result: TestTransactionResult,
+    needle: &str,
+) -> FailedTransactionMetadata {
     let failure = assert_failure(result);
     let logs = failure.meta.logs.join("\n");
     assert!(
@@ -453,8 +464,14 @@ pub fn account_data(svm: &LiteSVM, address: &Pubkey) -> Option<Vec<u8>> {
 
 pub fn protocol_config(svm: &LiteSVM, deployment_id: &[u8; 32]) -> ProtocolConfig {
     let (address, _) = protocol_config_pda(deployment_id);
-    let account = svm.get_account(&address).expect("ProtocolConfig must exist");
-    assert_eq!(account.owner, program_id(), "ProtocolConfig owner must be Lastro");
+    let account = svm
+        .get_account(&address)
+        .expect("ProtocolConfig must exist");
+    assert_eq!(
+        account.owner,
+        program_id(),
+        "ProtocolConfig owner must be Lastro"
+    );
     let mut bytes = account.data.as_slice();
     ProtocolConfig::try_deserialize(&mut bytes).expect("ProtocolConfig must deserialize")
 }
@@ -462,7 +479,11 @@ pub fn protocol_config(svm: &LiteSVM, deployment_id: &[u8; 32]) -> ProtocolConfi
 pub fn animal_state(svm: &LiteSVM, deployment_id: &[u8; 32], animal_id: &[u8; 32]) -> AnimalState {
     let (address, _) = animal_state_pda(deployment_id, animal_id);
     let account = svm.get_account(&address).expect("AnimalState must exist");
-    assert_eq!(account.owner, program_id(), "AnimalState owner must be Lastro");
+    assert_eq!(
+        account.owner,
+        program_id(),
+        "AnimalState owner must be Lastro"
+    );
     let mut bytes = account.data.as_slice();
     AnimalState::try_deserialize(&mut bytes).expect("AnimalState must deserialize")
 }
@@ -470,7 +491,11 @@ pub fn animal_state(svm: &LiteSVM, deployment_id: &[u8; 32], animal_id: &[u8; 32
 pub fn rfid_binding(svm: &LiteSVM, deployment_id: &[u8; 32], rfid_hash: &[u8; 32]) -> RfidBinding {
     let (address, _) = rfid_binding_pda(deployment_id, rfid_hash);
     let account = svm.get_account(&address).expect("RfidBinding must exist");
-    assert_eq!(account.owner, program_id(), "RfidBinding owner must be Lastro");
+    assert_eq!(
+        account.owner,
+        program_id(),
+        "RfidBinding owner must be Lastro"
+    );
     let mut bytes = account.data.as_slice();
     RfidBinding::try_deserialize(&mut bytes).expect("RfidBinding must deserialize")
 }
