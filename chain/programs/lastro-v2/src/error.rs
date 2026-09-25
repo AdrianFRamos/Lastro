@@ -76,4 +76,14 @@ pub enum LastroV2Error {
     AssetReserved,
     #[msg("reservation is invalid")]
     InvalidReservation,
+    #[msg("reservation is not expired or attached to an aborted transformation")]
+    ReservationNotReleasable,
+    #[msg("transformation cannot be aborted in its current state")]
+    TransformationNotAbortable,
+    #[msg("transformation expiration time has not been reached")]
+    TransformationNotExpired,
+    #[msg("transformation cannot be finalized in its current state")]
+    TransformationNotFinalizable,
+    #[msg("transformation inputs or outputs are incomplete")]
+    TransformationNotComplete,
 }

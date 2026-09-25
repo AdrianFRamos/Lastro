@@ -12,9 +12,13 @@ pub struct TransformationAnchor {
     pub input_count: u32,
     pub output_count: u32,
     pub reserved_input_count: u32,
+    pub consumed_input_count: u32,
+    pub created_output_count: u32,
     pub input_weight_grams: u64,
     pub reserved_input_weight_grams: u64,
+    pub consumed_input_weight_grams: u64,
     pub output_weight_grams: u64,
+    pub created_output_weight_grams: u64,
     pub byproduct_weight_grams: u64,
     pub loss_weight_grams: u64,
     pub tolerance_basis_points: u16,
@@ -26,5 +30,6 @@ pub struct TransformationAnchor {
 }
 
 impl TransformationAnchor {
-    pub const SPACE: usize = 8 + 32 + 32 + 2 + (32 * 2) + (4 * 3) + (8 * 5) + 2 + 1 + 32 + 8 + 8 + 1;
+    pub const SPACE: usize =
+        8 + 32 + 32 + 2 + (32 * 2) + (4 * 5) + (8 * 7) + 2 + 1 + 32 + 8 + 8 + 1;
 }

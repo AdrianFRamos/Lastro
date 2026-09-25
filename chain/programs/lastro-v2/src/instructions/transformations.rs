@@ -6,7 +6,9 @@ use lastro_protocol::v2::TransformationManifest;
 use crate::{
     constants::{
         CONFIG_V2_SEED, FACILITY_REGISTRY_SEED, FACILITY_SEED, FACILITY_STATUS_ACTIVE,
-        FACILITY_TYPE_PROCESSING_FACILITY, TRANSFORMATION_SEED, TRANSFORMATION_STATUS_OPEN,
+        FACILITY_TYPE_PROCESSING_FACILITY, TRANSFORMATION_SEED, TRANSFORMATION_STATUS_ABORTED,
+        TRANSFORMATION_STATUS_EXPIRED, TRANSFORMATION_STATUS_FINALIZED,
+        TRANSFORMATION_STATUS_FINALIZING, TRANSFORMATION_STATUS_OPEN,
     },
     error::LastroV2Error,
     state::{FacilityRecord, ProtocolConfigV2, RegistryRoot, TransformationAnchor},
@@ -91,9 +93,13 @@ pub fn begin_handler(
     transformation.input_count = input_count;
     transformation.output_count = output_count;
     transformation.reserved_input_count = 0;
+    transformation.consumed_input_count = 0;
+    transformation.created_output_count = 0;
     transformation.input_weight_grams = input_weight_grams;
     transformation.reserved_input_weight_grams = 0;
+    transformation.consumed_input_weight_grams = 0;
     transformation.output_weight_grams = output_weight_grams;
+    transformation.created_output_weight_grams = 0;
     transformation.byproduct_weight_grams = byproduct_weight_grams;
     transformation.loss_weight_grams = loss_weight_grams;
     transformation.tolerance_basis_points = tolerance_basis_points;
@@ -102,6 +108,65 @@ pub fn begin_handler(
     transformation.sequence = 0;
     transformation.expires_at = expires_at;
     transformation.bump = ctx.bumps.transformation;
+    Ok(())
+}
+
+pub fn abort_handler(ctx: Context<AbortTransformation>) -> Result<()> {
+    require!(
+        matches!(
+            ctx.accounts.transformation.status,
+            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
+        ),
+        LastroV2Error::TransformationNotAbortable
+    );
+    ctx.accounts.transformation.status = TRANSFORMATION_STATUS_ABORTED;
+    Ok(())
+}
+
+pub fn expire_handler(ctx: Context<ExpireTransformation>) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        now > ctx.accounts.transformation.expires_at,
+        LastroV2Error::TransformationNotExpired
+    );
+    require!(
+        matches!(
+            ctx.accounts.transformation.status,
+            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
+        ),
+        LastroV2Error::TransformationNotAbortable
+    );
+    ctx.accounts.transformation.status = TRANSFORMATION_STATUS_EXPIRED;
+    Ok(())
+}
+
+pub fn finalize_handler(ctx: Context<FinalizeTransformation>) -> Result<()> {
+    require!(
+        matches!(
+            ctx.accounts.transformation.status,
+            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
+        ),
+        LastroV2Error::TransformationNotFinalizable
+    );
+    require!(
+        ctx.accounts.transformation.reserved_input_count == 0
+            && ctx.accounts.transformation.reserved_input_weight_grams == 0
+            && ctx.accounts.transformation.consumed_input_count
+                == ctx.accounts.transformation.input_count
+            && ctx.accounts.transformation.consumed_input_weight_grams
+                == ctx.accounts.transformation.input_weight_grams
+            && ctx.accounts.transformation.created_output_count
+                == ctx.accounts.transformation.output_count
+            && ctx.accounts.transformation.created_output_weight_grams
+                == ctx.accounts.transformation.output_weight_grams,
+        LastroV2Error::TransformationNotComplete
+    );
+    let transformation = &mut ctx.accounts.transformation;
+    transformation.status = TRANSFORMATION_STATUS_FINALIZED;
+    transformation.sequence = transformation
+        .sequence
+        .checked_add(1)
+        .ok_or_else(|| error!(LastroV2Error::InvalidStateVersion))?;
     Ok(())
 }
 
@@ -144,4 +209,54 @@ pub struct BeginTransformation<'info> {
     )]
     pub transformation: Account<'info, TransformationAnchor>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+pub struct AbortTransformation<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_V2_SEED, &config.deployment_id],
+        bump = config.bump,
+        has_one = authority,
+    )]
+    pub config: Account<'info, ProtocolConfigV2>,
+    #[account(
+        mut,
+        seeds = [TRANSFORMATION_SEED, &config.deployment_id, &transformation.transformation_id],
+        bump = transformation.bump,
+    )]
+    pub transformation: Account<'info, TransformationAnchor>,
+}
+
+#[derive(Accounts)]
+pub struct ExpireTransformation<'info> {
+    pub caller: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_V2_SEED, &config.deployment_id],
+        bump = config.bump,
+    )]
+    pub config: Account<'info, ProtocolConfigV2>,
+    #[account(
+        mut,
+        seeds = [TRANSFORMATION_SEED, &config.deployment_id, &transformation.transformation_id],
+        bump = transformation.bump,
+    )]
+    pub transformation: Account<'info, TransformationAnchor>,
+}
+
+#[derive(Accounts)]
+pub struct FinalizeTransformation<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_V2_SEED, &config.deployment_id],
+        bump = config.bump,
+        has_one = authority,
+    )]
+    pub config: Account<'info, ProtocolConfigV2>,
+    #[account(
+        mut,
+        seeds = [TRANSFORMATION_SEED, &config.deployment_id, &transformation.transformation_id],
+        bump = transformation.bump,
+    )]
+    pub transformation: Account<'info, TransformationAnchor>,
 }

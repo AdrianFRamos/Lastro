@@ -6,7 +6,9 @@ use crate::{
     constants::{
         ASSET_SEED, ASSET_STATUS_ACTIVE, ASSET_STATUS_IN_TRANSIT, CONFIG_V2_SEED,
         FACILITY_REGISTRY_SEED, FACILITY_SEED, FACILITY_STATUS_ACTIVE,
-        TRANSFORMATION_RESERVATION_SEED, TRANSFORMATION_SEED, TRANSFORMATION_STATUS_OPEN,
+        TRANSFORMATION_RESERVATION_SEED, TRANSFORMATION_SEED, TRANSFORMATION_STATUS_ABORTED,
+        TRANSFORMATION_STATUS_EXPIRED, TRANSFORMATION_STATUS_FINALIZED,
+        TRANSFORMATION_STATUS_OPEN,
     },
     error::LastroV2Error,
     state::{
@@ -102,6 +104,53 @@ pub fn reserve_handler(
     Ok(())
 }
 
+pub fn release_handler(
+    ctx: Context<ReleaseTransformationInput>,
+    transformation_id: [u8; 32],
+    asset_id: [u8; 32],
+) -> Result<()> {
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        ctx.accounts.transformation.status != TRANSFORMATION_STATUS_FINALIZED,
+        LastroV2Error::InvalidReservation
+    );
+    require!(
+        ctx.accounts.reservation.transformation_id == transformation_id
+            && ctx.accounts.reservation.asset_id == asset_id,
+        LastroV2Error::InvalidReservation
+    );
+    require!(
+        now >= ctx.accounts.reservation.reserved_until
+            || matches!(
+                ctx.accounts.transformation.status,
+                TRANSFORMATION_STATUS_ABORTED | TRANSFORMATION_STATUS_EXPIRED
+            ),
+        LastroV2Error::ReservationNotReleasable
+    );
+    require!(
+        ctx.accounts.asset.reserved_by == transformation_id
+            && ctx.accounts.asset.reserved_weight_grams == ctx.accounts.reservation.weight_grams,
+        LastroV2Error::InvalidReservation
+    );
+
+    let weight_grams = ctx.accounts.reservation.weight_grams;
+    let asset = &mut ctx.accounts.asset;
+    asset.reserved_by = [0; 32];
+    asset.reserved_weight_grams = 0;
+    asset.reserved_until = 0;
+
+    let transformation = &mut ctx.accounts.transformation;
+    transformation.reserved_input_count = transformation
+        .reserved_input_count
+        .checked_sub(1)
+        .ok_or_else(|| error!(LastroV2Error::InvalidReservation))?;
+    transformation.reserved_input_weight_grams = transformation
+        .reserved_input_weight_grams
+        .checked_sub(weight_grams)
+        .ok_or_else(|| error!(LastroV2Error::InvalidReservation))?;
+    Ok(())
+}
+
 #[derive(Accounts)]
 #[instruction(transformation_id: [u8; 32], asset_id: [u8; 32])]
 pub struct ReserveTransformationInput<'info> {
@@ -150,4 +199,41 @@ pub struct ReserveTransformationInput<'info> {
     )]
     pub reservation: Account<'info, TransformationReservation>,
     pub system_program: Program<'info, System>,
+}
+
+#[derive(Accounts)]
+#[instruction(transformation_id: [u8; 32], asset_id: [u8; 32])]
+pub struct ReleaseTransformationInput<'info> {
+    #[account(mut)]
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_V2_SEED, &config.deployment_id],
+        bump = config.bump,
+        has_one = authority,
+    )]
+    pub config: Account<'info, ProtocolConfigV2>,
+    #[account(
+        mut,
+        seeds = [TRANSFORMATION_SEED, &config.deployment_id, &transformation_id],
+        bump = transformation.bump,
+    )]
+    pub transformation: Account<'info, TransformationAnchor>,
+    #[account(
+        mut,
+        seeds = [ASSET_SEED, &config.deployment_id, &asset_id],
+        bump = asset.bump,
+    )]
+    pub asset: Account<'info, AssetState>,
+    #[account(
+        mut,
+        close = authority,
+        seeds = [
+            TRANSFORMATION_RESERVATION_SEED,
+            &config.deployment_id,
+            &transformation_id,
+            &asset_id,
+        ],
+        bump = reservation.bump,
+    )]
+    pub reservation: Account<'info, TransformationReservation>,
 }

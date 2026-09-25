@@ -94,3 +94,20 @@ O próximo corte deve implementar, nessa ordem:
 5. confirmação de abate e criação de carcaças;
 6. chunks para lotes grandes de cortes;
 7. projeção API, Agent e verificador da linhagem.
+
+
+## Corte P2 — ciclo de reserva e transformação
+
+O programa v2 também recebeu o ciclo operacional mínimo da transformação:
+
+- `release_transformation_input` libera uma reserva somente quando ela expirou ou quando a transformação foi abortada/expirada; a PDA da reserva é fechada e devolve lamports à autoridade;
+- `abort_transformation` e `expire_transformation` são transições explícitas, sem apagar o anchor histórico;
+- `consume_transformation_input` exige a versão exata do asset, consome a massa reservada, incrementa `state_version`, marca o asset como consumido quando o saldo chega a zero e remove a reserva;
+- `create_transformation_output` cria um novo `AssetState`, liga `parent_root` ao root de inputs e acumula quantidade/peso de outputs;
+- `finalize_transformation` somente aceita a transição quando não há reservas, todos os inputs foram consumidos e todos os outputs/pesos anunciados foram criados.
+
+A máquina de estados agora evita o erro perigoso de declarar transformação finalizada enquanto ainda existem inputs reservados ou enquanto o peso efetivamente produzido não cobre o manifesto. A finalização ainda não cria automaticamente cortes em lote: cada output é uma conta própria nesta primeira implementação. O próximo incremento pode adicionar chunks de outputs, desde que preserve os mesmos contadores e commitments.
+
+### Validação do corte P2
+
+O `cargo check --locked --manifest-path chain/Cargo.toml -p lastro-v2` passou depois da inclusão de consumo, outputs e finalização. O protocolo compartilhado continuou passando em `cargo test --locked -p lastro-protocol`, e `cargo fmt --all -- --check` passou. O alvo de testes de integração do Anchor ficou silencioso no terminal Windows e foi encerrado pelo limite do ambiente; portanto, este corte está confirmado como compilável, mas a execução LiteSVM permanece pendente de um ambiente de teste estável.

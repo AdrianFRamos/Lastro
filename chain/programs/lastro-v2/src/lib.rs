@@ -16,13 +16,17 @@ pub mod verify;
 use crate::instructions::{
     CancelIntent, ConsumeIntent, CreateIntent, ExpireIntent, InitializeV2, RecordObservation,
     RegisterAsset, RegisterFacility, RegisterParty, RegisterStation, SetFacilityStatus,
-    SetStationStatus, BeginTransformation, ReserveTransformationInput,
+    AbortTransformation, BeginTransformation, ConsumeTransformationInput, CreateTransformationOutput,
+    ExpireTransformation, FinalizeTransformation, ReleaseTransformationInput,
+    ReserveTransformationInput, SetStationStatus,
 };
 
 declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
 
 // Keep these aliases at the crate root for Anchor 1.2 generated client helpers.
 pub(crate) use instructions::assets::__client_accounts_register_asset;
+pub(crate) use instructions::consumption::__client_accounts_consume_transformation_input;
+pub(crate) use instructions::outputs::__client_accounts_create_transformation_output;
 pub(crate) use instructions::events::__client_accounts_record_observation;
 pub(crate) use instructions::facilities::__client_accounts_register_facility;
 pub(crate) use instructions::facilities::__client_accounts_set_facility_status;
@@ -35,7 +39,11 @@ pub(crate) use instructions::parties::__client_accounts_register_party;
 pub(crate) use instructions::stations::__client_accounts_register_station;
 pub(crate) use instructions::stations::__client_accounts_set_station_status;
 pub(crate) use instructions::transformations::__client_accounts_begin_transformation;
+pub(crate) use instructions::transformations::__client_accounts_abort_transformation;
+pub(crate) use instructions::transformations::__client_accounts_expire_transformation;
+pub(crate) use instructions::transformations::__client_accounts_finalize_transformation;
 pub(crate) use instructions::reservations::__client_accounts_reserve_transformation_input;
+pub(crate) use instructions::reservations::__client_accounts_release_transformation_input;
 
 #[program]
 pub mod lastro_v2 {
@@ -199,6 +207,58 @@ pub mod lastro_v2 {
             weight_grams,
             expected_state_version,
         )
+    }
+
+    pub fn release_transformation_input(
+        ctx: Context<ReleaseTransformationInput>,
+        transformation_id: [u8; 32],
+        asset_id: [u8; 32],
+    ) -> Result<()> {
+        instructions::reservations::release_handler(ctx, transformation_id, asset_id)
+    }
+
+    pub fn abort_transformation(ctx: Context<AbortTransformation>) -> Result<()> {
+        instructions::transformations::abort_handler(ctx)
+    }
+
+    pub fn expire_transformation(ctx: Context<ExpireTransformation>) -> Result<()> {
+        instructions::transformations::expire_handler(ctx)
+    }
+
+    pub fn consume_transformation_input(
+        ctx: Context<ConsumeTransformationInput>,
+        transformation_id: [u8; 32],
+        asset_id: [u8; 32],
+        expected_state_version: u64,
+    ) -> Result<()> {
+        instructions::consumption::consume_handler(
+            ctx,
+            transformation_id,
+            asset_id,
+            expected_state_version,
+        )
+    }
+
+    pub fn create_transformation_output(
+        ctx: Context<CreateTransformationOutput>,
+        output_id: [u8; 32],
+        asset_type: u8,
+        custodian: Pubkey,
+        lineage_root: [u8; 32],
+        weight_grams: u64,
+    ) -> Result<()> {
+        instructions::outputs::create_handler(
+            ctx,
+            output_id,
+            asset_type,
+            custodian,
+            lineage_root,
+            weight_grams,
+        )
+    }
+
+    pub fn finalize_transformation(ctx: Context<FinalizeTransformation>) -> Result<()> {
+        instructions::transformations::finalize_handler(ctx)
     }
 
     pub fn create_intent(
