@@ -7,6 +7,10 @@ pub const PARTY_SEED: &[u8] = b"party";
 pub const ASSET_SEED: &[u8] = b"asset";
 pub const INTENT_SEED: &[u8] = b"intent";
 pub const EVENT_SEED: &[u8] = b"event";
+pub const LINEAGE_SEED: &[u8] = b"lineage";
+pub const TRANSFORMATION_SEED: &[u8] = b"transformation";
+pub const TRANSFORMATION_CHUNK_SEED: &[u8] = b"transformation-chunk";
+pub const TRANSFORMATION_RESERVATION_SEED: &[u8] = b"transformation-reservation";
 
 pub const STATION_REGISTRY_SEED: &[u8] = b"station-registry";
 pub const FACILITY_REGISTRY_SEED: &[u8] = b"facility-registry";
@@ -37,6 +41,12 @@ pub const INTENT_STATUS_OPEN: u8 = 1;
 pub const INTENT_STATUS_CANCELLED: u8 = 2;
 pub const INTENT_STATUS_CONSUMED: u8 = 3;
 pub const INTENT_STATUS_EXPIRED: u8 = 4;
+
+pub const TRANSFORMATION_STATUS_OPEN: u8 = 1;
+pub const TRANSFORMATION_STATUS_FINALIZING: u8 = 2;
+pub const TRANSFORMATION_STATUS_FINALIZED: u8 = 3;
+pub const TRANSFORMATION_STATUS_ABORTED: u8 = 4;
+pub const TRANSFORMATION_STATUS_EXPIRED: u8 = 5;
 
 pub const FACILITY_TYPE_FARM: u8 = 1;
 pub const FACILITY_TYPE_TRANSPORT_HUB: u8 = 2;

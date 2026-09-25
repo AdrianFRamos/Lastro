@@ -62,4 +62,18 @@ pub enum LastroV2Error {
     InvalidEventStateVersion,
     #[msg("event is outside its validity window")]
     EventOutsideValidityWindow,
+    #[msg("facility owner is not authorized for this operation")]
+    UnauthorizedFacility,
+    #[msg("transformation manifest is invalid")]
+    InvalidTransformationManifest,
+    #[msg("transformation manifest hash does not match canonical bytes")]
+    ManifestHashMismatch,
+    #[msg("transformation is not open")]
+    TransformationNotOpen,
+    #[msg("transformation has expired")]
+    TransformationExpired,
+    #[msg("asset is already reserved by another transformation")]
+    AssetReserved,
+    #[msg("reservation is invalid")]
+    InvalidReservation,
 }

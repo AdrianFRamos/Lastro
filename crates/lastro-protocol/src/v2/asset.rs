@@ -11,160 +11,180 @@ pub type TransformationId = [u8; 32];
 pub type IntentId = [u8; 32];
 pub type RecallId = [u8; 32];
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum AssetType {
-    Animal = 1,
-    Lot = 2,
-    Carcass = 3,
-    CutBatch = 4,
-    ProductLot = 5,
-    Package = 6,
-    ByproductLot = 7,
-    Shipment = 8,
+macro_rules! stable_enum {
+    ($(#[$meta:meta])* $name:ident : $repr:ty { $($variant:ident = $value:expr),+ $(,)? }) => {
+        $(#[$meta])*
+        #[derive(Clone, Copy, Debug, Eq, PartialEq)]
+        #[repr($repr)]
+        pub enum $name {
+            $($variant = $value),+
+        }
+
+        impl TryFrom<$repr> for $name {
+            type Error = ProtocolError;
+
+            fn try_from(value: $repr) -> Result<Self, Self::Error> {
+                match value {
+                    $( $value => Ok(Self::$variant), )+
+                    _ => Err(ProtocolError::UnknownV2Enum),
+                }
+            }
+        }
+    };
 }
 
-impl TryFrom<u8> for AssetType {
-    type Error = ProtocolError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Animal),
-            2 => Ok(Self::Lot),
-            3 => Ok(Self::Carcass),
-            4 => Ok(Self::CutBatch),
-            5 => Ok(Self::ProductLot),
-            6 => Ok(Self::Package),
-            7 => Ok(Self::ByproductLot),
-            8 => Ok(Self::Shipment),
-            _ => Err(ProtocolError::UnknownV2Enum),
-        }
+stable_enum! {
+    /// Canonical asset kinds in the livestock and product chain.
+    AssetType: u8 {
+        Animal = 1,
+        Lot = 2,
+        Carcass = 3,
+        CutBatch = 4,
+        ProductLot = 5,
+        Package = 6,
+        ByproductLot = 7,
+        Shipment = 8
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum AssetStatus {
-    Active = 1,
-    InTransit = 2,
-    Consumed = 3,
-    Closed = 4,
-    QualityHold = 5,
-    Recalled = 6,
-    Retired = 7,
-}
-
-impl TryFrom<u8> for AssetStatus {
-    type Error = ProtocolError;
-
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Active),
-            2 => Ok(Self::InTransit),
-            3 => Ok(Self::Consumed),
-            4 => Ok(Self::Closed),
-            5 => Ok(Self::QualityHold),
-            6 => Ok(Self::Recalled),
-            7 => Ok(Self::Retired),
-            _ => Err(ProtocolError::UnknownV2Enum),
-        }
+stable_enum! {
+    /// Canonical lifecycle status for an asset.
+    AssetStatus: u8 {
+        Active = 1,
+        InTransit = 2,
+        Consumed = 3,
+        Closed = 4,
+        QualityHold = 5,
+        Recalled = 6,
+        Retired = 7
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum EventType {
-    AssetRegistered = 1,
-    ObservationRecorded = 2,
-    LocationObserved = 3,
-    CustodyTransferred = 4,
-    SlaughterConfirmed = 5,
-    CarcassCreated = 6,
-    TransformationStarted = 7,
-    TransformationFinalized = 8,
-    ProductCreated = 9,
-    PackageCreated = 10,
-    ShipmentCreated = 11,
-    ShipmentAccepted = 12,
-    QualityHoldPlaced = 13,
-    QualityHoldReleased = 14,
-    RecallOpened = 15,
-    RecallClosed = 16,
-    AssetMigrated = 17,
-}
-
-impl TryFrom<u16> for EventType {
-    type Error = ProtocolError;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::AssetRegistered),
-            2 => Ok(Self::ObservationRecorded),
-            3 => Ok(Self::LocationObserved),
-            4 => Ok(Self::CustodyTransferred),
-            5 => Ok(Self::SlaughterConfirmed),
-            6 => Ok(Self::CarcassCreated),
-            7 => Ok(Self::TransformationStarted),
-            8 => Ok(Self::TransformationFinalized),
-            9 => Ok(Self::ProductCreated),
-            10 => Ok(Self::PackageCreated),
-            11 => Ok(Self::ShipmentCreated),
-            12 => Ok(Self::ShipmentAccepted),
-            13 => Ok(Self::QualityHoldPlaced),
-            14 => Ok(Self::QualityHoldReleased),
-            15 => Ok(Self::RecallOpened),
-            16 => Ok(Self::RecallClosed),
-            17 => Ok(Self::AssetMigrated),
-            _ => Err(ProtocolError::UnknownV2Enum),
-        }
+stable_enum! {
+    /// Facility classification used by authorization guards.
+    FacilityType: u8 {
+        Farm = 1,
+        TransportHub = 2,
+        Slaughterhouse = 3,
+        ProcessingFacility = 4,
+        DistributionCenter = 5,
+        Retail = 6,
+        InspectionSite = 7
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u16)]
-pub enum IntentType {
-    Observation = 1,
-    CustodyTransfer = 2,
-    Transformation = 3,
-    Shipment = 4,
-    Recall = 5,
-}
-
-impl TryFrom<u16> for IntentType {
-    type Error = ProtocolError;
-
-    fn try_from(value: u16) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Observation),
-            2 => Ok(Self::CustodyTransfer),
-            3 => Ok(Self::Transformation),
-            4 => Ok(Self::Shipment),
-            5 => Ok(Self::Recall),
-            _ => Err(ProtocolError::UnknownV2Enum),
-        }
+stable_enum! {
+    /// Facility lifecycle status. Revocation is terminal for the record.
+    FacilityStatus: u8 {
+        Active = 1,
+        Suspended = 2,
+        Revoked = 3,
+        Expired = 4
     }
 }
 
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-#[repr(u8)]
-pub enum IntentStatus {
-    Open = 1,
-    Cancelled = 2,
-    Consumed = 3,
-    Expired = 4,
+stable_enum! {
+    /// Station key lifecycle status.
+    StationStatus: u8 {
+        Active = 1,
+        Suspended = 2,
+        Revoked = 3,
+        Expired = 4
+    }
 }
 
-impl TryFrom<u8> for IntentStatus {
-    type Error = ProtocolError;
+stable_enum! {
+    /// Transformation lifecycle status.
+    TransformationStatus: u8 {
+        Open = 1,
+        Finalizing = 2,
+        Finalized = 3,
+        Aborted = 4,
+        Expired = 5
+    }
+}
 
-    fn try_from(value: u8) -> Result<Self, Self::Error> {
-        match value {
-            1 => Ok(Self::Open),
-            2 => Ok(Self::Cancelled),
-            3 => Ok(Self::Consumed),
-            4 => Ok(Self::Expired),
-            _ => Err(ProtocolError::UnknownV2Enum),
-        }
+stable_enum! {
+    /// Recall lifecycle status.
+    RecallStatus: u8 {
+        Open = 1,
+        Closed = 2,
+        Cancelled = 3
+    }
+}
+
+stable_enum! {
+    /// Provenance class for a domain observation or document.
+    ProvenanceType: u8 {
+        Station = 1,
+        Scale = 2,
+        Facility = 3,
+        Custodian = 4,
+        OfficialSource = 5
+    }
+}
+
+stable_enum! {
+    /// Units allowed in compact on-chain measurements.
+    UnitCode: u8 {
+        Gram = 1,
+        Kilogram = 2,
+        Head = 3,
+        Package = 4
+    }
+}
+
+stable_enum! {
+    /// Role of a leaf in a transformation or lineage commitment.
+    LineageRole: u8 {
+        Input = 1,
+        Output = 2,
+        Byproduct = 3,
+        Loss = 4
+    }
+}
+
+stable_enum! {
+    /// Domain events accepted by the v2 protocol.
+    EventType: u16 {
+        AssetRegistered = 1,
+        ObservationRecorded = 2,
+        LocationObserved = 3,
+        CustodyTransferred = 4,
+        SlaughterConfirmed = 5,
+        CarcassCreated = 6,
+        TransformationStarted = 7,
+        TransformationFinalized = 8,
+        ProductCreated = 9,
+        PackageCreated = 10,
+        ShipmentCreated = 11,
+        ShipmentAccepted = 12,
+        QualityHoldPlaced = 13,
+        QualityHoldReleased = 14,
+        RecallOpened = 15,
+        RecallClosed = 16,
+        AssetMigrated = 17
+    }
+}
+
+stable_enum! {
+    /// Intent classes that can reserve a state transition.
+    IntentType: u16 {
+        Observation = 1,
+        CustodyTransfer = 2,
+        Transformation = 3,
+        Shipment = 4,
+        Recall = 5
+    }
+}
+
+stable_enum! {
+    /// Terminal-aware lifecycle for an on-chain intent.
+    IntentStatus: u8 {
+        Open = 1,
+        Cancelled = 2,
+        Consumed = 3,
+        Expired = 4
     }
 }
 

@@ -16,7 +16,7 @@ pub mod verify;
 use crate::instructions::{
     CancelIntent, ConsumeIntent, CreateIntent, ExpireIntent, InitializeV2, RecordObservation,
     RegisterAsset, RegisterFacility, RegisterParty, RegisterStation, SetFacilityStatus,
-    SetStationStatus,
+    SetStationStatus, BeginTransformation, ReserveTransformationInput,
 };
 
 declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
@@ -34,6 +34,8 @@ pub(crate) use instructions::intents::__client_accounts_expire_intent;
 pub(crate) use instructions::parties::__client_accounts_register_party;
 pub(crate) use instructions::stations::__client_accounts_register_station;
 pub(crate) use instructions::stations::__client_accounts_set_station_status;
+pub(crate) use instructions::transformations::__client_accounts_begin_transformation;
+pub(crate) use instructions::reservations::__client_accounts_reserve_transformation_input;
 
 #[program]
 pub mod lastro_v2 {
@@ -142,6 +144,61 @@ pub mod lastro_v2 {
         event: [u8; lastro_protocol::v2::V2_ENVELOPE_LEN],
     ) -> Result<()> {
         instructions::events::handler(ctx, subject_id, event_id, station_id, event)
+    }
+
+    #[allow(clippy::too_many_arguments)]
+    pub fn begin_transformation(
+        ctx: Context<BeginTransformation>,
+        transformation_id: [u8; 32],
+        facility_id: [u8; 32],
+        transformation_type: u16,
+        input_root: [u8; 32],
+        output_root: [u8; 32],
+        input_count: u32,
+        output_count: u32,
+        input_weight_grams: u64,
+        output_weight_grams: u64,
+        byproduct_weight_grams: u64,
+        loss_weight_grams: u64,
+        tolerance_basis_points: u16,
+        manifest_nonce: u64,
+        expires_at: i64,
+        manifest_hash: [u8; 32],
+    ) -> Result<()> {
+        instructions::transformations::begin_handler(
+            ctx,
+            transformation_id,
+            facility_id,
+            transformation_type,
+            input_root,
+            output_root,
+            input_count,
+            output_count,
+            input_weight_grams,
+            output_weight_grams,
+            byproduct_weight_grams,
+            loss_weight_grams,
+            tolerance_basis_points,
+            manifest_nonce,
+            expires_at,
+            manifest_hash,
+        )
+    }
+
+    pub fn reserve_transformation_input(
+        ctx: Context<ReserveTransformationInput>,
+        transformation_id: [u8; 32],
+        asset_id: [u8; 32],
+        weight_grams: u64,
+        expected_state_version: u64,
+    ) -> Result<()> {
+        instructions::reservations::reserve_handler(
+            ctx,
+            transformation_id,
+            asset_id,
+            weight_grams,
+            expected_state_version,
+        )
     }
 
     pub fn create_intent(

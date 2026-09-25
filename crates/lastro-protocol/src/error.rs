@@ -36,4 +36,22 @@ pub enum ProtocolError {
     InvalidV2TimeWindow,
     #[error("invalid v2 identifier")]
     InvalidV2Identifier,
+    #[error("lineage must contain at least one leaf")]
+    EmptyLineage,
+    #[error("lineage positions must be unique")]
+    DuplicateLineagePosition,
+    #[error("lineage leaf is invalid")]
+    InvalidLineageLeaf,
+    #[error("lineage leaf role is invalid for this collection")]
+    InvalidLineageRole,
+    #[error("transformation manifest is invalid")]
+    InvalidTransformationManifest,
+    #[error("mass tolerance is outside the configured bound")]
+    InvalidMassTolerance,
+    #[error("mass balance is outside the allowed tolerance")]
+    MassBalanceOutsideTolerance,
+    #[error("mass arithmetic overflow")]
+    MassOverflow,
+    #[error("mass balance is invalid")]
+    InvalidMassBalance,
 }

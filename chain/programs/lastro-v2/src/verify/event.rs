@@ -86,6 +86,7 @@ mod tests {
             lineage_root: [0; 32],
             current_lot_id: [0; 32],
             available_weight_grams: 100,
+            reserved_weight_grams: 0,
             event_sequence: 0,
             state_version: 0,
             last_event_hash: [0; 32],

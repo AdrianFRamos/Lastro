@@ -41,6 +41,7 @@ pub fn register_handler(
     asset.lineage_root = lineage_root;
     asset.current_lot_id = [0u8; 32];
     asset.available_weight_grams = available_weight_grams;
+    asset.reserved_weight_grams = 0;
     asset.event_sequence = 0;
     asset.state_version = 0;
     asset.last_event_hash = [0u8; 32];

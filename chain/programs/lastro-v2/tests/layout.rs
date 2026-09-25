@@ -2,8 +2,8 @@ use anchor_lang::prelude::Pubkey;
 use lastro_v2::{
     constants::{is_valid_asset_type, is_valid_facility_type, is_valid_party_role},
     state::{
-        AssetState, EventAnchor, FacilityRecord, IntentState, PartyRecord, ProtocolConfigV2,
-        StationRecord,
+        AssetState, EventAnchor, FacilityRecord, IntentState, LineageAnchor, PartyRecord,
+        ProtocolConfigV2, StationRecord, TransformationAnchor, TransformationReservation,
     },
 };
 
@@ -16,6 +16,9 @@ fn account_space_constants_include_anchor_discriminator() {
     assert!(AssetState::SPACE > 8);
     assert!(IntentState::SPACE > 8);
     assert!(EventAnchor::SPACE > 8);
+    assert!(LineageAnchor::SPACE > 8);
+    assert!(TransformationAnchor::SPACE > 8);
+    assert!(TransformationReservation::SPACE > 8);
 }
 
 #[test]
@@ -43,6 +46,7 @@ fn asset_closed_is_terminal_for_closed_and_retired_statuses() {
         lineage_root: [3; 32],
         current_lot_id: [0; 32],
         available_weight_grams: 10,
+        reserved_weight_grams: 0,
         event_sequence: 0,
         state_version: 0,
         last_event_hash: [0; 32],

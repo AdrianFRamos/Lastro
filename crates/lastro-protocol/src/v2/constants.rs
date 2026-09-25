@@ -4,6 +4,7 @@ pub const SCHEMA_VERSION: u16 = 1;
 pub const DOMAIN_EVENT_ENVELOPE_LEN: usize = 220;
 pub const DOMAIN_ID_LEN: usize = 32;
 pub const MAX_EVENT_AGE_SECONDS: u64 = 86_400;
+pub const MAX_MASS_TOLERANCE_BASIS_POINTS: u16 = 1_000;
 
 pub const HASH_DOMAIN_EVENT: &[u8] = b"LASTRO_V2_EVENT\0";
 pub const HASH_DOMAIN_PAYLOAD: &[u8] = b"LASTRO_V2_PAYLOAD\0";
@@ -12,6 +13,8 @@ pub const HASH_DOMAIN_LINEAGE: &[u8] = b"LASTRO_V2_LINEAGE\0";
 pub const HASH_DOMAIN_TRANSFORMATION: &[u8] = b"LASTRO_V2_TRANSFORMATION\0";
 pub const HASH_DOMAIN_INTENT: &[u8] = b"LASTRO_V2_INTENT\0";
 pub const HASH_DOMAIN_MIGRATION: &[u8] = b"LASTRO_V2_MIGRATION\0";
+pub const HASH_DOMAIN_LINEAGE_LEAF: &[u8] = b"LASTRO_V2_LINEAGE_LEAF\0";
+pub const HASH_DOMAIN_LINEAGE_NODE: &[u8] = b"LASTRO_V2_LINEAGE_NODE\0";
 
 pub const CONFIG_V2_SEED: &[u8] = b"config-v2";
 pub const STATION_V2_SEED: &[u8] = b"station-v2";
