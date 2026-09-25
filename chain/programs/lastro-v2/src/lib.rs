@@ -14,11 +14,11 @@ pub mod state;
 pub mod verify;
 
 use crate::instructions::{
-    CancelIntent, ConsumeIntent, CreateIntent, ExpireIntent, InitializeV2, RecordObservation,
-    RegisterAsset, RegisterFacility, RegisterParty, RegisterStation, SetFacilityStatus,
-    AbortTransformation, BeginTransformation, ConsumeTransformationInput, CreateTransformationOutput,
-    ExpireTransformation, FinalizeTransformation, ReleaseTransformationInput,
-    ReserveTransformationInput, SetStationStatus,
+    AbortTransformation, BeginTransformation, CancelIntent, ConsumeIntent,
+    ConsumeTransformationInput, CreateIntent, CreateTransformationOutput, ExpireIntent,
+    ExpireTransformation, FinalizeTransformation, InitializeV2, RecordObservation, RegisterAsset,
+    RegisterFacility, RegisterParty, RegisterStation, ReleaseTransformationInput,
+    ReserveTransformationInput, SetFacilityStatus, SetStationStatus,
 };
 
 declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
@@ -26,7 +26,6 @@ declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
 // Keep these aliases at the crate root for Anchor 1.2 generated client helpers.
 pub(crate) use instructions::assets::__client_accounts_register_asset;
 pub(crate) use instructions::consumption::__client_accounts_consume_transformation_input;
-pub(crate) use instructions::outputs::__client_accounts_create_transformation_output;
 pub(crate) use instructions::events::__client_accounts_record_observation;
 pub(crate) use instructions::facilities::__client_accounts_register_facility;
 pub(crate) use instructions::facilities::__client_accounts_set_facility_status;
@@ -35,15 +34,16 @@ pub(crate) use instructions::intents::__client_accounts_cancel_intent;
 pub(crate) use instructions::intents::__client_accounts_consume_intent;
 pub(crate) use instructions::intents::__client_accounts_create_intent;
 pub(crate) use instructions::intents::__client_accounts_expire_intent;
+pub(crate) use instructions::outputs::__client_accounts_create_transformation_output;
 pub(crate) use instructions::parties::__client_accounts_register_party;
+pub(crate) use instructions::reservations::__client_accounts_release_transformation_input;
+pub(crate) use instructions::reservations::__client_accounts_reserve_transformation_input;
 pub(crate) use instructions::stations::__client_accounts_register_station;
 pub(crate) use instructions::stations::__client_accounts_set_station_status;
-pub(crate) use instructions::transformations::__client_accounts_begin_transformation;
 pub(crate) use instructions::transformations::__client_accounts_abort_transformation;
+pub(crate) use instructions::transformations::__client_accounts_begin_transformation;
 pub(crate) use instructions::transformations::__client_accounts_expire_transformation;
 pub(crate) use instructions::transformations::__client_accounts_finalize_transformation;
-pub(crate) use instructions::reservations::__client_accounts_reserve_transformation_input;
-pub(crate) use instructions::reservations::__client_accounts_release_transformation_input;
 
 #[program]
 pub mod lastro_v2 {

@@ -36,7 +36,10 @@ pub fn create_handler(
         is_valid_asset_type(asset_type),
         LastroV2Error::InvalidAssetType
     );
-    require!(custodian != Pubkey::default(), LastroV2Error::InvalidIdentifier);
+    require!(
+        custodian != Pubkey::default(),
+        LastroV2Error::InvalidIdentifier
+    );
     require!(
         lineage_root.iter().any(|byte| *byte != 0),
         LastroV2Error::InvalidIdentifier
