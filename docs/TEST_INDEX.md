@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 560
-**Files containing test cases:** 99
+**Declared cases:** 562
+**Files containing test cases:** 100
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -164,6 +164,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L35: `round-trips without changing any canonical field`
 - L39: `rejects malformed length and zero identifiers`
 
+## `apps/web/tests/protocol/v2/transformation.test.ts`
+
+- L47: `matches the checked-in roots and fixed manifest length`
+- L77: `rejects duplicate positions and mass outside tolerance`
+
 ## `apps/web/tests/solana/transaction.test.ts`
 
 - L121: `rejects transaction data targeting a program id different from configured Lastro`
@@ -223,8 +228,8 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 ## `chain/programs/lastro-v2/tests/layout.rs`
 
 - L11: `account_space_constants_include_anchor_discriminator`
-- L22: `enum_ranges_are_closed_and_stable`
-- L35: `asset_closed_is_terminal_for_closed_and_retired_statuses`
+- L25: `enum_ranges_are_closed_and_stable`
+- L38: `asset_closed_is_terminal_for_closed_and_retired_statuses`
 
 ## `chain/programs/lastro/tests/account_constraints.rs`
 
