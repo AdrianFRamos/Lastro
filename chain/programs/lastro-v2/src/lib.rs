@@ -14,9 +14,9 @@ pub mod state;
 pub mod verify;
 
 use crate::instructions::{
-    CancelIntent, ConsumeIntent, CreateIntent, ExpireIntent, InitializeV2, RecordObservation,
-    RegisterAsset, RegisterFacility, RegisterParty, RegisterStation, SetFacilityStatus,
-    SetStationStatus, BeginTransformation, ReserveTransformationInput,
+    BeginTransformation, CancelIntent, ConsumeIntent, CreateIntent, ExpireIntent, InitializeV2,
+    RecordObservation, RegisterAsset, RegisterFacility, RegisterParty, RegisterStation,
+    ReserveTransformationInput, SetFacilityStatus, SetStationStatus,
 };
 
 declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
@@ -32,10 +32,10 @@ pub(crate) use instructions::intents::__client_accounts_consume_intent;
 pub(crate) use instructions::intents::__client_accounts_create_intent;
 pub(crate) use instructions::intents::__client_accounts_expire_intent;
 pub(crate) use instructions::parties::__client_accounts_register_party;
+pub(crate) use instructions::reservations::__client_accounts_reserve_transformation_input;
 pub(crate) use instructions::stations::__client_accounts_register_station;
 pub(crate) use instructions::stations::__client_accounts_set_station_status;
 pub(crate) use instructions::transformations::__client_accounts_begin_transformation;
-pub(crate) use instructions::reservations::__client_accounts_reserve_transformation_input;
 
 #[program]
 pub mod lastro_v2 {

@@ -58,11 +58,13 @@ function bytesToHex(bytes: Uint8Array): string {
 }
 
 function assertU64(value: bigint, field: string): void {
-  if (value < 0n || value > 0xffffffffffffffffn) throw new Error(`${field} must be an unsigned 64-bit integer`)
+  if (value < 0n || value > 0xffffffffffffffffn)
+    throw new Error(`${field} must be an unsigned 64-bit integer`)
 }
 
 function assertI64NonNegative(value: bigint, field: string): void {
-  if (value < 0n || value > 0x7fffffffffffffffn) throw new Error(`${field} must be a non-negative signed 64-bit integer`)
+  if (value < 0n || value > 0x7fffffffffffffffn)
+    throw new Error(`${field} must be a non-negative signed 64-bit integer`)
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
@@ -87,7 +89,8 @@ export function encodeV2LineageLeaf(leaf: V2LineageLeaf): Uint8Array {
   }
   assertU64(leaf.quantity, 'quantity')
   assertU64(leaf.weightGrams, 'weightGrams')
-  if (leaf.quantity === 0n && leaf.weightGrams === 0n) throw new Error('lineage leaf cannot be empty')
+  if (leaf.quantity === 0n && leaf.weightGrams === 0n)
+    throw new Error('lineage leaf cannot be empty')
 
   const bytes = new Uint8Array(V2_LINEAGE_LEAF_LEN)
   const view = new DataView(bytes.buffer)
@@ -107,7 +110,8 @@ export async function v2MerkleRoot(leaves: readonly V2LineageLeaf[]): Promise<st
   if (leaves.length === 0) throw new Error('lineage must contain at least one leaf')
   const ordered = [...leaves].sort((left, right) => left.position - right.position)
   for (let index = 1; index < ordered.length; index += 1) {
-    if (ordered[index - 1].position === ordered[index].position) throw new Error('lineage positions must be unique')
+    if (ordered[index - 1].position === ordered[index].position)
+      throw new Error('lineage positions must be unique')
   }
   let level = await Promise.all(ordered.map(v2LineageLeafHash))
   while (level.length > 1) {
@@ -131,11 +135,18 @@ export function validateV2MassBalance(mass: V2MassBalance): void {
   assertU64(mass.byproductWeightGrams, 'byproductWeightGrams')
   assertU64(mass.lossWeightGrams, 'lossWeightGrams')
   if (mass.inputWeightGrams === 0n) throw new Error('input weight must be positive')
-  if (!Number.isInteger(mass.toleranceBasisPoints) || mass.toleranceBasisPoints < 0 || mass.toleranceBasisPoints > V2_MAX_MASS_TOLERANCE_BASIS_POINTS) {
+  if (
+    !Number.isInteger(mass.toleranceBasisPoints) ||
+    mass.toleranceBasisPoints < 0 ||
+    mass.toleranceBasisPoints > V2_MAX_MASS_TOLERANCE_BASIS_POINTS
+  ) {
     throw new Error('mass tolerance is outside the configured bound')
   }
   const produced = mass.outputWeightGrams + mass.byproductWeightGrams + mass.lossWeightGrams
-  const difference = mass.inputWeightGrams > produced ? mass.inputWeightGrams - produced : produced - mass.inputWeightGrams
+  const difference =
+    mass.inputWeightGrams > produced
+      ? mass.inputWeightGrams - produced
+      : produced - mass.inputWeightGrams
   const allowed = (mass.inputWeightGrams * BigInt(mass.toleranceBasisPoints)) / 10_000n
   if (difference > allowed) throw new Error('mass balance is outside the allowed tolerance')
 }
@@ -145,9 +156,24 @@ export function encodeV2TransformationManifest(manifest: V2TransformationManifes
   assertHex32(manifest.facilityIdHex, 'facilityIdHex')
   assertHex32(manifest.inputRootHex, 'inputRootHex')
   assertHex32(manifest.outputRootHex, 'outputRootHex')
-  if (!Number.isInteger(manifest.transformationType) || manifest.transformationType <= 0 || manifest.transformationType > 0xffff) throw new Error('invalid transformation type')
-  if (!Number.isInteger(manifest.inputCount) || manifest.inputCount <= 0 || manifest.inputCount > 0xffffffff) throw new Error('invalid input count')
-  if (!Number.isInteger(manifest.outputCount) || manifest.outputCount <= 0 || manifest.outputCount > 0xffffffff) throw new Error('invalid output count')
+  if (
+    !Number.isInteger(manifest.transformationType) ||
+    manifest.transformationType <= 0 ||
+    manifest.transformationType > 0xffff
+  )
+    throw new Error('invalid transformation type')
+  if (
+    !Number.isInteger(manifest.inputCount) ||
+    manifest.inputCount <= 0 ||
+    manifest.inputCount > 0xffffffff
+  )
+    throw new Error('invalid input count')
+  if (
+    !Number.isInteger(manifest.outputCount) ||
+    manifest.outputCount <= 0 ||
+    manifest.outputCount > 0xffffffff
+  )
+    throw new Error('invalid output count')
   assertU64(manifest.manifestNonce, 'manifestNonce')
   assertI64NonNegative(manifest.expiresAt, 'expiresAt')
   validateV2MassBalance(manifest.mass)
@@ -155,23 +181,38 @@ export function encodeV2TransformationManifest(manifest: V2TransformationManifes
   const bytes = new Uint8Array(V2_TRANSFORMATION_MANIFEST_LEN)
   const view = new DataView(bytes.buffer)
   let offset = 0
-  bytes.set(hexToBytes(manifest.transformationIdHex, 'transformationIdHex'), offset); offset += 32
-  bytes.set(hexToBytes(manifest.facilityIdHex, 'facilityIdHex'), offset); offset += 32
-  view.setUint16(offset, manifest.transformationType, true); offset += 2
-  bytes.set(hexToBytes(manifest.inputRootHex, 'inputRootHex'), offset); offset += 32
-  bytes.set(hexToBytes(manifest.outputRootHex, 'outputRootHex'), offset); offset += 32
-  view.setUint32(offset, manifest.inputCount, true); offset += 4
-  view.setUint32(offset, manifest.outputCount, true); offset += 4
-  view.setBigUint64(offset, manifest.mass.inputWeightGrams, true); offset += 8
-  view.setBigUint64(offset, manifest.mass.outputWeightGrams, true); offset += 8
-  view.setBigUint64(offset, manifest.mass.byproductWeightGrams, true); offset += 8
-  view.setBigUint64(offset, manifest.mass.lossWeightGrams, true); offset += 8
-  view.setUint16(offset, manifest.mass.toleranceBasisPoints, true); offset += 2
-  view.setBigUint64(offset, manifest.manifestNonce, true); offset += 8
+  bytes.set(hexToBytes(manifest.transformationIdHex, 'transformationIdHex'), offset)
+  offset += 32
+  bytes.set(hexToBytes(manifest.facilityIdHex, 'facilityIdHex'), offset)
+  offset += 32
+  view.setUint16(offset, manifest.transformationType, true)
+  offset += 2
+  bytes.set(hexToBytes(manifest.inputRootHex, 'inputRootHex'), offset)
+  offset += 32
+  bytes.set(hexToBytes(manifest.outputRootHex, 'outputRootHex'), offset)
+  offset += 32
+  view.setUint32(offset, manifest.inputCount, true)
+  offset += 4
+  view.setUint32(offset, manifest.outputCount, true)
+  offset += 4
+  view.setBigUint64(offset, manifest.mass.inputWeightGrams, true)
+  offset += 8
+  view.setBigUint64(offset, manifest.mass.outputWeightGrams, true)
+  offset += 8
+  view.setBigUint64(offset, manifest.mass.byproductWeightGrams, true)
+  offset += 8
+  view.setBigUint64(offset, manifest.mass.lossWeightGrams, true)
+  offset += 8
+  view.setUint16(offset, manifest.mass.toleranceBasisPoints, true)
+  offset += 2
+  view.setBigUint64(offset, manifest.manifestNonce, true)
+  offset += 8
   view.setBigInt64(offset, manifest.expiresAt, true)
   return bytes
 }
 
-export async function v2TransformationManifestHash(manifest: V2TransformationManifest): Promise<string> {
+export async function v2TransformationManifestHash(
+  manifest: V2TransformationManifest,
+): Promise<string> {
   return domainHash(V2_HASH_DOMAIN_TRANSFORMATION, encodeV2TransformationManifest(manifest))
 }

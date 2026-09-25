@@ -26,5 +26,6 @@ pub struct TransformationAnchor {
 }
 
 impl TransformationAnchor {
-    pub const SPACE: usize = 8 + 32 + 32 + 2 + (32 * 2) + (4 * 3) + (8 * 5) + 2 + 1 + 32 + 8 + 8 + 1;
+    pub const SPACE: usize =
+        8 + 32 + 32 + 2 + (32 * 2) + (4 * 3) + (8 * 5) + 2 + 1 + 32 + 8 + 8 + 1;
 }

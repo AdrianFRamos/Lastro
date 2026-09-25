@@ -77,9 +77,7 @@ pub fn reserve_handler(
         LastroV2Error::InvalidReservation
     );
 
-    if ctx.accounts.asset.reserved_by != [0; 32]
-        && ctx.accounts.asset.reserved_until >= now
-    {
+    if ctx.accounts.asset.reserved_by != [0; 32] && ctx.accounts.asset.reserved_until >= now {
         return Err(error!(LastroV2Error::AssetReserved));
     }
 

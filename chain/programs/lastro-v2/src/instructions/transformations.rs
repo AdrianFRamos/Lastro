@@ -47,8 +47,7 @@ pub fn begin_handler(
         LastroV2Error::UnauthorizedFacility
     );
     require!(
-        expires_at > now
-            && expires_at - now <= ctx.accounts.config.max_event_age_seconds as i64,
+        expires_at > now && expires_at - now <= ctx.accounts.config.max_event_age_seconds as i64,
         LastroV2Error::InvalidTimeWindow
     );
 
