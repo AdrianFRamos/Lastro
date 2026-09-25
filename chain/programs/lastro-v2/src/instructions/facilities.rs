@@ -4,8 +4,8 @@ use anchor_lang::prelude::*;
 
 use crate::{
     constants::{
-        is_valid_facility_status, is_valid_facility_type, FACILITY_SEED, FACILITY_REGISTRY_SEED,
-        FACILITY_STATUS_REVOKED, CONFIG_V2_SEED,
+        CONFIG_V2_SEED, FACILITY_REGISTRY_SEED, FACILITY_SEED, FACILITY_STATUS_REVOKED,
+        is_valid_facility_status, is_valid_facility_type,
     },
     error::LastroV2Error,
     state::{FacilityRecord, ProtocolConfigV2, RegistryRoot},
@@ -22,9 +22,18 @@ pub fn register_handler(
 ) -> Result<()> {
     require_nonzero(&facility_id)?;
     require!(owner != Pubkey::default(), LastroV2Error::InvalidIdentifier);
-    require!(is_valid_facility_type(facility_type), LastroV2Error::InvalidFacilityType);
-    require!(valid_from >= 0 && valid_until > valid_from, LastroV2Error::InvalidTimeWindow);
-    require!(credential_hash.iter().any(|byte| *byte != 0), LastroV2Error::InvalidIdentifier);
+    require!(
+        is_valid_facility_type(facility_type),
+        LastroV2Error::InvalidFacilityType
+    );
+    require!(
+        valid_from >= 0 && valid_until > valid_from,
+        LastroV2Error::InvalidTimeWindow
+    );
+    require!(
+        credential_hash.iter().any(|byte| *byte != 0),
+        LastroV2Error::InvalidIdentifier
+    );
 
     let facility = &mut ctx.accounts.facility;
     facility.facility_id = facility_id;
@@ -39,15 +48,24 @@ pub fn register_handler(
 }
 
 pub fn set_status_handler(ctx: Context<SetFacilityStatus>, status: u8) -> Result<()> {
-    require!(is_valid_facility_status(status), LastroV2Error::InvalidFacilityStatus);
+    require!(
+        is_valid_facility_status(status),
+        LastroV2Error::InvalidFacilityStatus
+    );
     let facility = &mut ctx.accounts.facility;
-    require!(facility.status != FACILITY_STATUS_REVOKED, LastroV2Error::InvalidFacilityStatus);
+    require!(
+        facility.status != FACILITY_STATUS_REVOKED,
+        LastroV2Error::InvalidFacilityStatus
+    );
     facility.status = status;
     Ok(())
 }
 
 fn require_nonzero(value: &[u8; 32]) -> Result<()> {
-    require!(value.iter().any(|byte| *byte != 0), LastroV2Error::InvalidIdentifier);
+    require!(
+        value.iter().any(|byte| *byte != 0),
+        LastroV2Error::InvalidIdentifier
+    );
     Ok(())
 }
 

@@ -23,13 +23,13 @@ declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
 
 // Keep these aliases at the crate root for Anchor 1.2 generated client helpers.
 pub(crate) use instructions::assets::__client_accounts_register_asset;
+pub(crate) use instructions::events::__client_accounts_record_observation;
 pub(crate) use instructions::facilities::__client_accounts_register_facility;
 pub(crate) use instructions::facilities::__client_accounts_set_facility_status;
-pub(crate) use instructions::events::__client_accounts_record_observation;
 pub(crate) use instructions::initialize::__client_accounts_initialize_v2;
-pub(crate) use instructions::intents::__client_accounts_create_intent;
 pub(crate) use instructions::intents::__client_accounts_cancel_intent;
 pub(crate) use instructions::intents::__client_accounts_consume_intent;
+pub(crate) use instructions::intents::__client_accounts_create_intent;
 pub(crate) use instructions::intents::__client_accounts_expire_intent;
 pub(crate) use instructions::parties::__client_accounts_register_party;
 pub(crate) use instructions::stations::__client_accounts_register_station;
@@ -39,9 +39,14 @@ pub(crate) use instructions::stations::__client_accounts_set_station_status;
 pub mod lastro_v2 {
     use super::*;
 
-    pub fn initialize_v2(ctx: Context<InitializeV2>, deployment_id: [u8; 32], schema_version: u16,
-        max_asset_weight_grams: u64, mass_tolerance_basis_points: u16,
-        max_event_age_seconds: u64) -> Result<()> {
+    pub fn initialize_v2(
+        ctx: Context<InitializeV2>,
+        deployment_id: [u8; 32],
+        schema_version: u16,
+        max_asset_weight_grams: u64,
+        mass_tolerance_basis_points: u16,
+        max_event_age_seconds: u64,
+    ) -> Result<()> {
         instructions::initialize::handler(
             ctx,
             deployment_id,
@@ -62,7 +67,13 @@ pub mod lastro_v2 {
         firmware_hash: [u8; 32],
     ) -> Result<()> {
         instructions::stations::register_handler(
-            ctx, station_id, key_id, pubkey33, valid_from, valid_until, firmware_hash,
+            ctx,
+            station_id,
+            key_id,
+            pubkey33,
+            valid_from,
+            valid_until,
+            firmware_hash,
         )
     }
 
@@ -80,7 +91,13 @@ pub mod lastro_v2 {
         valid_until: i64,
     ) -> Result<()> {
         instructions::facilities::register_handler(
-            ctx, facility_id, owner, facility_type, credential_hash, valid_from, valid_until,
+            ctx,
+            facility_id,
+            owner,
+            facility_type,
+            credential_hash,
+            valid_from,
+            valid_until,
         )
     }
 

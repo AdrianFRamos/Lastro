@@ -19,10 +19,19 @@ pub fn handler(
     mass_tolerance_basis_points: u16,
     max_event_age_seconds: u64,
 ) -> Result<()> {
-    require!(deployment_id.iter().any(|byte| *byte != 0), LastroV2Error::InvalidDeployment);
-    require!(schema_version == SCHEMA_VERSION, LastroV2Error::UnsupportedSchemaVersion);
+    require!(
+        deployment_id.iter().any(|byte| *byte != 0),
+        LastroV2Error::InvalidDeployment
+    );
+    require!(
+        schema_version == SCHEMA_VERSION,
+        LastroV2Error::UnsupportedSchemaVersion
+    );
     require!(max_asset_weight_grams > 0, LastroV2Error::InvalidWeight);
-    require!(mass_tolerance_basis_points <= 10_000, LastroV2Error::InvalidWeight);
+    require!(
+        mass_tolerance_basis_points <= 10_000,
+        LastroV2Error::InvalidWeight
+    );
     require!(max_event_age_seconds > 0, LastroV2Error::InvalidTimeWindow);
 
     let config = &mut ctx.accounts.config;
@@ -38,14 +47,39 @@ pub fn handler(
     config.max_event_age_seconds = max_event_age_seconds;
     config.bump = ctx.bumps.config;
 
-    initialize_registry(&mut ctx.accounts.station_registry, deployment_id, 1, ctx.bumps.station_registry);
-    initialize_registry(&mut ctx.accounts.facility_registry, deployment_id, 2, ctx.bumps.facility_registry);
-    initialize_registry(&mut ctx.accounts.party_registry, deployment_id, 3, ctx.bumps.party_registry);
-    initialize_registry(&mut ctx.accounts.document_registry, deployment_id, 4, ctx.bumps.document_registry);
+    initialize_registry(
+        &mut ctx.accounts.station_registry,
+        deployment_id,
+        1,
+        ctx.bumps.station_registry,
+    );
+    initialize_registry(
+        &mut ctx.accounts.facility_registry,
+        deployment_id,
+        2,
+        ctx.bumps.facility_registry,
+    );
+    initialize_registry(
+        &mut ctx.accounts.party_registry,
+        deployment_id,
+        3,
+        ctx.bumps.party_registry,
+    );
+    initialize_registry(
+        &mut ctx.accounts.document_registry,
+        deployment_id,
+        4,
+        ctx.bumps.document_registry,
+    );
     Ok(())
 }
 
-fn initialize_registry(root: &mut Account<RegistryRoot>, deployment_id: [u8; 32], registry_type: u8, bump: u8) {
+fn initialize_registry(
+    root: &mut Account<RegistryRoot>,
+    deployment_id: [u8; 32],
+    registry_type: u8,
+    bump: u8,
+) {
     root.deployment_id = deployment_id;
     root.registry_type = registry_type;
     root.bump = bump;

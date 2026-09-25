@@ -3,7 +3,7 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    constants::{is_valid_asset_type, ASSET_SEED, ASSET_STATUS_ACTIVE, CONFIG_V2_SEED},
+    constants::{ASSET_SEED, ASSET_STATUS_ACTIVE, CONFIG_V2_SEED, is_valid_asset_type},
     error::LastroV2Error,
     state::{AssetState, ProtocolConfigV2},
 };
@@ -18,8 +18,14 @@ pub fn register_handler(
     available_weight_grams: u64,
 ) -> Result<()> {
     require_nonzero(&asset_id)?;
-    require!(is_valid_asset_type(asset_type), LastroV2Error::InvalidAssetType);
-    require!(custodian != Pubkey::default(), LastroV2Error::InvalidIdentifier);
+    require!(
+        is_valid_asset_type(asset_type),
+        LastroV2Error::InvalidAssetType
+    );
+    require!(
+        custodian != Pubkey::default(),
+        LastroV2Error::InvalidIdentifier
+    );
     require!(
         available_weight_grams <= ctx.accounts.config.max_asset_weight_grams,
         LastroV2Error::InvalidWeight
@@ -46,7 +52,10 @@ pub fn register_handler(
 }
 
 fn require_nonzero(value: &[u8; 32]) -> Result<()> {
-    require!(value.iter().any(|byte| *byte != 0), LastroV2Error::InvalidIdentifier);
+    require!(
+        value.iter().any(|byte| *byte != 0),
+        LastroV2Error::InvalidIdentifier
+    );
     Ok(())
 }
 

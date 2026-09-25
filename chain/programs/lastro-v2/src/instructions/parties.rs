@@ -3,7 +3,7 @@
 use anchor_lang::prelude::*;
 
 use crate::{
-    constants::{is_valid_party_role, CONFIG_V2_SEED, PARTY_REGISTRY_SEED, PARTY_SEED},
+    constants::{CONFIG_V2_SEED, PARTY_REGISTRY_SEED, PARTY_SEED, is_valid_party_role},
     error::LastroV2Error,
     state::{PartyRecord, ProtocolConfigV2, RegistryRoot},
 };
@@ -17,7 +17,10 @@ pub fn register_handler(
     role: u16,
 ) -> Result<()> {
     require_nonzero(&party_id)?;
-    require!(wallet != Pubkey::default(), LastroV2Error::InvalidIdentifier);
+    require!(
+        wallet != Pubkey::default(),
+        LastroV2Error::InvalidIdentifier
+    );
     require!(is_valid_party_role(role), LastroV2Error::InvalidPartyRole);
 
     let party = &mut ctx.accounts.party;
@@ -30,7 +33,10 @@ pub fn register_handler(
 }
 
 fn require_nonzero(value: &[u8; 32]) -> Result<()> {
-    require!(value.iter().any(|byte| *byte != 0), LastroV2Error::InvalidIdentifier);
+    require!(
+        value.iter().any(|byte| *byte != 0),
+        LastroV2Error::InvalidIdentifier
+    );
     Ok(())
 }
 

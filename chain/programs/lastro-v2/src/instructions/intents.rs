@@ -24,7 +24,10 @@ pub fn handler(
     require_nonzero(&intent_id)?;
     require_nonzero(&subject_id)?;
     require_nonzero(&payload_hash)?;
-    require!(matches!(intent_type, 1..=5), LastroV2Error::InvalidIntentType);
+    require!(
+        matches!(intent_type, 1..=5),
+        LastroV2Error::InvalidIntentType
+    );
 
     let now = Clock::get()?.unix_timestamp;
     validate_expiry(&ctx.accounts.config, now, expires_at)?;
@@ -64,7 +67,10 @@ pub fn expire_handler(ctx: Context<ExpireIntent>) -> Result<()> {
         ctx.accounts.intent.status == INTENT_STATUS_OPEN,
         LastroV2Error::IntentNotOpen
     );
-    require!(now >= ctx.accounts.intent.expires_at, LastroV2Error::IntentExpired);
+    require!(
+        now >= ctx.accounts.intent.expires_at,
+        LastroV2Error::IntentExpired
+    );
     ctx.accounts.intent.status = INTENT_STATUS_EXPIRED;
     ctx.accounts.intent.consumed_at = now;
     Ok(())
@@ -76,11 +82,26 @@ pub fn consume_handler(
     payload_hash: [u8; 32],
 ) -> Result<()> {
     let intent = &mut ctx.accounts.intent;
-    require!(intent.actor == ctx.accounts.actor.key(), LastroV2Error::UnauthorizedActor);
-    require!(intent.status == INTENT_STATUS_OPEN, LastroV2Error::IntentNotOpen);
-    require!(Clock::get()?.unix_timestamp < intent.expires_at, LastroV2Error::IntentExpired);
-    require!(intent.expected_state_version == expected_state_version, LastroV2Error::InvalidStateVersion);
-    require!(intent.payload_hash == payload_hash, LastroV2Error::IntentPayloadMismatch);
+    require!(
+        intent.actor == ctx.accounts.actor.key(),
+        LastroV2Error::UnauthorizedActor
+    );
+    require!(
+        intent.status == INTENT_STATUS_OPEN,
+        LastroV2Error::IntentNotOpen
+    );
+    require!(
+        Clock::get()?.unix_timestamp < intent.expires_at,
+        LastroV2Error::IntentExpired
+    );
+    require!(
+        intent.expected_state_version == expected_state_version,
+        LastroV2Error::InvalidStateVersion
+    );
+    require!(
+        intent.payload_hash == payload_hash,
+        LastroV2Error::IntentPayloadMismatch
+    );
     intent.status = INTENT_STATUS_CONSUMED;
     intent.consumed_at = Clock::get()?.unix_timestamp;
     Ok(())
@@ -91,7 +112,10 @@ fn validate_expiry(config: &ProtocolConfigV2, now: i64, expires_at: i64) -> Resu
     let max_expiry = now
         .checked_add(config.max_event_age_seconds as i64)
         .ok_or(error!(LastroV2Error::InvalidIntentExpiration))?;
-    require!(expires_at <= max_expiry, LastroV2Error::InvalidIntentExpiration);
+    require!(
+        expires_at <= max_expiry,
+        LastroV2Error::InvalidIntentExpiration
+    );
     Ok(())
 }
 

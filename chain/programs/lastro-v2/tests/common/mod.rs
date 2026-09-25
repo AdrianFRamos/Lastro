@@ -3,7 +3,7 @@
 use std::{env, path::PathBuf};
 
 use anchor_lang::{AccountDeserialize, InstructionData};
-use litesvm::{types::TransactionMetadata, LiteSVM};
+use litesvm::{LiteSVM, types::TransactionMetadata};
 use p256::ecdsa::SigningKey;
 use solana_compute_budget_interface::ComputeBudgetInstruction;
 use solana_instruction::{AccountMeta, Instruction};
@@ -87,7 +87,11 @@ pub fn asset_pda(deployment_id: &[u8; 32], asset_id: &[u8; 32]) -> (Pubkey, u8) 
 }
 
 pub fn station_pda(deployment_id: &[u8; 32], station_id: &[u8; 32]) -> (Pubkey, u8) {
-    find_pda(&[lastro_v2::constants::STATION_V2_SEED, deployment_id, station_id])
+    find_pda(&[
+        lastro_v2::constants::STATION_V2_SEED,
+        deployment_id,
+        station_id,
+    ])
 }
 
 pub fn intent_pda(
@@ -104,7 +108,11 @@ pub fn intent_pda(
 }
 
 pub fn facility_pda(deployment_id: &[u8; 32], facility_id: &[u8; 32]) -> (Pubkey, u8) {
-    find_pda(&[lastro_v2::constants::FACILITY_SEED, deployment_id, facility_id])
+    find_pda(&[
+        lastro_v2::constants::FACILITY_SEED,
+        deployment_id,
+        facility_id,
+    ])
 }
 
 pub fn party_pda(deployment_id: &[u8; 32], party_id: &[u8; 32]) -> (Pubkey, u8) {
@@ -146,7 +154,14 @@ pub fn send_initialize(
         }
         .data(),
     };
-    send_instructions(svm, vec![ComputeBudgetInstruction::set_compute_unit_limit(COMPUTE_UNIT_LIMIT), ix], authority)
+    send_instructions(
+        svm,
+        vec![
+            ComputeBudgetInstruction::set_compute_unit_limit(COMPUTE_UNIT_LIMIT),
+            ix,
+        ],
+        authority,
+    )
 }
 
 pub fn send_register_asset(
@@ -317,7 +332,11 @@ pub fn compressed_pubkey(key: &SigningKey) -> [u8; 33] {
 pub fn assert_success(result: TestResult) -> TransactionMetadata {
     match result {
         Ok(meta) => meta,
-        Err(err) => panic!("transaction unexpectedly failed: {:?}\n{}", err.err, err.meta.logs.join("\n")),
+        Err(err) => panic!(
+            "transaction unexpectedly failed: {:?}\n{}",
+            err.err,
+            err.meta.logs.join("\n")
+        ),
     }
 }
 

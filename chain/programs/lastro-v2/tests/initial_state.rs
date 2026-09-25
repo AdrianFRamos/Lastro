@@ -19,10 +19,22 @@ fn initialize_creates_config_and_all_registry_roots() {
     assert_eq!(config.authority, h.authority.pubkey());
     assert_eq!(config.deployment_id, h.deployment_id);
     assert_eq!(config.schema_version, lastro_v2::constants::SCHEMA_VERSION);
-    assert_eq!(config.station_registry, station_registry_pda(&h.deployment_id).0);
-    assert_eq!(config.facility_registry, facility_registry_pda(&h.deployment_id).0);
-    assert_eq!(config.party_registry, party_registry_pda(&h.deployment_id).0);
-    assert_eq!(config.document_registry, document_registry_pda(&h.deployment_id).0);
+    assert_eq!(
+        config.station_registry,
+        station_registry_pda(&h.deployment_id).0
+    );
+    assert_eq!(
+        config.facility_registry,
+        facility_registry_pda(&h.deployment_id).0
+    );
+    assert_eq!(
+        config.party_registry,
+        party_registry_pda(&h.deployment_id).0
+    );
+    assert_eq!(
+        config.document_registry,
+        document_registry_pda(&h.deployment_id).0
+    );
 
     let station_root: RegistryRoot = account(&h.svm, &station_registry_pda(&h.deployment_id).0);
     let facility_root: RegistryRoot = account(&h.svm, &facility_registry_pda(&h.deployment_id).0);
@@ -66,7 +78,10 @@ fn wrong_authority_cannot_register_asset() {
         h.other.pubkey(),
         500_000,
     ));
-    assert!(!account_exists(&h.svm, &asset_pda(&h.deployment_id, &asset_id).0));
+    assert!(!account_exists(
+        &h.svm,
+        &asset_pda(&h.deployment_id, &asset_id).0
+    ));
 }
 
 #[test]
@@ -113,7 +128,10 @@ fn asset_registration_is_unique_and_enforces_weight_limit() {
         h.authority.pubkey(),
         2_000_001,
     ));
-    assert!(!account_exists(&h.svm, &asset_pda(&h.deployment_id, &too_heavy).0));
+    assert!(!account_exists(
+        &h.svm,
+        &asset_pda(&h.deployment_id, &too_heavy).0
+    ));
 }
 
 #[test]
@@ -129,7 +147,10 @@ fn station_registration_requires_valid_p256_key_and_derived_identity() {
         invalid_station,
         &[0x04; 33],
     ));
-    assert!(!account_exists(&h.svm, &station_pda(&h.deployment_id, &invalid_station).0));
+    assert!(!account_exists(
+        &h.svm,
+        &station_pda(&h.deployment_id, &invalid_station).0
+    ));
 
     let key = signing_key();
     let pubkey33 = compressed_pubkey(&key);
@@ -179,7 +200,11 @@ fn facility_and_party_accounts_are_scoped_to_deployment() {
         }
         .data(),
     };
-    assert_success(send_instructions(&mut h.svm, vec![facility_ix], &h.authority));
+    assert_success(send_instructions(
+        &mut h.svm,
+        vec![facility_ix],
+        &h.authority,
+    ));
     let facility_account: FacilityRecord = account(&h.svm, &facility);
     assert_eq!(facility_account.facility_id, facility_id);
     assert_eq!(facility_account.owner, h.authority.pubkey());
@@ -236,7 +261,10 @@ fn intent_is_bound_to_actor_and_can_be_consumed_only_once() {
         subject_id,
         intent_id,
     ));
-    assert_eq!(account::<IntentState>(&h.svm, &address).status, lastro_v2::constants::INTENT_STATUS_OPEN);
+    assert_eq!(
+        account::<IntentState>(&h.svm, &address).status,
+        lastro_v2::constants::INTENT_STATUS_OPEN
+    );
 
     h.svm.expire_blockhash();
     assert_success(send_consume_intent(
@@ -247,7 +275,10 @@ fn intent_is_bound_to_actor_and_can_be_consumed_only_once() {
         intent_id,
         payload_hash,
     ));
-    assert_eq!(account::<IntentState>(&h.svm, &address).status, lastro_v2::constants::INTENT_STATUS_CONSUMED);
+    assert_eq!(
+        account::<IntentState>(&h.svm, &address).status,
+        lastro_v2::constants::INTENT_STATUS_CONSUMED
+    );
 
     h.svm.expire_blockhash();
     assert_failure(send_consume_intent(
@@ -258,5 +289,8 @@ fn intent_is_bound_to_actor_and_can_be_consumed_only_once() {
         intent_id,
         payload_hash,
     ));
-    assert_eq!(account::<IntentState>(&h.svm, &address).status, lastro_v2::constants::INTENT_STATUS_CONSUMED);
+    assert_eq!(
+        account::<IntentState>(&h.svm, &address).status,
+        lastro_v2::constants::INTENT_STATUS_CONSUMED
+    );
 }

@@ -24,9 +24,18 @@ pub fn parse_observation(
         envelope.deployment_id == config_deployment_id,
         LastroV2Error::InvalidDomainEvent
     );
-    require!(envelope.subject_id == subject_id, LastroV2Error::InvalidDomainEvent);
-    require!(envelope.event_id == event_id, LastroV2Error::InvalidDomainEvent);
-    require!(envelope.source_id == station_id, LastroV2Error::InvalidStationProof);
+    require!(
+        envelope.subject_id == subject_id,
+        LastroV2Error::InvalidDomainEvent
+    );
+    require!(
+        envelope.event_id == event_id,
+        LastroV2Error::InvalidDomainEvent
+    );
+    require!(
+        envelope.source_id == station_id,
+        LastroV2Error::InvalidStationProof
+    );
     require!(
         envelope.state_version == asset.state_version.saturating_add(1),
         LastroV2Error::InvalidEventStateVersion
@@ -85,28 +94,14 @@ mod tests {
             flags: 0,
             bump: 1,
         };
-        assert!(parse_observation(
-            &envelope(),
-            [1; 32],
-            [2; 32],
-            [3; 32],
-            [5; 32],
-            &asset,
-            10
-        )
-        .is_ok());
+        assert!(
+            parse_observation(&envelope(), [1; 32], [2; 32], [3; 32], [5; 32], &asset, 10).is_ok()
+        );
 
         let mut stale = asset;
         stale.state_version = 1;
-        assert!(parse_observation(
-            &envelope(),
-            [1; 32],
-            [2; 32],
-            [3; 32],
-            [5; 32],
-            &stale,
-            10
-        )
-        .is_err());
+        assert!(
+            parse_observation(&envelope(), [1; 32], [2; 32], [3; 32], [5; 32], &stale, 10).is_err()
+        );
     }
 }

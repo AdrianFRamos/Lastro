@@ -58,7 +58,10 @@ function bytesToHex(bytes: Uint8Array): string {
 
 function assertEnvelope(envelope: V2DomainEventEnvelope): void {
   if (envelope.schemaVersion !== V2_SCHEMA_VERSION) throw new Error('unsupported v2 schema version')
-  if (!(envelope.eventType >= V2EventType.AssetRegistered && envelope.eventType <= V2EventType.AssetMigrated)) {
+  if (!(
+    envelope.eventType >= V2EventType.AssetRegistered &&
+    envelope.eventType <= V2EventType.AssetMigrated
+  )) {
     throw new Error('unknown v2 event type')
   }
   assertHex32(envelope.deploymentId, 'deploymentId')
@@ -94,7 +97,8 @@ export function encodeV2DomainEvent(envelope: V2DomainEventEnvelope): Uint8Array
 }
 
 export function decodeV2DomainEvent(bytes: Uint8Array): V2DomainEventEnvelope {
-  if (bytes.byteLength !== V2_DOMAIN_EVENT_ENVELOPE_LEN) throw new Error('invalid v2 envelope length')
+  if (bytes.byteLength !== V2_DOMAIN_EVENT_ENVELOPE_LEN)
+    throw new Error('invalid v2 envelope length')
   const view = new DataView(bytes.buffer, bytes.byteOffset, bytes.byteLength)
   const envelope: V2DomainEventEnvelope = {
     schemaVersion: view.getUint16(0, true),

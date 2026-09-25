@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 564
-**Files containing test cases:** 100
+**Declared cases:** 560
+**Files containing test cases:** 99
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -212,19 +212,19 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `chain/programs/lastro-v2/tests/initial_state.rs`
 
-- L12: `initialize_creates_config_and_all_registry_roots`
-- L41: `initialize_is_one_time_and_does_not_replace_config`
-- L54: `wrong_authority_cannot_register_asset`
-- L72: `asset_registration_is_unique_and_enforces_weight_limit`
-- L119: `station_registration_requires_valid_p256_key_and_derived_identity`
-- L151: `facility_and_party_accounts_are_scoped_to_deployment`
-- L208: `intent_is_bound_to_actor_and_can_be_consumed_only_once`
+- L13: `initialize_creates_config_and_all_registry_roots`
+- L54: `initialize_is_one_time_and_does_not_replace_config`
+- L67: `wrong_authority_cannot_register_asset`
+- L88: `asset_registration_is_unique_and_enforces_weight_limit`
+- L138: `station_registration_requires_valid_p256_key_and_derived_identity`
+- L173: `facility_and_party_accounts_are_scoped_to_deployment`
+- L234: `intent_is_bound_to_actor_and_can_be_consumed_only_once`
 
 ## `chain/programs/lastro-v2/tests/layout.rs`
 
-- L10: `account_space_constants_include_anchor_discriminator`
-- L21: `enum_ranges_are_closed_and_stable`
-- L34: `asset_closed_is_terminal_for_closed_and_retired_statuses`
+- L11: `account_space_constants_include_anchor_discriminator`
+- L22: `enum_ranges_are_closed_and_stable`
+- L35: `asset_closed_is_terminal_for_closed_and_retired_statuses`
 
 ## `chain/programs/lastro/tests/account_constraints.rs`
 
@@ -314,11 +314,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `crates/lastro-protocol/tests/envelope_v2.rs`
 
-- L28: `envelope_round_trips_with_fixed_length`
-- L39: `envelope_rejects_invalid_length_and_unknown_schema`
-- L54: `envelope_rejects_zero_ids_and_invalid_window`
-- L71: `enum_values_are_stable_and_unknown_values_are_rejected`
-- L82: `domain_hashes_are_separated`
+- L29: `envelope_round_trips_with_fixed_length`
+- L40: `envelope_rejects_invalid_length_and_unknown_schema`
+- L55: `envelope_rejects_zero_ids_and_invalid_window`
+- L72: `enum_values_are_stable_and_unknown_values_are_rejected`
+- L83: `domain_hashes_are_separated`
 
 ## `crates/lastro-protocol/tests/evidence_package.rs`
 
@@ -450,13 +450,6 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L24: `c_transfer_vector_equals_repository_fixture`
 - L34: `c_reidentify_vector_equals_repository_fixture`
 
-## `firmware/station/pytest/test_hardware.py`
-
-- L229: `test_g1_real_rfid_to_p256_to_host_verification`
-- L245: `test_reader_two_physical_tags_produce_distinct_canonical_ids`
-- L278: `test_reboot_preserves_station_public_key`
-- L306: `test_h1_efuse_private_key_is_not_readable_by_firmware`
-
 ## `hardware-simulator/tests/test_protocol.py`
 
 - L53: `test_crc32c_matches_frozen_castagnoli_vector`
@@ -494,11 +487,6 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L81: `transfer_command_uses_current_rfid_and_revision`
 - L96: `reidentify_command_carries_old_binding_only`
 
-## `services/agent/tests/domain_v2.rs`
-
-- L33: `domain_outbox_is_idempotent_and_monotonic`
-- L72: `divergent_domain_duplicate_is_rejected`
-
 ## `services/agent/tests/config.rs`
 
 - L41: `agent_requires_every_transport_identity_database_and_timing_value`
@@ -506,6 +494,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L107: `agent_rejects_short_token_without_leaking_it`
 - L122: `agent_requires_explicit_positive_station_response_timeout`
 - L142: `agent_valid_configuration_preserves_serial_and_retry_values_exactly`
+
+## `services/agent/tests/domain_v2.rs`
+
+- L34: `domain_outbox_is_idempotent_and_monotonic`
+- L73: `divergent_domain_duplicate_is_rejected`
 
 ## `services/agent/tests/retry.rs`
 
