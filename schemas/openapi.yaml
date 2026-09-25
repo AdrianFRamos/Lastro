@@ -378,6 +378,43 @@ paths:
                   $ref: '#/components/schemas/DomainEventAnchor'
         '400':
           $ref: '#/components/responses/BadRequest'
+  /api/v2/transformations/{transformationId}:
+    get:
+      operationId: getV2Transformation
+      parameters:
+      - name: transformationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: Public transformation commitment and lifecycle status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transformation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/assets/{assetId}/lineage:
+    get:
+      operationId: getV2AssetLineage
+      parameters:
+      - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Public transformation edges touching the asset.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 256
+                items:
+                  $ref: '#/components/schemas/LineageEdge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 components:
   securitySchemes:
     AgentToken:
@@ -498,6 +535,119 @@ components:
           oneOf:
           - type: string
           - type: 'null'
+    Transformation:
+      type: object
+      additionalProperties: false
+      required:
+      - transformationId
+      - deploymentId
+      - facilityId
+      - transformationType
+      - inputRoot
+      - outputRoot
+      - inputCount
+      - outputCount
+      - inputWeightGrams
+      - outputWeightGrams
+      - byproductWeightGrams
+      - lossWeightGrams
+      - toleranceBasisPoints
+      - manifestNonce
+      - manifestHash
+      - manifestBytesBase64
+      - status
+      - sequence
+      - expiresAt
+      properties:
+        transformationId:
+          $ref: '#/components/schemas/Hex32'
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        facilityId:
+          $ref: '#/components/schemas/Hex32'
+        transformationType:
+          type: integer
+          minimum: 1
+        inputRoot:
+          $ref: '#/components/schemas/Hex32'
+        outputRoot:
+          $ref: '#/components/schemas/Hex32'
+        inputCount:
+          type: integer
+          minimum: 1
+        outputCount:
+          type: integer
+          minimum: 1
+        inputWeightGrams:
+          type: integer
+          minimum: 0
+        outputWeightGrams:
+          type: integer
+          minimum: 0
+        byproductWeightGrams:
+          type: integer
+          minimum: 0
+        lossWeightGrams:
+          type: integer
+          minimum: 0
+        toleranceBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        manifestNonce:
+          type: integer
+          minimum: 0
+        manifestHash:
+          $ref: '#/components/schemas/Hex32'
+        manifestBytesBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 252
+          maxLength: 252
+        status:
+          type: string
+          enum: [OPEN, FINALIZING, FINALIZED, ABORTED, EXPIRED]
+        sequence:
+          type: integer
+          minimum: 0
+        expiresAt:
+          type: integer
+          minimum: 0
+        txSignature:
+          oneOf:
+          - type: string
+          - type: 'null'
+    LineageEdge:
+      type: object
+      additionalProperties: false
+      required:
+      - transformationId
+      - parentAssetId
+      - childAssetId
+      - role
+      - position
+      - quantity
+      - weightGrams
+      properties:
+        transformationId:
+          $ref: '#/components/schemas/Hex32'
+        parentAssetId:
+          $ref: '#/components/schemas/Hex32'
+        childAssetId:
+          $ref: '#/components/schemas/Hex32'
+        role:
+          type: integer
+          minimum: 1
+          maximum: 4
+        position:
+          type: integer
+          minimum: 0
+        quantity:
+          type: integer
+          minimum: 0
+        weightGrams:
+          type: integer
+          minimum: 0
     Base58Address:
       type: string
       pattern: ^[1-9A-HJ-NP-Za-km-z]{32,44}$

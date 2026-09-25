@@ -118,7 +118,9 @@ export function decodeV2DomainEvent(bytes: Uint8Array): V2DomainEventEnvelope {
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  const digest = await globalThis.crypto.subtle.digest('SHA-256', bytes)
+  const input = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(input).set(bytes)
+  const digest = await globalThis.crypto.subtle.digest('SHA-256', input)
   return new Uint8Array(digest)
 }
 

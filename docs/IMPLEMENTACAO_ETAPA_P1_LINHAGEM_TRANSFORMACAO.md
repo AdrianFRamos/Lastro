@@ -111,3 +111,19 @@ A máquina de estados agora evita o erro perigoso de declarar transformação fi
 ### Validação do corte P2
 
 O `cargo check --locked --manifest-path chain/Cargo.toml -p lastro-v2` passou depois da inclusão de consumo, outputs e finalização. O protocolo compartilhado continuou passando em `cargo test --locked -p lastro-protocol`, e `cargo fmt --all -- --check` passou. O alvo de testes de integração do Anchor ficou silencioso no terminal Windows e foi encerrado pelo limite do ambiente; portanto, este corte está confirmado como compilável, mas a execução LiteSVM permanece pendente de um ambiente de teste estável.
+
+
+## Corte P3 — projeção pública de transformação e linhagem
+
+Foi adicionada à API uma projeção read-only preparada para o pós-abate:
+
+- migration `0009_transformation_lineage.sql` cria `v2_transformations` e `v2_lineage_edges`;
+- o manifesto de 188 bytes e seu `manifest_hash` são tratados como evidência imutável;
+- a API expõe `GET /api/v2/transformations/{transformationId}` e `GET /api/v2/assets/{assetId}/lineage`;
+- a leitura é sempre limitada ao `deployment_id` configurado, com limite público de 256 edges;
+- a migration `0010_asset_reservation_projection.sql` acrescenta à projeção os campos de reserva, expiração e flags do `AssetState` v2;
+- o frontend/consumidor deve verificar os roots e o hash do manifesto antes de tratar a resposta como prova.
+
+Este corte é deliberadamente somente de consulta: ainda falta ligar a confirmação das transações Solana a um writer que projete `v2_transformations` e `v2_lineage_edges`. Não foi criada uma rota pública de escrita; nenhum dado de pessoa física, comprador ou contrato privado deve ser colocado on-chain ou exposto por esses endpoints.
+
+A validação desta etapa foi concluída com `cargo check --locked -j 1 -p lastro-api` em modo low-memory, `vue-tsc -b --force` e os dois testes Vitest de transformação. O primeiro check Rust falhou por pressão de memória/PDB corrompido no toolchain Windows; a execução low-memory posterior passou sem erro de código.

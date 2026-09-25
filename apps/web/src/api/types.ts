@@ -71,3 +71,38 @@ export interface TransactionData {
   measuredSerializedBytes: number
   transactionVersion: 'legacy' | 'v0'
 }
+
+export type TransformationStatus = 'OPEN' | 'FINALIZING' | 'FINALIZED' | 'ABORTED' | 'EXPIRED'
+
+export interface TransformationProjection {
+  transformationId: Hex32
+  deploymentId: Hex32
+  facilityId: Hex32
+  transformationType: number
+  inputRoot: Hex32
+  outputRoot: Hex32
+  inputCount: number
+  outputCount: number
+  inputWeightGrams: number
+  outputWeightGrams: number
+  byproductWeightGrams: number
+  lossWeightGrams: number
+  toleranceBasisPoints: number
+  manifestNonce: number
+  manifestHash: Hex32
+  manifestBytesBase64: string
+  status: TransformationStatus
+  sequence: number
+  expiresAt: number
+  txSignature: string | null
+}
+
+export interface LineageEdge {
+  transformationId: Hex32
+  parentAssetId: Hex32
+  childAssetId: Hex32
+  role: number
+  position: number
+  quantity: number
+  weightGrams: number
+}

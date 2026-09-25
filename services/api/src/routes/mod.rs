@@ -7,6 +7,7 @@ pub mod domain_v2;
 pub mod events;
 pub mod evidence;
 pub mod health;
+pub mod transformations;
 
 use crate::state::AppState;
 use axum::{
@@ -53,6 +54,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v2/assets/{assetId}/timeline",
             get(domain_v2::timeline),
+        )
+        .route(
+            "/api/v2/transformations/{transformationId}",
+            get(transformations::get),
+        )
+        .route(
+            "/api/v2/assets/{assetId}/lineage",
+            get(transformations::lineage),
         )
         .route(
             "/api/agent/evidence/{eventHash}",

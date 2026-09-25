@@ -68,7 +68,9 @@ function assertI64NonNegative(value: bigint, field: string): void {
 }
 
 async function sha256(bytes: Uint8Array): Promise<Uint8Array> {
-  return new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', bytes))
+  const input = new ArrayBuffer(bytes.byteLength)
+  new Uint8Array(input).set(bytes)
+  return new Uint8Array(await globalThis.crypto.subtle.digest('SHA-256', input))
 }
 
 async function domainHash(domain: string, bytes: Uint8Array): Promise<string> {
@@ -110,15 +112,20 @@ export async function v2MerkleRoot(leaves: readonly V2LineageLeaf[]): Promise<st
   if (leaves.length === 0) throw new Error('lineage must contain at least one leaf')
   const ordered = [...leaves].sort((left, right) => left.position - right.position)
   for (let index = 1; index < ordered.length; index += 1) {
-    if (ordered[index - 1].position === ordered[index].position)
-      throw new Error('lineage positions must be unique')
+    const previous = ordered[index - 1]
+    const current = ordered[index]
+    if (!previous || !current) throw new Error('lineage ordering is unexpectedly empty')
+    if (previous.position === current.position) throw new Error('lineage positions must be unique')
   }
   let level = await Promise.all(ordered.map(v2LineageLeafHash))
   while (level.length > 1) {
     const next: string[] = []
     for (let index = 0; index < level.length; index += 2) {
-      const left = hexToBytes(level[index], 'leftHash')
-      const right = hexToBytes(level[index + 1] ?? level[index], 'rightHash')
+      const leftHash = level[index]
+      if (!leftHash) throw new Error('merkle level is unexpectedly empty')
+      const rightHash = level[index + 1] ?? leftHash
+      const left = hexToBytes(leftHash, 'leftHash')
+      const right = hexToBytes(rightHash, 'rightHash')
       const pair = new Uint8Array(64)
       pair.set(left, 0)
       pair.set(right, 32)
@@ -126,7 +133,9 @@ export async function v2MerkleRoot(leaves: readonly V2LineageLeaf[]): Promise<st
     }
     level = next
   }
-  return level[0]
+  const root = level[0]
+  if (!root) throw new Error('merkle root is unexpectedly empty')
+  return root
 }
 
 export function validateV2MassBalance(mass: V2MassBalance): void {

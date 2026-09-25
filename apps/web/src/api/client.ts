@@ -10,8 +10,10 @@ import type {
   EventSubmission,
   Hex32,
   InstructionDto,
+  LineageEdge,
   SubmissionStatus,
   TransactionData,
+  TransformationProjection,
 } from './types'
 
 const DEFAULT_TIMEOUT_MS = 10_000
@@ -152,6 +154,9 @@ export const api = {
       method: 'POST',
       body: JSON.stringify({ txSignature }),
     }),
+  getTransformation: (transformationId: Hex32) =>
+    request(`/api/v2/transformations/${transformationId}`, parseTransformation),
+  getLineage: (assetId: Hex32) => request(`/api/v2/assets/${assetId}/lineage`, parseLineage),
 }
 
 function parseAnimal(value: unknown): AnimalProjection {
@@ -277,6 +282,67 @@ function parseTransactionData(value: unknown): TransactionData {
   }
 }
 
+function parseTransformation(value: unknown): TransformationProjection {
+  const record = requireRecord(value, 'Transformation')
+  const status = record.status
+  if (
+    status !== 'OPEN' &&
+    status !== 'FINALIZING' &&
+    status !== 'FINALIZED' &&
+    status !== 'ABORTED' &&
+    status !== 'EXPIRED'
+  ) {
+    throw new Error('invalid transformation status')
+  }
+  return {
+    transformationId: requireHex32(record.transformationId, 'transformationId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    transformationType: requirePositiveSafeInteger(record.transformationType, 'transformationType'),
+    inputRoot: requireHex32(record.inputRoot, 'inputRoot'),
+    outputRoot: requireHex32(record.outputRoot, 'outputRoot'),
+    inputCount: requirePositiveSafeInteger(record.inputCount, 'inputCount'),
+    outputCount: requirePositiveSafeInteger(record.outputCount, 'outputCount'),
+    inputWeightGrams: requireSafeInteger(record.inputWeightGrams, 'inputWeightGrams'),
+    outputWeightGrams: requireSafeInteger(record.outputWeightGrams, 'outputWeightGrams'),
+    byproductWeightGrams: requireSafeInteger(record.byproductWeightGrams, 'byproductWeightGrams'),
+    lossWeightGrams: requireSafeInteger(record.lossWeightGrams, 'lossWeightGrams'),
+    toleranceBasisPoints: requireSafeInteger(record.toleranceBasisPoints, 'toleranceBasisPoints'),
+    manifestNonce: requireSafeInteger(record.manifestNonce, 'manifestNonce'),
+    manifestHash: requireHex32(record.manifestHash, 'manifestHash'),
+    manifestBytesBase64: requireCanonicalBase64Exact(
+      record.manifestBytesBase64,
+      'manifestBytesBase64',
+      188,
+    ),
+    status,
+    sequence: requireSafeInteger(record.sequence, 'sequence'),
+    expiresAt: requireSafeInteger(record.expiresAt, 'expiresAt'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+  }
+}
+
+function parseLineage(value: unknown): LineageEdge[] {
+  if (!Array.isArray(value)) throw new Error('Lineage must be an array')
+  if (value.length > 256) throw new Error('Lineage exceeds the public response limit')
+  return value.map(parseLineageEdge)
+}
+
+function parseLineageEdge(value: unknown): LineageEdge {
+  const record = requireRecord(value, 'LineageEdge')
+  const role = requirePositiveSafeInteger(record.role, 'role')
+  if (role > 4) throw new Error('role must be between 1 and 4')
+  return {
+    transformationId: requireHex32(record.transformationId, 'transformationId'),
+    parentAssetId: requireHex32(record.parentAssetId, 'parentAssetId'),
+    childAssetId: requireHex32(record.childAssetId, 'childAssetId'),
+    role,
+    position: requireSafeInteger(record.position, 'position'),
+    quantity: requireSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requireSafeInteger(record.weightGrams, 'weightGrams'),
+  }
+}
+
 function parseInstruction(value: unknown): InstructionDto {
   const record = requireRecord(value, 'Instruction')
   if (!Array.isArray(record.accounts)) throw new Error('instruction accounts must be an array')
@@ -350,6 +416,19 @@ function requireCanonicalBase64(value: unknown, name: string, maxDecodedBytes: n
   return value
 }
 
+function requireCanonicalBase64Exact(value: unknown, name: string, decodedBytes: number): string {
+  const encoded = requireCanonicalBase64(value, name, decodedBytes)
+  let decoded: string
+  try {
+    decoded = atob(encoded)
+  } catch {
+    throw new Error(`${name} must be canonical base64`)
+  }
+  if (decoded.length !== decodedBytes)
+    throw new Error(`${name} must decode to ${decodedBytes} bytes`)
+  return encoded
+}
+
 function requireSolanaSignature(value: unknown, name: string): string {
   if (
     typeof value !== 'string' ||
@@ -376,6 +455,12 @@ function requireSafeInteger(value: unknown, name: string): number {
   if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
     throw new Error(`${name} must be a non-negative safe integer`)
   return value
+}
+
+function requirePositiveSafeInteger(value: unknown, name: string): number {
+  const parsed = requireSafeInteger(value, name)
+  if (parsed === 0) throw new Error(`${name} must be positive`)
+  return parsed
 }
 
 function requireUint32(value: unknown, name: string): number {

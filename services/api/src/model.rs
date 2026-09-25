@@ -246,3 +246,40 @@ pub struct DomainEventAnchorResponse {
     pub status: DomainEventStatus,
     pub tx_signature: Option<String>,
 }
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct TransformationResponse {
+    pub transformation_id: Hex32,
+    pub deployment_id: Hex32,
+    pub facility_id: Hex32,
+    pub transformation_type: u16,
+    pub input_root: Hex32,
+    pub output_root: Hex32,
+    pub input_count: u32,
+    pub output_count: u32,
+    pub input_weight_grams: u64,
+    pub output_weight_grams: u64,
+    pub byproduct_weight_grams: u64,
+    pub loss_weight_grams: u64,
+    pub tolerance_basis_points: u16,
+    pub manifest_nonce: u64,
+    pub manifest_hash: Hex32,
+    pub manifest_bytes_base64: String,
+    pub status: String,
+    pub sequence: u64,
+    pub expires_at: i64,
+    pub tx_signature: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LineageEdgeResponse {
+    pub transformation_id: Hex32,
+    pub parent_asset_id: Hex32,
+    pub child_asset_id: Hex32,
+    pub role: u16,
+    pub position: u32,
+    pub quantity: u64,
+    pub weight_grams: u64,
+}

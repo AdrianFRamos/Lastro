@@ -75,7 +75,7 @@ describe('Lastro protocol v2 transformation canonicalization', () => {
   })
 
   it('rejects duplicate positions and mass outside tolerance', async () => {
-    await expect(v2MerkleRoot([inputs[0], { ...inputs[1], position: 0 }])).rejects.toThrow(
+    await expect(v2MerkleRoot([inputs[0]!, { ...inputs[1]!, position: 0 }])).rejects.toThrow(
       'positions',
     )
     const inputRootHex = await v2MerkleRoot(inputs)

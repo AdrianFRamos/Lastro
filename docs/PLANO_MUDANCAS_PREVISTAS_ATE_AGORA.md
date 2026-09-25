@@ -27,12 +27,12 @@ A integração inicial também alcançou a API, o Agent e o frontend. A API poss
 |---|---|---|
 | Programa v1 | Preservado e compilável | Continua limitado ao fluxo individual legado |
 | Protocolo v2 | Envelope, hashes, enums e validações iniciais implementados | Ainda faltam canonicalização completa de manifestos e todos os tipos de evento |
-| Programa Solana v2 | Configuração, registries iniciais, `AssetState`, `IntentState`, `EventAnchor` e observação física inicial implementados | Ainda faltam migração, lotes, transformação, produtos, expedição e recall |
-| API | Admissão v2, armazenamento idempotente e timeline inicial implementados | O domínio completo de rastreabilidade ainda não está exposto |
+| Programa Solana v2 | Configuração, registries iniciais, `AssetState`, `IntentState`, `EventAnchor`, transformação, reservas, consumo de inputs, outputs e finalização implementados | Ainda faltam migração, abate, chunks de grande volume, produtos, expedição e recall |
+| API | Admissão v2, armazenamento idempotente, timeline e projeção read-only de transformação/linhagem implementados | O writer pós-confirmação Solana e o domínio completo de rastreabilidade ainda não estão expostos |
 | Agent | Outbox v2, transporte, retry e quarentena iniciais implementados | Ainda faltam adaptadores de balança, localização, manifesto e operação industrial |
 | Firmware | Contrato v1 preservado | A máquina de sensores v2 ainda precisa ser implementada e validada em hardware |
-| Frontend | Codec v2 e integração inicial implementados | Ainda faltam jornadas operacionais e página pública de produtos |
-| Verificador | Verificação legada e limites atuais preservados | O verificador de linhagem, massa, facility e recall v2 ainda precisa ser criado |
+| Frontend | Codec v2, integração inicial e cliente tipado para transformação/linhagem implementados | Ainda faltam jornadas operacionais, árvore visual e página pública de produtos |
+| Verificador | Verificação legada e limites atuais preservados | O verificador de linhagem, massa, facility e recall v2 ainda precisa ser criado; respostas da API ainda são apenas projeções até a confirmação on-chain |
 | Operação | Manifesto e gates básicos existentes | Ainda faltam piloto, runbooks, backup restaurável e governança operacional |
 
 ## 3. Arquitetura alvo
