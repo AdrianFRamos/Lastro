@@ -312,6 +312,72 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/v2/agent/observations:
+    post:
+      operationId: ingestV2Observation
+      description: Authenticated Agent admission of a signed 220-byte domain envelope. The API
+        validates the Station signature and stores immutable evidence; it does not claim that the
+        event is finalized on Solana.
+      security:
+      - AgentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainObservationRequest'
+      responses:
+        '201':
+          description: New v2 evidence accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '200':
+          description: Exact idempotent duplicate returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/events/{eventHash}:
+    get:
+      operationId: getV2Event
+      parameters:
+      - $ref: '#/components/parameters/EventHash'
+      responses:
+        '200':
+          description: Public immutable v2 event evidence and current processing status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/assets/{assetId}/timeline:
+    get:
+      operationId: getV2AssetTimeline
+      parameters:
+      - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Chronological v2 event anchors for one subject.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 256
+                items:
+                  $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
 components:
   securitySchemes:
     AgentToken:
@@ -330,6 +396,12 @@ components:
       required: true
       schema:
         $ref: '#/components/schemas/Hex32'
+    AssetId:
+      in: path
+      name: assetId
+      required: true
+      schema:
+        $ref: '#/components/schemas/Hex32'
   schemas:
     Hex32:
       type: string
@@ -340,6 +412,92 @@ components:
     Hex64:
       type: string
       pattern: ^[0-9a-f]{128}$
+    DomainObservationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - envelopeBytesBase64
+      - stationPubkeyHex
+      - stationSignatureHex
+      properties:
+        envelopeBytesBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 296
+          maxLength: 296
+        stationPubkeyHex:
+          $ref: '#/components/schemas/Hex33'
+        stationSignatureHex:
+          $ref: '#/components/schemas/Hex64'
+    DomainEventStatus:
+      type: string
+      enum:
+      - EVIDENCE_ACCEPTED
+      - SUBMITTED
+      - FINALIZED
+      - REJECTED
+    DomainEventAnchor:
+      type: object
+      additionalProperties: false
+      required:
+      - eventId
+      - eventHash
+      - deploymentId
+      - subjectId
+      - sourceId
+      - eventType
+      - stateVersion
+      - observedAt
+      - expiresAt
+      - expectedPreviousHash
+      - payloadHash
+      - envelopeBytesBase64
+      - stationPubkeyHex
+      - stationSignatureHex
+      - status
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Hex32'
+        eventHash:
+          $ref: '#/components/schemas/Hex32'
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        subjectId:
+          $ref: '#/components/schemas/Hex32'
+        sourceId:
+          $ref: '#/components/schemas/Hex32'
+        eventType:
+          type: integer
+          minimum: 1
+          maximum: 17
+        stateVersion:
+          type: integer
+          minimum: 0
+        observedAt:
+          type: integer
+          minimum: 0
+        expiresAt:
+          type: integer
+          minimum: 0
+        expectedPreviousHash:
+          $ref: '#/components/schemas/Hex32'
+        payloadHash:
+          $ref: '#/components/schemas/Hex32'
+        envelopeBytesBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 296
+          maxLength: 296
+        stationPubkeyHex:
+          $ref: '#/components/schemas/Hex33'
+        stationSignatureHex:
+          $ref: '#/components/schemas/Hex64'
+        status:
+          $ref: '#/components/schemas/DomainEventStatus'
+        txSignature:
+          oneOf:
+          - type: string
+          - type: 'null'
     Base58Address:
       type: string
       pattern: ^[1-9A-HJ-NP-Za-km-z]{32,44}$

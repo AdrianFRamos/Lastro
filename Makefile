@@ -1,6 +1,6 @@
 SHELL := /bin/bash
 
-.PHONY: doctor check fmt lint test repo-test protocol-test agent-test api-test chain-test web-test web-e2e firmware-build firmware-test infra-up infra-down vectors spec-check bootstrap-program-id local-demo-doctor local-demo-init local-demo-up local-demo-status local-demo-test local-demo-test-headed local-demo-down local-demo-reset
+.PHONY: doctor check fmt lint test repo-test protocol-test agent-test api-test chain-test chain-v2-check chain-v2-test web-test web-e2e firmware-build firmware-test infra-up infra-down vectors spec-check bootstrap-program-id bootstrap-program-id-v2 local-demo-doctor local-demo-init local-demo-up local-demo-status local-demo-test local-demo-test-headed local-demo-down local-demo-reset
 
 doctor:
 	python3 scripts/doctor.py
@@ -25,9 +25,18 @@ api-test:
 bootstrap-program-id:
 	scripts/bootstrap_program_id.sh
 
+bootstrap-program-id-v2:
+	scripts/bootstrap_program_id_v2.sh verify
+
 chain-test:
 	@grep -Eq '^[[:space:]]*declare_id!\(' chain/programs/lastro/src/lib.rs || { echo "Run make bootstrap-program-id first" >&2; exit 1; }
 	cd chain && anchor test
+
+chain-v2-check:
+	cargo check --offline --manifest-path chain/Cargo.toml -p lastro-v2
+
+chain-v2-test:
+	cargo test --locked --manifest-path chain/Cargo.toml -p lastro-v2
 
 web-test:
 	npm --workspace @lastro/web run test

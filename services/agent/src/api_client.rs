@@ -4,7 +4,11 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use reqwest::{Client, StatusCode, Url};
 use serde::{Deserialize, Serialize};
 
-use crate::{command::StationCommand, error::AgentError, spool::model::OutboxRow};
+use crate::{
+    command::StationCommand,
+    error::AgentError,
+    spool::model::{DomainOutboxRow, OutboxRow},
+};
 
 #[derive(Clone, Copy, Debug, Deserialize, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
@@ -130,6 +134,28 @@ impl ApiClient {
         }
     }
 
+    /// Submit a signed v2 domain envelope. HTTP 200 is an exact idempotent duplicate; 201 is new.
+    pub async fn post_domain_observation(&self, row: &DomainOutboxRow) -> Result<(), AgentError> {
+        let url = self.endpoint("api/v2/agent/observations")?;
+        let body = DomainObservationDto {
+            envelope_bytes_base64: BASE64.encode(row.envelope_bytes),
+            station_pubkey_hex: hex::encode(row.station_pubkey),
+            station_signature_hex: hex::encode(row.station_signature),
+        };
+        let response = self
+            .client
+            .post(url)
+            .bearer_auth(&self.bearer_token)
+            .json(&body)
+            .send()
+            .await
+            .map_err(api_transport)?;
+        match response.status() {
+            StatusCode::OK | StatusCode::CREATED => Ok(()),
+            status => Err(status_error(status, "submit v2 domain observation")),
+        }
+    }
+
     fn endpoint(&self, path: &str) -> Result<Url, AgentError> {
         self.base_url
             .join(path)
@@ -200,6 +226,14 @@ struct AgentEvidenceDto {
     capture_id: uuid::Uuid,
     event_bytes_base64: String,
     observed_rfid_hex: String,
+    station_pubkey_hex: String,
+    station_signature_hex: String,
+}
+
+#[derive(Serialize)]
+#[serde(rename_all = "camelCase")]
+struct DomainObservationDto {
+    envelope_bytes_base64: String,
     station_pubkey_hex: String,
     station_signature_hex: String,
 }

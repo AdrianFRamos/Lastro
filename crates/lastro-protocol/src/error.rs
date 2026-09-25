@@ -26,4 +26,14 @@ pub enum ProtocolError {
     HighSSignature,
     #[error("invalid EvidencePackage")]
     InvalidEvidencePackage,
+    #[error("invalid v2 envelope length")]
+    InvalidV2EnvelopeLength,
+    #[error("unsupported v2 schema version")]
+    UnsupportedV2SchemaVersion,
+    #[error("unknown v2 enum value")]
+    UnknownV2Enum,
+    #[error("invalid v2 event time window")]
+    InvalidV2TimeWindow,
+    #[error("invalid v2 identifier")]
+    InvalidV2Identifier,
 }

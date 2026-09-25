@@ -3,8 +3,9 @@ use std::time::Duration;
 use bytes::Bytes;
 use lastro_protocol::{
     Action, StationEvent,
-    crypto::{derive_station_id, verify_station_signature},
+    crypto::{derive_station_id, verify_station_signature, verify_station_signature_bytes},
     rfid::hash_canonical_rfid,
+    v2::{DomainEventEnvelope, EventType},
 };
 use tokio::time::{sleep, timeout};
 
@@ -24,7 +25,7 @@ use crate::{
     },
     spool::{
         Spool,
-        model::{OutboxRow, OutboxState},
+        model::{DomainOutboxRow, DomainOutboxState, OutboxRow, OutboxState},
     },
 };
 
@@ -39,6 +40,19 @@ pub async fn run<T: StationTransport>(
 ) -> Result<(), AgentError> {
     replay_durable_acks(&mut transport, spool, &expected_station_pubkey33).await?;
     loop {
+        match retry_domain_pending_once(spool, api, poll_interval).await {
+            Ok(true) => {
+                sleep(poll_interval).await;
+                continue;
+            }
+            Ok(false) => {}
+            Err(AgentError::Api(message)) => {
+                tracing::warn!(error = %message, "Agent v2 API retry pass failed transiently; retrying");
+                sleep(poll_interval).await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
         match retry_pending_once(spool, api, poll_interval).await {
             Ok(true) => {
                 sleep(poll_interval).await;
@@ -165,6 +179,39 @@ pub async fn retry_pending_once(
     Ok(retryable_failure)
 }
 
+/// Retry v2 domain evidence independently from the v1 animal/RFID outbox.
+pub async fn retry_domain_pending_once(
+    spool: &Spool,
+    api: &ApiClient,
+    base_delay: Duration,
+) -> Result<bool, AgentError> {
+    let mut retryable_failure = false;
+    for row in spool.pending_domain().await? {
+        let delay = retry_delay(base_delay, row.attempts);
+        if !delay.is_zero() {
+            sleep(delay).await;
+        }
+        match api.post_domain_observation(&row).await {
+            Ok(()) => {
+                spool
+                    .advance_domain(row.event_hash, DomainOutboxState::Server)
+                    .await?
+            }
+            Err(AgentError::Api(message)) => {
+                spool
+                    .record_domain_failure(row.event_hash, &message)
+                    .await?;
+                retryable_failure = true;
+            }
+            Err(AgentError::ApiTerminal(message)) => {
+                spool.quarantine_domain(row.event_hash, &message).await?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(retryable_failure)
+}
+
 /// Exponential retry delay derived from the durable attempt count. The first upload of a new
 /// LOCAL row is immediate; failed retries double from the configured poll interval up to 30 seconds.
 pub fn retry_delay(base_delay: Duration, attempts: u32) -> Duration {
@@ -176,6 +223,89 @@ pub fn retry_delay(base_delay: Duration, attempts: u32) -> Duration {
     base.checked_mul(1u32 << shift)
         .unwrap_or(MAX_RETRY_BACKOFF)
         .min(MAX_RETRY_BACKOFF)
+}
+
+/// Validate, persist and deliver one Station-signed v2 observation.
+pub async fn process_domain_event_ready<T: StationTransport>(
+    transport: &mut T,
+    spool: &Spool,
+    api: &ApiClient,
+    expected_station_pubkey33: &[u8; 33],
+    payload: &[u8],
+) -> Result<(), AgentError> {
+    let ready = crate::serial::payload::decode_domain_event_ready(payload)?;
+    let row = validate_domain_event_ready(expected_station_pubkey33, &ready)?;
+    spool.persist_domain_local(&row).await?;
+    let ack = crate::serial::payload::DomainAckPayload {
+        event_hash: row.event_hash,
+    };
+    transport
+        .send(Frame {
+            message_type: MessageType::DomainAck,
+            payload: Bytes::copy_from_slice(&crate::serial::payload::encode_domain_ack(&ack)),
+        })
+        .await?;
+    match api.post_domain_observation(&row).await {
+        Ok(()) => {
+            spool
+                .advance_domain(row.event_hash, DomainOutboxState::Server)
+                .await
+        }
+        Err(AgentError::Api(message)) => {
+            spool.record_domain_failure(row.event_hash, &message).await
+        }
+        Err(AgentError::ApiTerminal(message)) => {
+            spool.quarantine_domain(row.event_hash, &message).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn validate_domain_event_ready(
+    expected_station_pubkey33: &[u8; 33],
+    ready: &crate::serial::payload::DomainEventReadyPayload,
+) -> Result<DomainOutboxRow, AgentError> {
+    if &ready.station_pubkey33 != expected_station_pubkey33 {
+        return Err(AgentError::Contract(
+            "DOMAIN_EVENT_READY Station public key does not match configured Station".into(),
+        ));
+    }
+    let envelope = DomainEventEnvelope::decode(&ready.envelope_bytes)
+        .map_err(|error| AgentError::Contract(format!("invalid v2 domain envelope: {error}")))?;
+    if envelope.event_type != EventType::ObservationRecorded as u16 {
+        return Err(AgentError::Contract(
+            "DOMAIN_EVENT_READY accepts only ObservationRecorded in this increment".into(),
+        ));
+    }
+    let station_id = derive_station_id(&ready.station_pubkey33)
+        .map_err(|error| AgentError::Contract(format!("invalid Station public key: {error}")))?;
+    if envelope.source_id != station_id {
+        return Err(AgentError::Contract(
+            "v2 envelope source_id does not match Station public key".into(),
+        ));
+    }
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    if now < envelope.observed_at || now > envelope.expires_at {
+        return Err(AgentError::Contract(
+            "v2 envelope is outside its validity window".into(),
+        ));
+    }
+    verify_station_signature_bytes(
+        &ready.envelope_bytes,
+        &ready.station_pubkey33,
+        &ready.station_signature64,
+    )
+    .map_err(|error| AgentError::Contract(format!("invalid v2 Station signature: {error}")))?;
+    Ok(DomainOutboxRow {
+        event_hash: envelope
+            .event_hash()
+            .map_err(|error| AgentError::Contract(format!("cannot hash v2 envelope: {error}")))?,
+        envelope_bytes: ready.envelope_bytes,
+        station_pubkey: ready.station_pubkey33,
+        station_signature: ready.station_signature64,
+        state: DomainOutboxState::Local,
+        attempts: 0,
+    })
 }
 
 pub async fn process_capture<T: StationTransport>(

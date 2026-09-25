@@ -208,3 +208,41 @@ pub fn parse_hex32(name: &str, value: &str) -> Result<[u8; 32], crate::error::Ap
         crate::error::ApiError::Validation(format!("{name} must be 32-byte lowercase hex"))
     })
 }
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct DomainObservationRequest {
+    pub envelope_bytes_base64: String,
+    pub station_pubkey_hex: String,
+    pub station_signature_hex: String,
+}
+
+#[derive(Clone, Copy, Debug, Serialize, Eq, PartialEq)]
+#[serde(rename_all = "SCREAMING_SNAKE_CASE")]
+pub enum DomainEventStatus {
+    EvidenceAccepted,
+    Submitted,
+    Finalized,
+    Rejected,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DomainEventAnchorResponse {
+    pub event_id: Hex32,
+    pub event_hash: Hex32,
+    pub deployment_id: Hex32,
+    pub subject_id: Hex32,
+    pub source_id: Hex32,
+    pub event_type: u16,
+    pub state_version: u64,
+    pub observed_at: i64,
+    pub expires_at: i64,
+    pub expected_previous_hash: Hex32,
+    pub payload_hash: Hex32,
+    pub envelope_bytes_base64: String,
+    pub station_pubkey_hex: String,
+    pub station_signature_hex: String,
+    pub status: DomainEventStatus,
+    pub tx_signature: Option<String>,
+}

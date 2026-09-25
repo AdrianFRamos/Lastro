@@ -13,6 +13,8 @@ pub const COMMAND_PAYLOAD_LEN: usize = 224;
 pub const EVENT_READY_PAYLOAD_LEN: usize = 397;
 pub const ACK_PAYLOAD_LEN: usize = 48;
 pub const ERROR_PAYLOAD_LEN: usize = 20;
+pub const DOMAIN_EVENT_READY_PAYLOAD_LEN: usize = 317;
+pub const DOMAIN_ACK_PAYLOAD_LEN: usize = 32;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct EventReadyPayload {
@@ -21,6 +23,18 @@ pub struct EventReadyPayload {
     pub observed_rfid: [u8; 8],
     pub station_pubkey33: [u8; 33],
     pub station_signature64: [u8; 64],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DomainEventReadyPayload {
+    pub envelope_bytes: [u8; 220],
+    pub station_pubkey33: [u8; 33],
+    pub station_signature64: [u8; 64],
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct DomainAckPayload {
+    pub event_hash: [u8; 32],
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -116,6 +130,29 @@ pub fn decode_event_ready(bytes: &[u8]) -> Result<EventReadyPayload, AgentError>
     })
 }
 
+pub fn encode_domain_event_ready(
+    payload: &DomainEventReadyPayload,
+) -> [u8; DOMAIN_EVENT_READY_PAYLOAD_LEN] {
+    let mut out = [0u8; DOMAIN_EVENT_READY_PAYLOAD_LEN];
+    out[0..220].copy_from_slice(&payload.envelope_bytes);
+    out[220..253].copy_from_slice(&payload.station_pubkey33);
+    out[253..317].copy_from_slice(&payload.station_signature64);
+    out
+}
+
+pub fn decode_domain_event_ready(bytes: &[u8]) -> Result<DomainEventReadyPayload, AgentError> {
+    if bytes.len() != DOMAIN_EVENT_READY_PAYLOAD_LEN {
+        return Err(AgentError::Contract(format!(
+            "DOMAIN_EVENT_READY payload must be {DOMAIN_EVENT_READY_PAYLOAD_LEN} bytes"
+        )));
+    }
+    Ok(DomainEventReadyPayload {
+        envelope_bytes: bytes[0..220].try_into().expect("fixed slice"),
+        station_pubkey33: bytes[220..253].try_into().expect("fixed slice"),
+        station_signature64: bytes[253..317].try_into().expect("fixed slice"),
+    })
+}
+
 pub fn encode_ack(payload: &AckPayload) -> [u8; ACK_PAYLOAD_LEN] {
     let mut out = [0u8; ACK_PAYLOAD_LEN];
     out[0..16].copy_from_slice(payload.capture_id.as_bytes());
@@ -132,6 +169,21 @@ pub fn decode_ack(bytes: &[u8]) -> Result<AckPayload, AgentError> {
     Ok(AckPayload {
         capture_id: Uuid::from_bytes(bytes[0..16].try_into().expect("fixed slice")),
         event_hash: bytes[16..48].try_into().expect("fixed slice"),
+    })
+}
+
+pub fn encode_domain_ack(payload: &DomainAckPayload) -> [u8; DOMAIN_ACK_PAYLOAD_LEN] {
+    payload.event_hash
+}
+
+pub fn decode_domain_ack(bytes: &[u8]) -> Result<DomainAckPayload, AgentError> {
+    if bytes.len() != DOMAIN_ACK_PAYLOAD_LEN {
+        return Err(AgentError::Contract(format!(
+            "DOMAIN_ACK payload must be {DOMAIN_ACK_PAYLOAD_LEN} bytes"
+        )));
+    }
+    Ok(DomainAckPayload {
+        event_hash: bytes.try_into().expect("fixed slice"),
     })
 }
 
@@ -171,4 +223,31 @@ pub fn decode_error(bytes: &[u8]) -> Result<ErrorPayload, AgentError> {
         capture_id: Uuid::from_bytes(bytes[0..16].try_into().expect("fixed slice")),
         code,
     })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn domain_event_ready_round_trips_exactly() {
+        let payload = DomainEventReadyPayload {
+            envelope_bytes: [0x11; 220],
+            station_pubkey33: [0x22; 33],
+            station_signature64: [0x33; 64],
+        };
+        let encoded = encode_domain_event_ready(&payload);
+        assert_eq!(encoded.len(), DOMAIN_EVENT_READY_PAYLOAD_LEN);
+        assert_eq!(decode_domain_event_ready(&encoded).unwrap(), payload);
+    }
+
+    #[test]
+    fn domain_ack_round_trips_and_rejects_wrong_length() {
+        let payload = DomainAckPayload {
+            event_hash: [0x44; 32],
+        };
+        let encoded = encode_domain_ack(&payload);
+        assert_eq!(decode_domain_ack(&encoded).unwrap(), payload);
+        assert!(decode_domain_ack(&encoded[..31]).is_err());
+    }
 }

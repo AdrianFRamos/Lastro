@@ -16,5 +16,8 @@ test = "cargo test --locked --workspace"
 [workspace]
 members = ["programs/*"]
 
+[programs.localnet]
+lastro_v2 = "7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F"
+
 # Anchor 1.2 uses LiteSVM as the default test direction. Program ID is generated/synced
 # when the actual deploy keypair is created; keypairs remain gitignored.

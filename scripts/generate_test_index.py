@@ -17,6 +17,19 @@ OUTPUT = ROOT / "docs" / "TEST_INDEX.md"
 
 TEST_DIR_NAMES = {"tests", "test", "e2e", "pytest"}
 SKIP_FILES = {"setup.ts", "CMakeLists.txt", "requirements.txt"}
+TEST_ROOTS = (
+    "apps/web/tests",
+    "apps/web/e2e",
+    "chain/programs/lastro/tests",
+    "chain/programs/lastro-v2/tests",
+    "crates/lastro-protocol/tests",
+    "services/agent/tests",
+    "services/api/tests",
+    "tests",
+    "firmware/station/components/lastro_station/test",
+    "firmware/pytest",
+    "hardware-simulator/tests",
+)
 
 
 @dataclass(frozen=True)
@@ -64,8 +77,14 @@ def py_cases(path: Path, text: str) -> list[Case]:
 
 def collect() -> list[Case]:
     out: list[Case] = []
-    for path in sorted(ROOT.rglob("*")):
-        if not path.is_file() or not is_test_path(path.relative_to(ROOT)):
+    paths: set[Path] = set()
+    for root_name in TEST_ROOTS:
+        root = ROOT / root_name
+        if root.exists():
+            paths.update(path for path in root.rglob("*") if path.is_file())
+    for path in sorted(paths):
+        relative = path.relative_to(ROOT)
+        if not is_test_path(relative):
             continue
         text = path.read_text(encoding="utf-8", errors="ignore")
         if path.suffix == ".rs":

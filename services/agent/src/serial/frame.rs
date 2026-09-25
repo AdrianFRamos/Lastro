@@ -10,6 +10,8 @@ pub enum MessageType {
     EventReady = 2,
     Ack = 3,
     Error = 4,
+    DomainEventReady = 5,
+    DomainAck = 6,
 }
 
 impl MessageType {
@@ -19,6 +21,8 @@ impl MessageType {
             Self::EventReady => super::payload::EVENT_READY_PAYLOAD_LEN,
             Self::Ack => super::payload::ACK_PAYLOAD_LEN,
             Self::Error => super::payload::ERROR_PAYLOAD_LEN,
+            Self::DomainEventReady => super::payload::DOMAIN_EVENT_READY_PAYLOAD_LEN,
+            Self::DomainAck => super::payload::DOMAIN_ACK_PAYLOAD_LEN,
         }
     }
 }
@@ -38,6 +42,8 @@ impl TryFrom<u8> for MessageType {
             2 => Ok(Self::EventReady),
             3 => Ok(Self::Ack),
             4 => Ok(Self::Error),
+            5 => Ok(Self::DomainEventReady),
+            6 => Ok(Self::DomainAck),
             _ => Err(AgentError::Serial(format!(
                 "unknown serial message type {value}"
             ))),

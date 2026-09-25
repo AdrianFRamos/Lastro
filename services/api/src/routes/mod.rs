@@ -3,6 +3,7 @@
 pub mod agent;
 pub mod animals;
 pub mod captures;
+pub mod domain_v2;
 pub mod events;
 pub mod evidence;
 pub mod health;
@@ -44,6 +45,15 @@ pub fn router(state: AppState) -> Router {
         .route("/api/captures/{captureId}", get(captures::get))
         .route("/api/agent/commands", get(agent::poll_command))
         .route("/api/agent/evidence", post(agent::submit_evidence))
+        .route(
+            "/api/v2/agent/observations",
+            post(domain_v2::ingest_observation),
+        )
+        .route("/api/v2/events/{eventHash}", get(domain_v2::get_event))
+        .route(
+            "/api/v2/assets/{assetId}/timeline",
+            get(domain_v2::timeline),
+        )
         .route(
             "/api/agent/evidence/{eventHash}",
             get(agent::evidence_status),

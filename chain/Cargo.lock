@@ -1747,6 +1747,29 @@ dependencies = [
 ]
 
 [[package]]
+name = "lastro-v2"
+version = "0.1.0"
+dependencies = [
+ "anchor-lang",
+ "hex",
+ "lastro-protocol",
+ "litesvm",
+ "p256",
+ "sha2 0.10.9",
+ "solana-compute-budget-interface",
+ "solana-instruction",
+ "solana-instructions-sysvar 3.0.1",
+ "solana-keypair",
+ "solana-message",
+ "solana-pubkey 4.2.1",
+ "solana-sdk-ids",
+ "solana-signer",
+ "solana-system-interface 3.2.0",
+ "solana-transaction",
+ "wincode",
+]
+
+[[package]]
 name = "lazy_static"
 version = "1.5.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"

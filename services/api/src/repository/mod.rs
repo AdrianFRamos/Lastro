@@ -4,4 +4,5 @@
 pub mod animals;
 pub mod capture_authorizations;
 pub mod captures;
+pub mod domain_v2;
 pub mod events;

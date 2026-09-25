@@ -135,7 +135,7 @@ pub async fn evidence_status(
     Ok(Json(AgentEvidenceStatusResponse { status }))
 }
 
-fn authorize(headers: &HeaderMap, expected_token: &str) -> Result<(), ApiError> {
+pub(crate) fn authorize(headers: &HeaderMap, expected_token: &str) -> Result<(), ApiError> {
     let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
         return Err(ApiError::Unauthorized);
     };

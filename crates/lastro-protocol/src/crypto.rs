@@ -44,3 +44,25 @@ pub fn verify_station_signature(
         .verify(event_bytes, &signature)
         .map_err(|_| ProtocolError::InvalidStationSignature)
 }
+
+/// Verify a Station signature over any bounded canonical message, including the v2 220-byte
+/// domain envelope. The same low-S rule as StationEvent v1 is enforced.
+pub fn verify_station_signature_bytes(
+    message: &[u8],
+    compressed_pubkey: &[u8; 33],
+    signature_rs: &[u8; 64],
+) -> Result<(), ProtocolError> {
+    if message.is_empty() || message.len() > 1024 {
+        return Err(ProtocolError::InvalidStationSignature);
+    }
+    let verifying_key = VerifyingKey::from_sec1_bytes(compressed_pubkey)
+        .map_err(|_| ProtocolError::InvalidStationKey)?;
+    let signature =
+        Signature::from_slice(signature_rs).map_err(|_| ProtocolError::InvalidStationSignature)?;
+    if signature.normalize_s().is_some() {
+        return Err(ProtocolError::HighSSignature);
+    }
+    verifying_key
+        .verify(message, &signature)
+        .map_err(|_| ProtocolError::InvalidStationSignature)
+}

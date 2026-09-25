@@ -13,6 +13,7 @@ pub mod event;
 pub mod evidence;
 pub mod ids;
 pub mod rfid;
+pub mod v2;
 
 pub use action::Action;
 pub use error::ProtocolError;
