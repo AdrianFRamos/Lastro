@@ -110,32 +110,48 @@ pub async fn confirm(
 ) -> Result<Json<AnimalResponse>, ApiError> {
     validate_transaction_signature(&body.tx_signature)?;
     let event_hash = parse_hex32("eventHash", &event_hash)?;
+    reconcile_finalized_event(&state, event_hash, &body.tx_signature).await?;
     let record = events::find_by_hash(&state.db, event_hash)
         .await?
         .ok_or_else(|| ApiError::NotFound("event not found".into()))?;
-    verify_event_deployment(&state, &record)?;
-    if record.status == "FINALIZED" {
-        require_same_transaction(&record, &body.tx_signature)?;
-    } else if record.status == "SUBMITTED" {
-        require_same_transaction(&record, &body.tx_signature)?;
-    } else {
+    let local = animals::find_by_animal_id(&state.db, record.event.animal_id)
+        .await?
+        .ok_or_else(|| {
+            ApiError::Conflict("local projection is missing finalized animal state".into())
+        })?;
+    Ok(Json(to_response(local)))
+}
+
+/// Finalize one legacy event after proving the exact transaction and canonical
+/// terminal state. This is shared by the synchronous endpoint and the durable
+/// background reconciler so the two paths cannot drift apart.
+pub(crate) async fn reconcile_finalized_event(
+    state: &AppState,
+    event_hash: [u8; 32],
+    tx_signature: &str,
+) -> Result<(), ApiError> {
+    let record = events::find_by_hash(&state.db, event_hash)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("event not found".into()))?;
+    verify_event_deployment(state, &record)?;
+    if !matches!(record.status.as_str(), "SUBMITTED" | "FINALIZED") {
         return Err(ApiError::Conflict(
             "event transaction has not been verified at confirmed commitment".into(),
         ));
     }
-
-    verify_station_registration(&state, &record).await?;
+    require_same_transaction(&record, tx_signature)?;
+    verify_station_registration(state, &record).await?;
     let expected_transaction = build_transaction_data(&state.config.lastro_program_id, &record)?;
     if !state
         .rpc
-        .transaction_matches(&body.tx_signature, &expected_transaction)
+        .transaction_matches(tx_signature, &expected_transaction)
         .await?
     {
         return Err(ApiError::Conflict(
             "transaction is not a finalized exact Lastro transaction for this event".into(),
         ));
     }
-    verify_canonical_terminal(&state, &record.event).await?;
+    verify_canonical_terminal(state, &record.event).await?;
 
     if record.status == "FINALIZED" {
         let local = animals::find_by_animal_id(&state.db, record.event.animal_id)
@@ -148,7 +164,7 @@ pub async fn confirm(
                 "local projection disagrees with finalized canonical state".into(),
             ));
         }
-        return Ok(Json(to_response(local)));
+        return Ok(());
     }
 
     let mut tx = state
@@ -156,12 +172,12 @@ pub async fn confirm(
         .begin()
         .await
         .map_err(|_| ApiError::Unavailable("postgres transaction failed".into()))?;
-    let projected = animals::apply_confirmed_state(&mut tx, &record.event).await?;
-    events::mark_finalized(&mut tx, event_hash, &body.tx_signature).await?;
+    animals::apply_confirmed_state(&mut tx, &record.event).await?;
+    events::mark_finalized(&mut tx, event_hash, tx_signature).await?;
     tx.commit()
         .await
         .map_err(|_| ApiError::Unavailable("postgres commit failed".into()))?;
-    Ok(Json(to_response(projected)))
+    Ok(())
 }
 
 async fn load_preparable_event(
@@ -390,7 +406,7 @@ fn verify_binding(
     Ok(())
 }
 
-fn validate_transaction_signature(signature: &str) -> Result<(), ApiError> {
+pub(crate) fn validate_transaction_signature(signature: &str) -> Result<(), ApiError> {
     // A base58 encoding of a 64-byte Solana signature is never longer than 88 chars.
     // Reject longer attacker-controlled strings before allocating in the decoder.
     if signature.len() > 88 || !signature.is_ascii() {

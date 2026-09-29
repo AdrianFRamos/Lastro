@@ -19,6 +19,7 @@ async fn main() -> anyhow::Result<()> {
         config: config.clone(),
         rpc,
     };
+    let _reconciliation_worker = lastro_api::reconciliation::spawn(state.clone());
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;
     axum::serve(listener, routes::router(state)).await?;
     Ok(())

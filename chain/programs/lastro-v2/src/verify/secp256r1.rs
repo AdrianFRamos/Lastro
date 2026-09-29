@@ -10,7 +10,9 @@ const SIGNATURE_OFFSET: u16 = 16;
 const SIGNATURE_END: usize = 80;
 const PUBLIC_KEY_OFFSET: u16 = 80;
 const PUBLIC_KEY_END: usize = 113;
-const EVENT_OFFSET_IN_ANCHOR_IX: u16 = 8;
+// Anchor serializes the discriminator followed by subject_id, event_id and station_id
+// before the 220-byte envelope argument.
+const EVENT_OFFSET_IN_ANCHOR_IX: u16 = 8 + 32 + 32 + 32;
 
 fn read_u16_le(bytes: &[u8], offset: usize) -> Result<u16> {
     let range = bytes

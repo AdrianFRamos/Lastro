@@ -35,6 +35,14 @@ pub struct Secp256r1Descriptor<'a> {
 pub fn build_secp256r1_instruction_data(
     descriptor: Secp256r1Descriptor<'_>,
 ) -> Result<Vec<u8>, ApiError> {
+    build_secp256r1_instruction_data_for_message(descriptor, LASTRO_SIGNED_MESSAGE_LEN)
+}
+
+/// Build the same precompile layout for a compact v2 domain envelope.
+pub fn build_secp256r1_instruction_data_for_message(
+    descriptor: Secp256r1Descriptor<'_>,
+    message_len: u16,
+) -> Result<Vec<u8>, ApiError> {
     if !matches!(descriptor.station_pubkey33[0], 0x02 | 0x03) {
         return Err(ApiError::Validation(
             "Station public key must use 33-byte compressed SEC1 encoding".into(),
@@ -52,7 +60,7 @@ pub fn build_secp256r1_instruction_data(
         LASTRO_SECP_PUBKEY_OFFSET,
         LASTRO_SECP_PRECOMPILE_INSTRUCTION_INDEX,
         descriptor.message_data_offset,
-        LASTRO_SIGNED_MESSAGE_LEN,
+        message_len,
         LASTRO_INSTRUCTION_INDEX,
     ] {
         out.extend_from_slice(&value.to_le_bytes());

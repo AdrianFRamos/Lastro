@@ -7,3 +7,4 @@
 pub mod rpc;
 pub mod secp256r1;
 pub mod transaction_builder;
+pub mod v2_transaction_builder;

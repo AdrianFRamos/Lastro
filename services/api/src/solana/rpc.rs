@@ -25,6 +25,9 @@ use crate::{
     solana::transaction_builder::{
         animal_state_address, parse_program_id, protocol_config_address, rfid_binding_address,
     },
+    solana::v2_transaction_builder::{
+        v2_asset_address, v2_event_anchor_address, v2_protocol_config_address,
+    },
 };
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -50,6 +53,43 @@ pub struct CanonicalRfidBinding {
     pub status: BindingStatus,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2ProtocolConfig {
+    pub authority: Pubkey,
+    pub station_registry: Pubkey,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2EventAnchor {
+    pub event_id: [u8; 32],
+    pub deployment_id: [u8; 32],
+    pub subject_id: [u8; 32],
+    pub source_id: [u8; 32],
+    pub event_type: u16,
+    pub state_version: u64,
+    pub observed_at: i64,
+    pub expires_at: i64,
+    pub expected_previous_hash: [u8; 32],
+    pub payload_hash: [u8; 32],
+    pub event_hash: [u8; 32],
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2AssetState {
+    pub asset_id: [u8; 32],
+    pub asset_type: u8,
+    pub status: u8,
+    pub deployment_id: [u8; 32],
+    pub custodian: Pubkey,
+    pub parent_root: [u8; 32],
+    pub lineage_root: [u8; 32],
+    pub current_lot_id: [u8; 32],
+    pub available_weight_grams: u64,
+    pub event_sequence: u64,
+    pub state_version: u64,
+    pub last_event_hash: [u8; 32],
+}
+
 #[async_trait]
 pub trait SolanaRpc: Send + Sync {
     async fn protocol_station_pubkey(
@@ -66,6 +106,39 @@ pub trait SolanaRpc: Send + Sync {
         deployment_id: DeploymentId,
         rfid_hash: RfidHash,
     ) -> Result<Option<CanonicalRfidBinding>, ApiError>;
+
+    async fn v2_protocol_config(
+        &self,
+        deployment_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2ProtocolConfig>, ApiError> {
+        let _ = deployment_id;
+        Err(ApiError::Unavailable(
+            "v2 ProtocolConfig RPC is not implemented by this client".into(),
+        ))
+    }
+
+    async fn v2_event_anchor(
+        &self,
+        deployment_id: [u8; 32],
+        event_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2EventAnchor>, ApiError> {
+        let _ = (deployment_id, event_id);
+        Err(ApiError::Unavailable(
+            "v2 EventAnchor RPC is not implemented by this client".into(),
+        ))
+    }
+
+    async fn v2_asset_state(
+        &self,
+        deployment_id: [u8; 32],
+        asset_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2AssetState>, ApiError> {
+        let _ = (deployment_id, asset_id);
+        Err(ApiError::Unavailable(
+            "v2 AssetState RPC is not implemented by this client".into(),
+        ))
+    }
+
     /// Verifies the exact compiled Lastro transaction at confirmed commitment.
     async fn transaction_matches_confirmed(
         &self,
@@ -232,6 +305,45 @@ impl SolanaRpc for HttpSolanaRpc {
         decode_rfid_binding(&data, rfid_hash, expected_bump).map(Some)
     }
 
+    async fn v2_protocol_config(
+        &self,
+        deployment_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2ProtocolConfig>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) = v2_protocol_config_address(&program_id, &deployment_id);
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_protocol_config(&data, deployment_id, expected_bump).map(Some)
+    }
+
+    async fn v2_event_anchor(
+        &self,
+        deployment_id: [u8; 32],
+        event_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2EventAnchor>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) =
+            v2_event_anchor_address(&program_id, &deployment_id, &event_id);
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_event_anchor(&data, deployment_id, event_id, expected_bump).map(Some)
+    }
+
+    async fn v2_asset_state(
+        &self,
+        deployment_id: [u8; 32],
+        asset_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2AssetState>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) = v2_asset_address(&program_id, &deployment_id, &asset_id);
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_asset_state(&data, deployment_id, asset_id, expected_bump).map(Some)
+    }
+
     async fn transaction_matches_confirmed(
         &self,
         signature: &str,
@@ -337,6 +449,101 @@ fn decode_rfid_binding(
         animal_id: data[8..40].try_into().map_err(|_| ApiError::Internal)?,
         rfid_hash,
         status,
+    })
+}
+
+fn decode_v2_protocol_config(
+    data: &[u8],
+    deployment_id: [u8; 32],
+    expected_bump: u8,
+) -> Result<CanonicalV2ProtocolConfig, ApiError> {
+    let data = expect_layout(data, "ProtocolConfigV2", 221)?;
+    let stored_deployment: [u8; 32] = data[40..72].try_into().map_err(|_| ApiError::Internal)?;
+    if stored_deployment != deployment_id || data[220] != expected_bump {
+        return Err(ApiError::Conflict(
+            "canonical v2 ProtocolConfig does not match its PDA seeds".into(),
+        ));
+    }
+    Ok(CanonicalV2ProtocolConfig {
+        authority: Pubkey::new_from_array(data[8..40].try_into().map_err(|_| ApiError::Internal)?),
+        station_registry: Pubkey::new_from_array(
+            data[74..106].try_into().map_err(|_| ApiError::Internal)?,
+        ),
+    })
+}
+
+fn decode_v2_event_anchor(
+    data: &[u8],
+    deployment_id: [u8; 32],
+    event_id: [u8; 32],
+    expected_bump: u8,
+) -> Result<CanonicalV2EventAnchor, ApiError> {
+    let data = expect_layout(data, "EventAnchor", 259)?;
+    let stored_event_id: [u8; 32] = data[8..40].try_into().map_err(|_| ApiError::Internal)?;
+    let stored_deployment: [u8; 32] = data[40..72].try_into().map_err(|_| ApiError::Internal)?;
+    if stored_event_id != event_id
+        || stored_deployment != deployment_id
+        || data[258] != expected_bump
+    {
+        return Err(ApiError::Conflict(
+            "canonical v2 EventAnchor does not match its PDA seeds".into(),
+        ));
+    }
+    Ok(CanonicalV2EventAnchor {
+        event_id: stored_event_id,
+        deployment_id: stored_deployment,
+        subject_id: data[72..104].try_into().map_err(|_| ApiError::Internal)?,
+        source_id: data[104..136].try_into().map_err(|_| ApiError::Internal)?,
+        event_type: u16::from_le_bytes(data[136..138].try_into().map_err(|_| ApiError::Internal)?),
+        state_version: u64::from_le_bytes(
+            data[138..146].try_into().map_err(|_| ApiError::Internal)?,
+        ),
+        observed_at: i64::from_le_bytes(data[146..154].try_into().map_err(|_| ApiError::Internal)?),
+        expires_at: i64::from_le_bytes(data[154..162].try_into().map_err(|_| ApiError::Internal)?),
+        expected_previous_hash: data[162..194].try_into().map_err(|_| ApiError::Internal)?,
+        payload_hash: data[194..226].try_into().map_err(|_| ApiError::Internal)?,
+        event_hash: data[226..258].try_into().map_err(|_| ApiError::Internal)?,
+    })
+}
+
+fn decode_v2_asset_state(
+    data: &[u8],
+    deployment_id: [u8; 32],
+    asset_id: [u8; 32],
+    expected_bump: u8,
+) -> Result<CanonicalV2AssetState, ApiError> {
+    let data = expect_layout(data, "AssetState", 309)?;
+    let stored_asset_id: [u8; 32] = data[8..40].try_into().map_err(|_| ApiError::Internal)?;
+    let stored_deployment: [u8; 32] = data[42..74].try_into().map_err(|_| ApiError::Internal)?;
+    if stored_asset_id != asset_id
+        || stored_deployment != deployment_id
+        || data[308] != expected_bump
+    {
+        return Err(ApiError::Conflict(
+            "canonical v2 AssetState does not match its PDA seeds".into(),
+        ));
+    }
+    Ok(CanonicalV2AssetState {
+        asset_id: stored_asset_id,
+        asset_type: data[40],
+        status: data[41],
+        deployment_id: stored_deployment,
+        custodian: Pubkey::new_from_array(
+            data[74..106].try_into().map_err(|_| ApiError::Internal)?,
+        ),
+        parent_root: data[106..138].try_into().map_err(|_| ApiError::Internal)?,
+        lineage_root: data[138..170].try_into().map_err(|_| ApiError::Internal)?,
+        current_lot_id: data[170..202].try_into().map_err(|_| ApiError::Internal)?,
+        available_weight_grams: u64::from_le_bytes(
+            data[202..210].try_into().map_err(|_| ApiError::Internal)?,
+        ),
+        event_sequence: u64::from_le_bytes(
+            data[218..226].try_into().map_err(|_| ApiError::Internal)?,
+        ),
+        state_version: u64::from_le_bytes(
+            data[226..234].try_into().map_err(|_| ApiError::Internal)?,
+        ),
+        last_event_hash: data[234..266].try_into().map_err(|_| ApiError::Internal)?,
     })
 }
 

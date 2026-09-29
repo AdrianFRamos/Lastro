@@ -81,7 +81,7 @@ pub enum CaptureStatus {
     Cancelled,
 }
 
-#[derive(Clone, Copy, Debug, Deserialize, Serialize, Eq, PartialEq)]
+#[derive(Clone, Copy, Debug, Serialize, Eq, PartialEq)]
 #[serde(rename_all = "SCREAMING_SNAKE_CASE")]
 pub enum EventStatus {
     EvidenceAccepted,
@@ -282,4 +282,359 @@ pub struct LineageEdgeResponse {
     pub position: u32,
     pub quantity: u64,
     pub weight_grams: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreatePartyRequest {
+    pub party_id: Hex32,
+    pub legal_name: String,
+    pub tax_id_hash: Option<Hex32>,
+    pub wallet: Hex32,
+    pub role: u16,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PartyResponse {
+    pub party_id: Hex32,
+    pub deployment_id: Hex32,
+    pub legal_name: String,
+    pub tax_id_hash: Option<Hex32>,
+    pub wallet: Hex32,
+    pub role: u16,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateFacilityRequest {
+    pub facility_id: Hex32,
+    pub owner_party_id: Hex32,
+    pub facility_type: u16,
+    pub display_name: String,
+    pub credential_hash: Hex32,
+    pub valid_from: i64,
+    pub valid_until: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FacilityResponse {
+    pub facility_id: Hex32,
+    pub deployment_id: Hex32,
+    pub owner_party_id: Hex32,
+    pub facility_type: u16,
+    pub display_name: String,
+    pub credential_hash: Hex32,
+    pub valid_from: i64,
+    pub valid_until: i64,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct LotAssetInput {
+    pub asset_id: Hex32,
+    pub quantity: u64,
+    pub weight_grams: u64,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateLotRequest {
+    pub lot_id: Hex32,
+    pub facility_id: Hex32,
+    pub owner_party_id: Hex32,
+    pub external_reference: Option<String>,
+    pub head_count: u32,
+    pub live_weight_grams: u64,
+    pub assets: Vec<LotAssetInput>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotAssetResponse {
+    pub asset_id: Hex32,
+    pub quantity: u64,
+    pub weight_grams: u64,
+    pub role: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct LotResponse {
+    pub lot_id: Hex32,
+    pub deployment_id: Hex32,
+    pub facility_id: Hex32,
+    pub owner_party_id: Hex32,
+    pub external_reference: Option<String>,
+    pub head_count: u32,
+    pub live_weight_grams: u64,
+    pub status: String,
+    pub assets: Vec<LotAssetResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateCustodyTransferRequest {
+    pub transfer_id: Uuid,
+    pub asset_id: Hex32,
+    pub from_party_id: Option<Hex32>,
+    pub to_party_id: Hex32,
+    pub from_facility_id: Option<Hex32>,
+    pub to_facility_id: Hex32,
+    pub reason: String,
+    pub created_by_party_id: Option<Hex32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct CustodyTransferResponse {
+    pub transfer_id: Uuid,
+    pub deployment_id: Hex32,
+    pub asset_id: Hex32,
+    pub from_party_id: Option<Hex32>,
+    pub to_party_id: Hex32,
+    pub from_facility_id: Option<Hex32>,
+    pub to_facility_id: Hex32,
+    pub reason: String,
+    pub status: String,
+    pub event_id: Option<Hex32>,
+    pub tx_signature: Option<String>,
+    pub created_by_party_id: Option<Hex32>,
+    pub accepted_by_party_id: Option<Hex32>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct AcceptCustodyTransferRequest {
+    pub accepted_by_party_id: Hex32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ProcessingItemInput {
+    pub asset_id: Option<Hex32>,
+    pub direction: String,
+    pub quantity: u64,
+    pub weight_grams: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateProcessingOperationRequest {
+    pub operation_id: Hex32,
+    pub facility_id: Hex32,
+    pub lot_id: Option<Hex32>,
+    pub transformation_id: Option<Hex32>,
+    pub operator_party_id: Hex32,
+    pub operation_kind: String,
+    pub notes: Option<String>,
+    pub items: Vec<ProcessingItemInput>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingItemResponse {
+    pub position: u32,
+    pub asset_id: Option<Hex32>,
+    pub direction: String,
+    pub quantity: u64,
+    pub weight_grams: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ProcessingOperationResponse {
+    pub operation_id: Hex32,
+    pub deployment_id: Hex32,
+    pub facility_id: Hex32,
+    pub lot_id: Option<Hex32>,
+    pub transformation_id: Option<Hex32>,
+    pub operator_party_id: Hex32,
+    pub operation_kind: String,
+    pub status: String,
+    pub notes: Option<String>,
+    pub tx_signature: Option<String>,
+    pub items: Vec<ProcessingItemResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct ShipmentItemInput {
+    pub asset_id: Hex32,
+    pub quantity: u64,
+    pub weight_grams: u64,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateShipmentRequest {
+    pub shipment_id: Hex32,
+    pub origin_facility_id: Hex32,
+    pub destination_facility_id: Hex32,
+    pub carrier_party_id: Hex32,
+    pub created_by_party_id: Hex32,
+    pub planned_departure: Option<String>,
+    pub notes: Option<String>,
+    pub items: Vec<ShipmentItemInput>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetShipmentStatusRequest {
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipmentItemResponse {
+    pub position: u32,
+    pub asset_id: Hex32,
+    pub quantity: u64,
+    pub weight_grams: u64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct ShipmentResponse {
+    pub shipment_id: Hex32,
+    pub deployment_id: Hex32,
+    pub origin_facility_id: Hex32,
+    pub destination_facility_id: Hex32,
+    pub carrier_party_id: Hex32,
+    pub created_by_party_id: Hex32,
+    pub status: String,
+    pub planned_departure: Option<String>,
+    pub departed_at: Option<String>,
+    pub delivered_at: Option<String>,
+    pub notes: Option<String>,
+    pub tx_signature: Option<String>,
+    pub items: Vec<ShipmentItemResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct OpenRecallRequest {
+    pub recall_id: Hex32,
+    pub opened_by_party_id: Hex32,
+    pub scope_type: String,
+    pub scope_id: Hex32,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecallMemberResponse {
+    pub asset_id: Hex32,
+    pub traversal_depth: u32,
+    pub relation: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct RecallResponse {
+    pub recall_id: Hex32,
+    pub deployment_id: Hex32,
+    pub opened_by_party_id: Hex32,
+    pub scope_type: String,
+    pub scope_id: Hex32,
+    pub reason: String,
+    pub status: String,
+    pub snapshot_root: Hex32,
+    pub members: Vec<RecallMemberResponse>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CloseRecallRequest {
+    pub closed_by_party_id: Hex32,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct GrantAuthorityRequest {
+    pub grant_id: Uuid,
+    pub party_id: Hex32,
+    pub facility_id: Option<Hex32>,
+    pub capability: String,
+    pub granted_by_party_id: Option<Hex32>,
+    pub valid_from: i64,
+    pub valid_until: i64,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuthorityGrantResponse {
+    pub grant_id: Uuid,
+    pub deployment_id: Hex32,
+    pub party_id: Hex32,
+    pub facility_id: Option<Hex32>,
+    pub capability: String,
+    pub status: String,
+    pub granted_by_party_id: Option<Hex32>,
+    pub valid_from: i64,
+    pub valid_until: i64,
+    pub reason: Option<String>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct RevokeAuthorityRequest {
+    pub revoked_by_party_id: Option<Hex32>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SetStatusRequest {
+    pub status: String,
+    pub actor_party_id: Option<Hex32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AuditEntryResponse {
+    pub audit_id: i64,
+    pub deployment_id: Hex32,
+    pub actor_party_id: Option<Hex32>,
+    pub action: String,
+    pub resource_type: String,
+    pub resource_id: Option<Hex32>,
+    pub payload: serde_json::Value,
+    pub created_at: String,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateMigrationRunRequest {
+    pub run_id: Uuid,
+    pub requested_by_party_id: Option<Hex32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrationCandidateResponse {
+    pub source_animal_id: Hex32,
+    pub target_asset_id: Option<Hex32>,
+    pub status: String,
+    pub reason: String,
+    pub source_event_sequence: u64,
+    pub source_last_event_hash: Option<Hex32>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MigrationRunResponse {
+    pub run_id: Uuid,
+    pub deployment_id: Hex32,
+    pub requested_by_party_id: Option<Hex32>,
+    pub status: String,
+    pub source_count: u64,
+    pub eligible_count: u64,
+    pub promoted_count: u64,
+    pub rejected_count: u64,
+    pub candidates: Vec<MigrationCandidateResponse>,
 }

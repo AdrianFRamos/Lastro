@@ -10,6 +10,7 @@ pub mod db;
 pub mod domain;
 pub mod error;
 pub mod model;
+pub mod reconciliation;
 pub mod repository;
 pub mod routes;
 pub mod solana;

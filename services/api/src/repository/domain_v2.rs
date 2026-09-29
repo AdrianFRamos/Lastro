@@ -3,7 +3,9 @@
 use lastro_protocol::v2::DomainEventEnvelope;
 use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 
-use crate::{domain::v2::VerifiedDomainObservation, error::ApiError};
+use crate::{
+    domain::v2::VerifiedDomainObservation, error::ApiError, solana::rpc::CanonicalV2AssetState,
+};
 
 #[derive(Clone, Debug)]
 pub struct DomainAnchorRecord {
@@ -91,6 +93,137 @@ pub async fn find_by_event_hash(
         .await
         .map_err(db_error)?;
     row.as_ref().map(decode).transpose()
+}
+
+pub async fn mark_submitted(
+    pool: &PgPool,
+    event_hash: [u8; 32],
+    tx_signature: &str,
+) -> Result<(), ApiError> {
+    let updated = sqlx::query(
+        r#"UPDATE v2_event_anchors
+              SET status='SUBMITTED', tx_signature=$2
+            WHERE event_hash=$1
+              AND status='EVIDENCE_ACCEPTED'
+              AND (tx_signature IS NULL OR tx_signature=$2)"#,
+    )
+    .bind(event_hash.to_vec())
+    .bind(tx_signature)
+    .execute(pool)
+    .await
+    .map_err(db_error)?
+    .rows_affected();
+    if updated == 1 {
+        return Ok(());
+    }
+    let current = find_by_event_hash(pool, event_hash)
+        .await?
+        .ok_or_else(|| ApiError::NotFound("v2 event not found".into()))?;
+    if current.status == "SUBMITTED" && current.tx_signature.as_deref() == Some(tx_signature) {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(
+        "v2 event is not eligible for this transaction submission".into(),
+    ))
+}
+
+pub async fn mark_finalized(
+    pool: &PgPool,
+    event_hash: [u8; 32],
+    tx_signature: &str,
+) -> Result<(), ApiError> {
+    let updated = sqlx::query(
+        r#"UPDATE v2_event_anchors
+              SET status='FINALIZED', tx_signature=$2
+            WHERE event_hash=$1
+              AND status IN ('SUBMITTED','FINALIZED')
+              AND tx_signature=$2"#,
+    )
+    .bind(event_hash.to_vec())
+    .bind(tx_signature)
+    .execute(pool)
+    .await
+    .map_err(db_error)?
+    .rows_affected();
+    if updated == 1 {
+        return Ok(());
+    }
+    Err(ApiError::Conflict(
+        "v2 event finalization transaction does not match the accepted transaction".into(),
+    ))
+}
+
+pub async fn mark_finalized_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    event_hash: [u8; 32],
+    tx_signature: &str,
+) -> Result<(), ApiError> {
+    let updated = sqlx::query(
+        r#"UPDATE v2_event_anchors
+              SET status='FINALIZED', tx_signature=$2
+            WHERE event_hash=$1
+              AND status IN ('SUBMITTED','FINALIZED')
+              AND tx_signature=$2"#,
+    )
+    .bind(event_hash.to_vec())
+    .bind(tx_signature)
+    .execute(&mut **tx)
+    .await
+    .map_err(db_error)?
+    .rows_affected();
+    if updated == 1 {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "v2 event finalization transaction does not match the accepted transaction".into(),
+        ))
+    }
+}
+
+pub async fn upsert_asset_projection_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    asset: &CanonicalV2AssetState,
+) -> Result<(), ApiError> {
+    let result = sqlx::query(
+        r#"INSERT INTO v2_assets(
+            asset_id,deployment_id,asset_type,status,custodian,parent_root,lineage_root,
+            current_lot_id,available_weight_grams,event_sequence,state_version,last_event_hash
+        ) VALUES($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
+        ON CONFLICT (asset_id) DO UPDATE SET
+            asset_type=EXCLUDED.asset_type,
+            status=EXCLUDED.status,
+            custodian=EXCLUDED.custodian,
+            parent_root=EXCLUDED.parent_root,
+            lineage_root=EXCLUDED.lineage_root,
+            current_lot_id=EXCLUDED.current_lot_id,
+            available_weight_grams=EXCLUDED.available_weight_grams,
+            event_sequence=EXCLUDED.event_sequence,
+            state_version=EXCLUDED.state_version,
+            last_event_hash=EXCLUDED.last_event_hash,
+            updated_at=now()
+        WHERE v2_assets.deployment_id=EXCLUDED.deployment_id"#,
+    )
+    .bind(asset.asset_id.to_vec())
+    .bind(asset.deployment_id.to_vec())
+    .bind(i16::from(asset.asset_type))
+    .bind(i16::from(asset.status))
+    .bind(asset.custodian.to_bytes().to_vec())
+    .bind(asset.parent_root.to_vec())
+    .bind(asset.lineage_root.to_vec())
+    .bind(asset.current_lot_id.to_vec())
+    .bind(i64::try_from(asset.available_weight_grams).map_err(|_| ApiError::Internal)?)
+    .bind(i64::try_from(asset.event_sequence).map_err(|_| ApiError::Internal)?)
+    .bind(i64::try_from(asset.state_version).map_err(|_| ApiError::Internal)?)
+    .bind(asset.last_event_hash.to_vec())
+    .execute(&mut **tx)
+    .await
+    .map_err(db_error)?;
+    if result.rows_affected() == 0 {
+        return Err(ApiError::Conflict(
+            "v2 AssetState belongs to a different deployment projection".into(),
+        ));
+    }
+    Ok(())
 }
 
 pub async fn list_by_subject(

@@ -11,6 +11,12 @@ import type {
   Hex32,
   InstructionDto,
   LineageEdge,
+  FacilityProjection,
+  LotProjection,
+  PartyProjection,
+  ProcessingProjection,
+  RecallProjection,
+  ShipmentProjection,
   SubmissionStatus,
   TransactionData,
   TransformationProjection,
@@ -157,6 +163,63 @@ export const api = {
   getTransformation: (transformationId: Hex32) =>
     request(`/api/v2/transformations/${transformationId}`, parseTransformation),
   getLineage: (assetId: Hex32) => request(`/api/v2/assets/${assetId}/lineage`, parseLineage),
+  createParty: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/parties', parseParty, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  createFacility: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/facilities', parseFacility, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  createLot: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/lots', parseLot, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  createProcessing: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/processing', parseProcessing, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  setProcessingReady: (token: string, operationId: Hex32) =>
+    request(`/api/v2/processing/${operationId}/ready`, parseProcessing, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+    }),
+  finalizeProcessing: (token: string, operationId: Hex32) =>
+    request(`/api/v2/processing/${operationId}/finalize`, parseProcessing, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+    }),
+  createShipment: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/shipments', parseShipment, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  setShipmentStatus: (token: string, shipmentId: Hex32, status: string) =>
+    request(`/api/v2/shipments/${shipmentId}/status`, parseShipment, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify({ status }),
+    }),
+  openRecall: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/recalls', parseRecall, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+}
+
+function operatorHeaders(token: string): HeadersInit {
+  if (token.trim().length === 0) throw new Error('operator token is required')
+  return { Authorization: `Bearer ${token}` }
 }
 
 function parseAnimal(value: unknown): AnimalProjection {
@@ -343,6 +406,144 @@ function parseLineageEdge(value: unknown): LineageEdge {
   }
 }
 
+function parseParty(value: unknown): PartyProjection {
+  const record = requireRecord(value, 'Party')
+  return {
+    partyId: requireHex32(record.partyId, 'partyId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    legalName: requireString(record.legalName, 'legalName'),
+    taxIdHash: nullableHex32(record.taxIdHash, 'taxIdHash'),
+    wallet: requireHex32(record.wallet, 'wallet'),
+    role: requirePositiveSafeInteger(record.role, 'role'),
+    status: requireString(record.status, 'status'),
+  }
+}
+
+function parseFacility(value: unknown): FacilityProjection {
+  const record = requireRecord(value, 'Facility')
+  return {
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    ownerPartyId: requireHex32(record.ownerPartyId, 'ownerPartyId'),
+    facilityType: requirePositiveSafeInteger(record.facilityType, 'facilityType'),
+    displayName: requireString(record.displayName, 'displayName'),
+    credentialHash: requireHex32(record.credentialHash, 'credentialHash'),
+    validFrom: requireSafeInteger(record.validFrom, 'validFrom'),
+    validUntil: requireSafeInteger(record.validUntil, 'validUntil'),
+    status: requireString(record.status, 'status'),
+  }
+}
+
+function parseLot(value: unknown): LotProjection {
+  const record = requireRecord(value, 'Lot')
+  if (!Array.isArray(record.assets)) throw new Error('lot assets must be an array')
+  return {
+    lotId: requireHex32(record.lotId, 'lotId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    ownerPartyId: requireHex32(record.ownerPartyId, 'ownerPartyId'),
+    externalReference: nullableString(record.externalReference, 'externalReference'),
+    headCount: requirePositiveSafeInteger(record.headCount, 'headCount'),
+    liveWeightGrams: requirePositiveSafeInteger(record.liveWeightGrams, 'liveWeightGrams'),
+    status: requireString(record.status, 'status'),
+    assets: record.assets.map(parseLotAsset),
+  }
+}
+
+function parseLotAsset(value: unknown): LotProjection['assets'][number] {
+  const record = requireRecord(value, 'LotAsset')
+  return {
+    assetId: requireHex32(record.assetId, 'assetId'),
+    quantity: requirePositiveSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requirePositiveSafeInteger(record.weightGrams, 'weightGrams'),
+    role: requireString(record.role, 'role'),
+  }
+}
+
+function parseProcessing(value: unknown): ProcessingProjection {
+  const record = requireRecord(value, 'Processing')
+  if (!Array.isArray(record.items)) throw new Error('processing items must be an array')
+  return {
+    operationId: requireHex32(record.operationId, 'operationId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    lotId: nullableHex32(record.lotId, 'lotId'),
+    transformationId: nullableHex32(record.transformationId, 'transformationId'),
+    operatorPartyId: requireHex32(record.operatorPartyId, 'operatorPartyId'),
+    operationKind: requireString(record.operationKind, 'operationKind'),
+    status: requireString(record.status, 'status'),
+    notes: nullableString(record.notes, 'notes'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+    items: record.items.map(parseProcessingItem),
+  }
+}
+
+function parseProcessingItem(value: unknown): ProcessingProjection['items'][number] {
+  const record = requireRecord(value, 'ProcessingItem')
+  return {
+    position: requireSafeInteger(record.position, 'position'),
+    assetId: nullableHex32(record.assetId, 'assetId'),
+    direction: requireString(record.direction, 'direction'),
+    quantity: requirePositiveSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requirePositiveSafeInteger(record.weightGrams, 'weightGrams'),
+  }
+}
+
+function parseShipment(value: unknown): ShipmentProjection {
+  const record = requireRecord(value, 'Shipment')
+  if (!Array.isArray(record.items)) throw new Error('shipment items must be an array')
+  return {
+    shipmentId: requireHex32(record.shipmentId, 'shipmentId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    originFacilityId: requireHex32(record.originFacilityId, 'originFacilityId'),
+    destinationFacilityId: requireHex32(record.destinationFacilityId, 'destinationFacilityId'),
+    carrierPartyId: requireHex32(record.carrierPartyId, 'carrierPartyId'),
+    createdByPartyId: requireHex32(record.createdByPartyId, 'createdByPartyId'),
+    status: requireString(record.status, 'status'),
+    plannedDeparture: nullableString(record.plannedDeparture, 'plannedDeparture'),
+    departedAt: nullableString(record.departedAt, 'departedAt'),
+    deliveredAt: nullableString(record.deliveredAt, 'deliveredAt'),
+    notes: nullableString(record.notes, 'notes'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+    items: record.items.map(parseShipmentItem),
+  }
+}
+
+function parseShipmentItem(value: unknown): ShipmentProjection['items'][number] {
+  const record = requireRecord(value, 'ShipmentItem')
+  return {
+    position: requireSafeInteger(record.position, 'position'),
+    assetId: requireHex32(record.assetId, 'assetId'),
+    quantity: requirePositiveSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requirePositiveSafeInteger(record.weightGrams, 'weightGrams'),
+  }
+}
+
+function parseRecall(value: unknown): RecallProjection {
+  const record = requireRecord(value, 'Recall')
+  if (!Array.isArray(record.members)) throw new Error('recall members must be an array')
+  return {
+    recallId: requireHex32(record.recallId, 'recallId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    openedByPartyId: requireHex32(record.openedByPartyId, 'openedByPartyId'),
+    scopeType: requireString(record.scopeType, 'scopeType'),
+    scopeId: requireHex32(record.scopeId, 'scopeId'),
+    reason: requireString(record.reason, 'reason'),
+    status: requireString(record.status, 'status'),
+    snapshotRoot: requireHex32(record.snapshotRoot, 'snapshotRoot'),
+    members: record.members.map(parseRecallMember),
+  }
+}
+
+function parseRecallMember(value: unknown): RecallProjection['members'][number] {
+  const record = requireRecord(value, 'RecallMember')
+  return {
+    assetId: requireHex32(record.assetId, 'assetId'),
+    traversalDepth: requireSafeInteger(record.traversalDepth, 'traversalDepth'),
+    relation: requireString(record.relation, 'relation'),
+  }
+}
+
 function parseInstruction(value: unknown): InstructionDto {
   const record = requireRecord(value, 'Instruction')
   if (!Array.isArray(record.accounts)) throw new Error('instruction accounts must be an array')
@@ -449,6 +650,10 @@ function requireHex32(value: unknown, name: string): Hex32 {
 
 function nullableHex32(value: unknown, name: string): Hex32 | null {
   return value === null ? null : requireHex32(value, name)
+}
+
+function nullableString(value: unknown, name: string): string | null {
+  return value === null ? null : requireString(value, name)
 }
 
 function requireSafeInteger(value: unknown, name: string): number {

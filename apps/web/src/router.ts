@@ -10,6 +10,16 @@ export const router = createRouter({
     { path: '/future', name: 'future', component: () => import('./pages/FuturePage.vue') },
     { path: '/demo', name: 'demo', component: () => import('./pages/DemoPage.vue') },
     {
+      path: '/lineage/:assetId?',
+      name: 'lineage',
+      component: () => import('./pages/LineagePage.vue'),
+    },
+    {
+      path: '/operations',
+      name: 'operations',
+      component: () => import('./pages/OperationsPage.vue'),
+    },
+    {
       path: '/verify/:animalId?',
       name: 'verify',
       component: () => import('./pages/VerifyPage.vue'),

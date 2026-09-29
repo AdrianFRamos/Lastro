@@ -19,7 +19,15 @@ describe('product storytelling routes', () => {
   it('exposes the intended public information architecture', () => {
     const paths = router.getRoutes().map((route) => route.path)
     expect(paths).toEqual(
-      expect.arrayContaining(['/', '/problem', '/future', '/demo', '/verify/:animalId?']),
+      expect.arrayContaining([
+        '/',
+        '/problem',
+        '/future',
+        '/demo',
+        '/lineage/:assetId?',
+        '/operations',
+        '/verify/:animalId?',
+      ]),
     )
   })
 

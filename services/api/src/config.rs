@@ -23,6 +23,7 @@ pub struct AppConfig {
     pub bind_addr: SocketAddr,
     pub database_url: String,
     pub agent_token: String,
+    pub operator_token: Option<String>,
     pub solana_rpc_url: String,
     pub deployment_id: DeploymentId,
     pub station_pubkey33: [u8; 33],
@@ -81,6 +82,13 @@ impl AppConfig {
             ));
         }
 
+        let operator_token = lookup("LASTRO_OPERATOR_TOKEN").filter(|value| !value.trim().is_empty());
+        if operator_token.as_ref().is_some_and(|value| value.len() < 32) {
+            return Err(ApiError::Config(
+                "LASTRO_OPERATOR_TOKEN must contain at least 32 characters".into(),
+            ));
+        }
+
         let solana_rpc_url = required(&mut lookup, "LASTRO_SOLANA_RPC_URL")?;
         let parsed_rpc = reqwest::Url::parse(&solana_rpc_url).map_err(|_| {
             ApiError::Config("LASTRO_SOLANA_RPC_URL must be an absolute http(s) URL".into())
@@ -114,6 +122,7 @@ impl AppConfig {
             bind_addr,
             database_url,
             agent_token,
+            operator_token,
             solana_rpc_url,
             deployment_id,
             station_pubkey33,

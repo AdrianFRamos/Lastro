@@ -10,6 +10,7 @@
       </a>
       <div class="app-header__tools">
         <span class="network-pill">{{ webConfig.solanaChain }}</span>
+        <a class="button" href="/lineage">Explore lineage</a>
         <a class="button" href="/demo">Open Demo</a>
       </div>
     </header>

@@ -106,3 +106,120 @@ export interface LineageEdge {
   quantity: number
   weightGrams: number
 }
+
+export interface PartyProjection {
+  partyId: Hex32
+  deploymentId: Hex32
+  legalName: string
+  taxIdHash: Hex32 | null
+  wallet: Hex32
+  role: number
+  status: string
+}
+
+export interface FacilityProjection {
+  facilityId: Hex32
+  deploymentId: Hex32
+  ownerPartyId: Hex32
+  facilityType: number
+  displayName: string
+  credentialHash: Hex32
+  validFrom: number
+  validUntil: number
+  status: string
+}
+
+export interface LotAssetProjection {
+  assetId: Hex32
+  quantity: number
+  weightGrams: number
+  role: string
+}
+
+export interface LotProjection {
+  lotId: Hex32
+  deploymentId: Hex32
+  facilityId: Hex32
+  ownerPartyId: Hex32
+  externalReference: string | null
+  headCount: number
+  liveWeightGrams: number
+  status: string
+  assets: LotAssetProjection[]
+}
+
+export interface ProcessingItemProjection {
+  position: number
+  assetId: Hex32 | null
+  direction: string
+  quantity: number
+  weightGrams: number
+}
+
+export interface ProcessingProjection {
+  operationId: Hex32
+  deploymentId: Hex32
+  facilityId: Hex32
+  lotId: Hex32 | null
+  transformationId: Hex32 | null
+  operatorPartyId: Hex32
+  operationKind: string
+  status: string
+  notes: string | null
+  txSignature: string | null
+  items: ProcessingItemProjection[]
+}
+
+export interface ShipmentItemProjection {
+  position: number
+  assetId: Hex32
+  quantity: number
+  weightGrams: number
+}
+
+export interface ShipmentProjection {
+  shipmentId: Hex32
+  deploymentId: Hex32
+  originFacilityId: Hex32
+  destinationFacilityId: Hex32
+  carrierPartyId: Hex32
+  createdByPartyId: Hex32
+  status: string
+  plannedDeparture: string | null
+  departedAt: string | null
+  deliveredAt: string | null
+  notes: string | null
+  txSignature: string | null
+  items: ShipmentItemProjection[]
+}
+
+export interface RecallMemberProjection {
+  assetId: Hex32
+  traversalDepth: number
+  relation: string
+}
+
+export interface RecallProjection {
+  recallId: Hex32
+  deploymentId: Hex32
+  openedByPartyId: Hex32
+  scopeType: string
+  scopeId: Hex32
+  reason: string
+  status: string
+  snapshotRoot: Hex32
+  members: RecallMemberProjection[]
+}
+
+export interface AuthorityGrantProjection {
+  grantId: string
+  deploymentId: Hex32
+  partyId: Hex32
+  facilityId: Hex32 | null
+  capability: string
+  status: string
+  grantedByPartyId: Hex32 | null
+  validFrom: number
+  validUntil: number
+  reason: string | null
+}
