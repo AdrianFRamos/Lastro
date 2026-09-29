@@ -82,8 +82,12 @@ impl AppConfig {
             ));
         }
 
-        let operator_token = lookup("LASTRO_OPERATOR_TOKEN").filter(|value| !value.trim().is_empty());
-        if operator_token.as_ref().is_some_and(|value| value.len() < 32) {
+        let operator_token =
+            lookup("LASTRO_OPERATOR_TOKEN").filter(|value| !value.trim().is_empty());
+        if operator_token
+            .as_ref()
+            .is_some_and(|value| value.len() < 32)
+        {
             return Err(ApiError::Config(
                 "LASTRO_OPERATOR_TOKEN must contain at least 32 characters".into(),
             ));

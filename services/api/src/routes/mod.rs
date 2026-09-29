@@ -74,22 +74,13 @@ pub fn router(state: AppState) -> Router {
             "/api/v2/assets/{assetId}/lineage",
             get(transformations::lineage),
         )
-        .route(
-            "/api/v2/parties",
-            post(operations::create_party),
-        )
-        .route(
-            "/api/v2/parties/{partyId}",
-            get(operations::get_party),
-        )
+        .route("/api/v2/parties", post(operations::create_party))
+        .route("/api/v2/parties/{partyId}", get(operations::get_party))
         .route(
             "/api/v2/parties/{partyId}/status",
             post(operations::set_party_status),
         )
-        .route(
-            "/api/v2/facilities",
-            post(operations::create_facility),
-        )
+        .route("/api/v2/facilities", post(operations::create_facility))
         .route(
             "/api/v2/facilities/{facilityId}",
             get(operations::get_facility),
@@ -112,10 +103,7 @@ pub fn router(state: AppState) -> Router {
             "/api/v2/custody-transfers/{transferId}/accept",
             post(operations::accept_custody_transfer),
         )
-        .route(
-            "/api/v2/processing",
-            post(processing::create_processing),
-        )
+        .route("/api/v2/processing", post(processing::create_processing))
         .route(
             "/api/v2/processing/{operationId}",
             get(processing::get_processing),
@@ -152,10 +140,7 @@ pub fn router(state: AppState) -> Router {
             post(operations::revoke_authority_grant),
         )
         .route("/api/v2/audit", get(operations::list_audit_entries))
-        .route(
-            "/api/v2/migrations/v1/plan",
-            post(migration::plan),
-        )
+        .route("/api/v2/migrations/v1/plan", post(migration::plan))
         .route("/api/v2/migrations/{runId}", get(migration::get))
         .route(
             "/api/v2/migrations/{runId}/candidates/{animalId}/promote",

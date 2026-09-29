@@ -9,7 +9,10 @@ use sha2::{Digest, Sha256};
 use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use time::OffsetDateTime;
 
-use crate::{error::ApiError, model::{ProcessingItemInput, ShipmentItemInput}};
+use crate::{
+    error::ApiError,
+    model::{ProcessingItemInput, ShipmentItemInput},
+};
 
 #[derive(Clone, Debug)]
 pub struct ProcessingRecord {
@@ -216,7 +219,9 @@ pub async fn insert_processing_tx(
         .await
         .map_err(db_error)?;
         if !exists {
-            return Err(ApiError::NotFound("processing transformation not found".into()));
+            return Err(ApiError::NotFound(
+                "processing transformation not found".into(),
+            ));
         }
     }
 
@@ -243,12 +248,16 @@ pub async fn insert_processing_tx(
     for (position, item) in items.iter().enumerate() {
         let direction = normalize_direction(&item.direction)?;
         if item.quantity == 0 || item.weight_grams == 0 {
-            return Err(ApiError::Validation("processing quantity and weight must be positive".into()));
+            return Err(ApiError::Validation(
+                "processing quantity and weight must be positive".into(),
+            ));
         }
         let asset_id = match item.asset_id.as_deref() {
             Some(value) => {
                 if !seen.insert(value) {
-                    return Err(ApiError::Validation("processing assets must be unique".into()));
+                    return Err(ApiError::Validation(
+                        "processing assets must be unique".into(),
+                    ));
                 }
                 let asset_id = crate::model::parse_hex32("assetId", value)?;
                 let asset = sqlx::query(
@@ -262,11 +271,18 @@ pub async fn insert_processing_tx(
                 .ok_or_else(|| ApiError::NotFound("processing asset not found".into()))?;
                 let asset_type: i16 = asset.try_get("asset_type").map_err(db_error)?;
                 let available: i64 = asset.try_get("available_weight_grams").map_err(db_error)?;
-                if i64::try_from(item.weight_grams).map_err(|_| ApiError::Validation("weight is out of range".into()))? > available {
-                    return Err(ApiError::Conflict("processing weight exceeds available asset weight".into()));
+                if i64::try_from(item.weight_grams)
+                    .map_err(|_| ApiError::Validation("weight is out of range".into()))?
+                    > available
+                {
+                    return Err(ApiError::Conflict(
+                        "processing weight exceeds available asset weight".into(),
+                    ));
                 }
                 if !direction_matches_kind(direction, operation_kind, asset_type) {
-                    return Err(ApiError::Conflict("processing direction does not match asset type and operation kind".into()));
+                    return Err(ApiError::Conflict(
+                        "processing direction does not match asset type and operation kind".into(),
+                    ));
                 }
                 Some(asset_id)
             }
@@ -338,9 +354,13 @@ pub async fn finalize_processing_tx(
         return Ok(current);
     }
     if current.status != "READY_FOR_CHAIN" {
-        return Err(ApiError::Conflict("operation is not ready for canonical finalization".into()));
+        return Err(ApiError::Conflict(
+            "operation is not ready for canonical finalization".into(),
+        ));
     }
-    let transformation_id = current.transformation_id.ok_or_else(|| ApiError::Conflict("operation has no transformation".into()))?;
+    let transformation_id = current
+        .transformation_id
+        .ok_or_else(|| ApiError::Conflict("operation has no transformation".into()))?;
     let transformation = sqlx::query(
         "SELECT status,tx_signature FROM v2_transformations WHERE deployment_id=$1 AND transformation_id=$2",
     )
@@ -353,7 +373,9 @@ pub async fn finalize_processing_tx(
     let status: String = transformation.try_get("status").map_err(db_error)?;
     let tx_signature: Option<String> = transformation.try_get("tx_signature").map_err(db_error)?;
     if status != "FINALIZED" || tx_signature.is_none() {
-        return Err(ApiError::Conflict("linked transformation is not finalized on Solana".into()));
+        return Err(ApiError::Conflict(
+            "linked transformation is not finalized on Solana".into(),
+        ));
     }
     let items = sqlx::query(
         "SELECT asset_id,direction FROM v2_processing_items WHERE deployment_id=$1 AND operation_id=$2 ORDER BY position",
@@ -393,7 +415,9 @@ pub async fn finalize_processing_tx(
             .fetch_one(&mut **tx).await.map_err(db_error)?
         };
         if !exists {
-            return Err(ApiError::Conflict("processing item is not present in canonical transformation lineage".into()));
+            return Err(ApiError::Conflict(
+                "processing item is not present in canonical transformation lineage".into(),
+            ));
         }
     }
     let row = sqlx::query(
@@ -417,7 +441,9 @@ pub async fn insert_shipment_tx(
     items: &[ShipmentItemInput],
 ) -> Result<ShipmentRecord, ApiError> {
     if items.is_empty() || items.len() > 256 {
-        return Err(ApiError::Validation("shipment must contain between 1 and 256 items".into()));
+        return Err(ApiError::Validation(
+            "shipment must contain between 1 and 256 items".into(),
+        ));
     }
     ensure_active_facility_tx(tx, deployment_id, origin_facility_id).await?;
     ensure_active_facility_tx(tx, deployment_id, destination_facility_id).await?;
@@ -430,14 +456,31 @@ pub async fn insert_shipment_tx(
     .fetch_one(&mut **tx).await.map_err(map_constraint_error)?;
     let mut seen = std::collections::HashSet::new();
     for (position, item) in items.iter().enumerate() {
-        if !seen.insert(item.asset_id.as_str()) { return Err(ApiError::Validation("shipment assets must be unique".into())); }
+        if !seen.insert(item.asset_id.as_str()) {
+            return Err(ApiError::Validation(
+                "shipment assets must be unique".into(),
+            ));
+        }
         let asset_id = crate::model::parse_hex32("assetId", &item.asset_id)?;
-        if item.quantity == 0 || item.weight_grams == 0 { return Err(ApiError::Validation("shipment quantity and weight must be positive".into())); }
+        if item.quantity == 0 || item.weight_grams == 0 {
+            return Err(ApiError::Validation(
+                "shipment quantity and weight must be positive".into(),
+            ));
+        }
         let asset = sqlx::query_scalar::<_, String>(
             "SELECT status FROM v2_assets WHERE deployment_id=$1 AND asset_id=$2",
-        ).bind(deployment_id.to_vec()).bind(asset_id.to_vec()).fetch_optional(&mut **tx).await.map_err(db_error)?
-            .ok_or_else(|| ApiError::NotFound("shipment asset not found".into()))?;
-        if asset == "RECALLED" { return Err(ApiError::Conflict("recalled assets cannot be shipped".into())); }
+        )
+        .bind(deployment_id.to_vec())
+        .bind(asset_id.to_vec())
+        .fetch_optional(&mut **tx)
+        .await
+        .map_err(db_error)?
+        .ok_or_else(|| ApiError::NotFound("shipment asset not found".into()))?;
+        if asset == "RECALLED" {
+            return Err(ApiError::Conflict(
+                "recalled assets cannot be shipped".into(),
+            ));
+        }
         sqlx::query("INSERT INTO v2_shipment_items(deployment_id,shipment_id,position,asset_id,quantity,weight_grams) VALUES($1,$2,$3,$4,$5,$6)")
             .bind(deployment_id.to_vec()).bind(shipment_id.to_vec()).bind(i32::try_from(position).map_err(|_| ApiError::Internal)?)
             .bind(asset_id.to_vec()).bind(i64::try_from(item.quantity).map_err(|_| ApiError::Validation("quantity is out of range".into()))?)
@@ -453,8 +496,13 @@ pub async fn set_shipment_status_tx(
     shipment_id: [u8; 32],
     next_status: &str,
 ) -> Result<ShipmentRecord, ApiError> {
-    let allowed = match next_status { "DISPATCHED" | "IN_TRANSIT" | "DELIVERED" | "REJECTED" => true, _ => false };
-    if !allowed { return Err(ApiError::Validation("invalid shipment status".into())); }
+    let allowed = match next_status {
+        "DISPATCHED" | "IN_TRANSIT" | "DELIVERED" | "REJECTED" => true,
+        _ => false,
+    };
+    if !allowed {
+        return Err(ApiError::Validation("invalid shipment status".into()));
+    }
     let row = sqlx::query(
         "UPDATE v2_shipments SET status=$3,departed_at=CASE WHEN $3 IN ('DISPATCHED','IN_TRANSIT') AND departed_at IS NULL THEN now() ELSE departed_at END,delivered_at=CASE WHEN $3='DELIVERED' THEN now() ELSE delivered_at END,updated_at=now() WHERE deployment_id=$1 AND shipment_id=$2 AND ((status='DRAFT' AND $3='DISPATCHED') OR (status='DISPATCHED' AND $3 IN ('IN_TRANSIT','REJECTED')) OR (status='IN_TRANSIT' AND $3 IN ('DELIVERED','REJECTED'))) RETURNING shipment_id,deployment_id,origin_facility_id,destination_facility_id,carrier_party_id,created_by_party_id,status,planned_departure,departed_at,delivered_at,notes,tx_signature",
     ).bind(deployment_id.to_vec()).bind(shipment_id.to_vec()).bind(next_status).fetch_optional(&mut **tx).await.map_err(db_error)?
@@ -474,35 +522,65 @@ pub async fn open_recall_tx(
     validate_scope(scope_type)?;
     ensure_active_party_tx(tx, deployment_id, opened_by_party_id).await?;
     let seeds = seed_assets_tx(tx, deployment_id, scope_type, scope_id).await?;
-    if seeds.is_empty() { return Err(ApiError::NotFound("recall scope has no assets".into())); }
+    if seeds.is_empty() {
+        return Err(ApiError::NotFound("recall scope has no assets".into()));
+    }
     let edges = sqlx::query("SELECT parent_asset_id,child_asset_id FROM v2_lineage_edges WHERE deployment_id=$1 LIMIT 32769")
         .bind(deployment_id.to_vec()).fetch_all(&mut **tx).await.map_err(db_error)?;
-    if edges.len() > 32768 { return Err(ApiError::Conflict("lineage is too large for a bounded recall snapshot".into())); }
-    let mut graph: HashMap<[u8;32], Vec<([u8;32], &'static str)>> = HashMap::new();
+    if edges.len() > 32768 {
+        return Err(ApiError::Conflict(
+            "lineage is too large for a bounded recall snapshot".into(),
+        ));
+    }
+    let mut graph: HashMap<[u8; 32], Vec<([u8; 32], &'static str)>> = HashMap::new();
     for edge in edges {
-        let parent: [u8;32] = fixed(&edge, "parent_asset_id")?;
-        let child: [u8;32] = fixed(&edge, "child_asset_id")?;
+        let parent: [u8; 32] = fixed(&edge, "parent_asset_id")?;
+        let child: [u8; 32] = fixed(&edge, "child_asset_id")?;
         graph.entry(parent).or_default().push((child, "DOWNSTREAM"));
         graph.entry(child).or_default().push((parent, "UPSTREAM"));
     }
-    let mut members: HashMap<[u8;32], (u32, &'static str)> = HashMap::new();
+    let mut members: HashMap<[u8; 32], (u32, &'static str)> = HashMap::new();
     let mut queue = VecDeque::new();
-    for seed in seeds { members.insert(seed, (0, "ROOT")); queue.push_back(seed); }
+    for seed in seeds {
+        members.insert(seed, (0, "ROOT"));
+        queue.push_back(seed);
+    }
     while let Some(current) = queue.pop_front() {
         let (depth, _) = members[&current];
-        if depth >= 64 { continue; }
+        if depth >= 64 {
+            continue;
+        }
         for (next, relation) in graph.get(&current).into_iter().flatten() {
             let candidate = (depth + 1, *relation);
-            let replace = match members.get(next) { None => true, Some((old_depth, old_relation)) => candidate.0 < *old_depth || (candidate.0 == *old_depth && *old_relation != "ROOT" && *relation == "ROOT") };
-            if replace { members.insert(*next, candidate); queue.push_back(*next); }
+            let replace = match members.get(next) {
+                None => true,
+                Some((old_depth, old_relation)) => {
+                    candidate.0 < *old_depth
+                        || (candidate.0 == *old_depth
+                            && *old_relation != "ROOT"
+                            && *relation == "ROOT")
+                }
+            };
+            if replace {
+                members.insert(*next, candidate);
+                queue.push_back(*next);
+            }
         }
     }
-    let mut ordered: Vec<_> = members.iter().map(|(asset, (depth, relation))| (*asset, *depth, *relation)).collect();
+    let mut ordered: Vec<_> = members
+        .iter()
+        .map(|(asset, (depth, relation))| (*asset, *depth, *relation))
+        .collect();
     ordered.sort_by_key(|(asset, depth, relation)| (*asset, *depth, *relation));
     let mut hasher = Sha256::new();
     hasher.update(b"LASTRO_V2_RECALL_SNAPSHOT\0");
-    for (asset, depth, relation) in &ordered { hasher.update(asset); hasher.update(depth.to_le_bytes()); hasher.update(relation.as_bytes()); hasher.update([0]); }
-    let snapshot_root: [u8;32] = hasher.finalize().into();
+    for (asset, depth, relation) in &ordered {
+        hasher.update(asset);
+        hasher.update(depth.to_le_bytes());
+        hasher.update(relation.as_bytes());
+        hasher.update([0]);
+    }
+    let snapshot_root: [u8; 32] = hasher.finalize().into();
     let row = sqlx::query("INSERT INTO v2_recalls(recall_id,deployment_id,opened_by_party_id,scope_type,scope_id,reason,status,snapshot_root) VALUES($1,$2,$3,$4,$5,$6,'OPEN',$7) RETURNING recall_id,deployment_id,opened_by_party_id,scope_type,scope_id,reason,status,snapshot_root")
         .bind(recall_id.to_vec()).bind(deployment_id.to_vec()).bind(opened_by_party_id.to_vec()).bind(scope_type).bind(scope_id.to_vec()).bind(reason).bind(snapshot_root.to_vec()).fetch_one(&mut **tx).await.map_err(map_constraint_error)?;
     for (asset, depth, relation) in ordered {
@@ -540,11 +618,25 @@ async fn seed_assets_tx(
 }
 
 fn validate_processing_kind(kind: &str) -> Result<(), ApiError> {
-    if matches!(kind, "SLAUGHTER" | "BUTCHERY" | "PROCESSING") { Ok(()) } else { Err(ApiError::Validation("operationKind must be SLAUGHTER, BUTCHERY or PROCESSING".into())) }
+    if matches!(kind, "SLAUGHTER" | "BUTCHERY" | "PROCESSING") {
+        Ok(())
+    } else {
+        Err(ApiError::Validation(
+            "operationKind must be SLAUGHTER, BUTCHERY or PROCESSING".into(),
+        ))
+    }
 }
 
 fn normalize_direction(value: &str) -> Result<&'static str, ApiError> {
-    match value { "INPUT" => Ok("INPUT"), "OUTPUT" => Ok("OUTPUT"), "BYPRODUCT" => Ok("BYPRODUCT"), "LOSS" => Ok("LOSS"), _ => Err(ApiError::Validation("processing direction is invalid".into())) }
+    match value {
+        "INPUT" => Ok("INPUT"),
+        "OUTPUT" => Ok("OUTPUT"),
+        "BYPRODUCT" => Ok("BYPRODUCT"),
+        "LOSS" => Ok("LOSS"),
+        _ => Err(ApiError::Validation(
+            "processing direction is invalid".into(),
+        )),
+    }
 }
 
 fn direction_matches_kind(direction: &str, kind: &str, asset_type: i16) -> bool {
@@ -562,30 +654,141 @@ fn direction_matches_kind(direction: &str, kind: &str, asset_type: i16) -> bool 
 }
 
 fn validate_scope(scope_type: &str) -> Result<(), ApiError> {
-    if matches!(scope_type, "LOT" | "ANIMAL" | "TRANSFORMATION" | "PRODUCT" | "ASSET") { Ok(()) } else { Err(ApiError::Validation("scopeType is invalid".into())) }
+    if matches!(
+        scope_type,
+        "LOT" | "ANIMAL" | "TRANSFORMATION" | "PRODUCT" | "ASSET"
+    ) {
+        Ok(())
+    } else {
+        Err(ApiError::Validation("scopeType is invalid".into()))
+    }
 }
 
-async fn ensure_active_party_tx(tx: &mut Transaction<'_, Postgres>, deployment_id: [u8;32], party_id: [u8;32]) -> Result<(), ApiError> {
+async fn ensure_active_party_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    deployment_id: [u8; 32],
+    party_id: [u8; 32],
+) -> Result<(), ApiError> {
     let active = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM v2_parties WHERE deployment_id=$1 AND party_id=$2 AND status='ACTIVE')").bind(deployment_id.to_vec()).bind(party_id.to_vec()).fetch_one(&mut **tx).await.map_err(db_error)?;
-    if active { Ok(()) } else { Err(ApiError::Conflict("party is not active in this deployment".into())) }
+    if active {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "party is not active in this deployment".into(),
+        ))
+    }
 }
 
-async fn ensure_active_facility_tx(tx: &mut Transaction<'_, Postgres>, deployment_id: [u8;32], facility_id: [u8;32]) -> Result<(), ApiError> {
+async fn ensure_active_facility_tx(
+    tx: &mut Transaction<'_, Postgres>,
+    deployment_id: [u8; 32],
+    facility_id: [u8; 32],
+) -> Result<(), ApiError> {
     let active = sqlx::query_scalar::<_, bool>("SELECT EXISTS(SELECT 1 FROM v2_facilities WHERE deployment_id=$1 AND facility_id=$2 AND status='ACTIVE')").bind(deployment_id.to_vec()).bind(facility_id.to_vec()).fetch_one(&mut **tx).await.map_err(db_error)?;
-    if active { Ok(()) } else { Err(ApiError::Conflict("facility is not active in this deployment".into())) }
+    if active {
+        Ok(())
+    } else {
+        Err(ApiError::Conflict(
+            "facility is not active in this deployment".into(),
+        ))
+    }
 }
 
 fn decode_processing(row: &PgRow) -> Result<ProcessingRecord, ApiError> {
-    Ok(ProcessingRecord { operation_id: fixed(row,"operation_id")?, deployment_id: fixed(row,"deployment_id")?, facility_id: fixed(row,"facility_id")?, lot_id: optional_fixed(row,"lot_id")?, transformation_id: optional_fixed(row,"transformation_id")?, operator_party_id: fixed(row,"operator_party_id")?, operation_kind: row.try_get("operation_kind").map_err(db_error)?, status: row.try_get("status").map_err(db_error)?, notes: row.try_get("notes").map_err(db_error)?, tx_signature: row.try_get("tx_signature").map_err(db_error)? })
+    Ok(ProcessingRecord {
+        operation_id: fixed(row, "operation_id")?,
+        deployment_id: fixed(row, "deployment_id")?,
+        facility_id: fixed(row, "facility_id")?,
+        lot_id: optional_fixed(row, "lot_id")?,
+        transformation_id: optional_fixed(row, "transformation_id")?,
+        operator_party_id: fixed(row, "operator_party_id")?,
+        operation_kind: row.try_get("operation_kind").map_err(db_error)?,
+        status: row.try_get("status").map_err(db_error)?,
+        notes: row.try_get("notes").map_err(db_error)?,
+        tx_signature: row.try_get("tx_signature").map_err(db_error)?,
+    })
 }
-fn decode_processing_item(row: &PgRow) -> Result<ProcessingItemRecord, ApiError> { Ok(ProcessingItemRecord { position: unsigned_i32(row,"position")?, asset_id: optional_fixed(row,"asset_id")?, direction: row.try_get("direction").map_err(db_error)?, quantity: unsigned_i64(row,"quantity")?, weight_grams: unsigned_i64(row,"weight_grams")? }) }
-fn decode_shipment(row: &PgRow) -> Result<ShipmentRecord, ApiError> { Ok(ShipmentRecord { shipment_id: fixed(row,"shipment_id")?, deployment_id: fixed(row,"deployment_id")?, origin_facility_id: fixed(row,"origin_facility_id")?, destination_facility_id: fixed(row,"destination_facility_id")?, carrier_party_id: fixed(row,"carrier_party_id")?, created_by_party_id: fixed(row,"created_by_party_id")?, status: row.try_get("status").map_err(db_error)?, planned_departure: row.try_get("planned_departure").map_err(db_error)?, departed_at: row.try_get("departed_at").map_err(db_error)?, delivered_at: row.try_get("delivered_at").map_err(db_error)?, notes: row.try_get("notes").map_err(db_error)?, tx_signature: row.try_get("tx_signature").map_err(db_error)? }) }
-fn decode_shipment_item(row: &PgRow) -> Result<ShipmentItemRecord, ApiError> { Ok(ShipmentItemRecord { position: unsigned_i32(row,"position")?, asset_id: fixed(row,"asset_id")?, quantity: unsigned_i64(row,"quantity")?, weight_grams: unsigned_i64(row,"weight_grams")? }) }
-fn decode_recall(row: &PgRow) -> Result<RecallRecord, ApiError> { Ok(RecallRecord { recall_id: fixed(row,"recall_id")?, deployment_id: fixed(row,"deployment_id")?, opened_by_party_id: fixed(row,"opened_by_party_id")?, scope_type: row.try_get("scope_type").map_err(db_error)?, scope_id: fixed(row,"scope_id")?, reason: row.try_get("reason").map_err(db_error)?, status: row.try_get("status").map_err(db_error)?, snapshot_root: fixed(row,"snapshot_root")? }) }
-fn decode_recall_member(row: &PgRow) -> Result<RecallMemberRecord, ApiError> { Ok(RecallMemberRecord { asset_id: fixed(row,"asset_id")?, traversal_depth: unsigned_i32(row,"traversal_depth")?, relation: row.try_get("relation").map_err(db_error)? }) }
-fn fixed<const N: usize>(row: &PgRow, column: &str) -> Result<[u8;N], ApiError> { let value: Vec<u8> = row.try_get(column).map_err(db_error)?; value.try_into().map_err(|_| ApiError::Internal) }
-fn optional_fixed<const N: usize>(row: &PgRow, column: &str) -> Result<Option<[u8;N]>, ApiError> { let value: Option<Vec<u8>> = row.try_get(column).map_err(db_error)?; value.map(|bytes| bytes.try_into().map_err(|_| ApiError::Internal)).transpose() }
-fn unsigned_i32(row: &PgRow, column: &str) -> Result<u32, ApiError> { let value: i32 = row.try_get(column).map_err(db_error)?; u32::try_from(value).map_err(|_| ApiError::Internal) }
-fn unsigned_i64(row: &PgRow, column: &str) -> Result<u64, ApiError> { let value: i64 = row.try_get(column).map_err(db_error)?; u64::try_from(value).map_err(|_| ApiError::Internal) }
-fn map_constraint_error(error: sqlx::Error) -> ApiError { match error { sqlx::Error::Database(database) if database.code().as_deref()==Some("23505") => ApiError::Conflict("operational identity already exists".into()), sqlx::Error::Database(database) if database.code().as_deref()==Some("23503") => ApiError::Conflict("operational reference does not exist".into()), _ => db_error(error) } }
-fn db_error(_: sqlx::Error) -> ApiError { ApiError::Unavailable("postgres query failed".into()) }
+fn decode_processing_item(row: &PgRow) -> Result<ProcessingItemRecord, ApiError> {
+    Ok(ProcessingItemRecord {
+        position: unsigned_i32(row, "position")?,
+        asset_id: optional_fixed(row, "asset_id")?,
+        direction: row.try_get("direction").map_err(db_error)?,
+        quantity: unsigned_i64(row, "quantity")?,
+        weight_grams: unsigned_i64(row, "weight_grams")?,
+    })
+}
+fn decode_shipment(row: &PgRow) -> Result<ShipmentRecord, ApiError> {
+    Ok(ShipmentRecord {
+        shipment_id: fixed(row, "shipment_id")?,
+        deployment_id: fixed(row, "deployment_id")?,
+        origin_facility_id: fixed(row, "origin_facility_id")?,
+        destination_facility_id: fixed(row, "destination_facility_id")?,
+        carrier_party_id: fixed(row, "carrier_party_id")?,
+        created_by_party_id: fixed(row, "created_by_party_id")?,
+        status: row.try_get("status").map_err(db_error)?,
+        planned_departure: row.try_get("planned_departure").map_err(db_error)?,
+        departed_at: row.try_get("departed_at").map_err(db_error)?,
+        delivered_at: row.try_get("delivered_at").map_err(db_error)?,
+        notes: row.try_get("notes").map_err(db_error)?,
+        tx_signature: row.try_get("tx_signature").map_err(db_error)?,
+    })
+}
+fn decode_shipment_item(row: &PgRow) -> Result<ShipmentItemRecord, ApiError> {
+    Ok(ShipmentItemRecord {
+        position: unsigned_i32(row, "position")?,
+        asset_id: fixed(row, "asset_id")?,
+        quantity: unsigned_i64(row, "quantity")?,
+        weight_grams: unsigned_i64(row, "weight_grams")?,
+    })
+}
+fn decode_recall(row: &PgRow) -> Result<RecallRecord, ApiError> {
+    Ok(RecallRecord {
+        recall_id: fixed(row, "recall_id")?,
+        deployment_id: fixed(row, "deployment_id")?,
+        opened_by_party_id: fixed(row, "opened_by_party_id")?,
+        scope_type: row.try_get("scope_type").map_err(db_error)?,
+        scope_id: fixed(row, "scope_id")?,
+        reason: row.try_get("reason").map_err(db_error)?,
+        status: row.try_get("status").map_err(db_error)?,
+        snapshot_root: fixed(row, "snapshot_root")?,
+    })
+}
+fn decode_recall_member(row: &PgRow) -> Result<RecallMemberRecord, ApiError> {
+    Ok(RecallMemberRecord {
+        asset_id: fixed(row, "asset_id")?,
+        traversal_depth: unsigned_i32(row, "traversal_depth")?,
+        relation: row.try_get("relation").map_err(db_error)?,
+    })
+}
+fn fixed<const N: usize>(row: &PgRow, column: &str) -> Result<[u8; N], ApiError> {
+    let value: Vec<u8> = row.try_get(column).map_err(db_error)?;
+    value.try_into().map_err(|_| ApiError::Internal)
+}
+fn optional_fixed<const N: usize>(row: &PgRow, column: &str) -> Result<Option<[u8; N]>, ApiError> {
+    let value: Option<Vec<u8>> = row.try_get(column).map_err(db_error)?;
+    value
+        .map(|bytes| bytes.try_into().map_err(|_| ApiError::Internal))
+        .transpose()
+}
+fn unsigned_i32(row: &PgRow, column: &str) -> Result<u32, ApiError> {
+    let value: i32 = row.try_get(column).map_err(db_error)?;
+    u32::try_from(value).map_err(|_| ApiError::Internal)
+}
+fn unsigned_i64(row: &PgRow, column: &str) -> Result<u64, ApiError> {
+    let value: i64 = row.try_get(column).map_err(db_error)?;
+    u64::try_from(value).map_err(|_| ApiError::Internal)
+}
+fn map_constraint_error(error: sqlx::Error) -> ApiError {
+    match error {
+        sqlx::Error::Database(database) if database.code().as_deref() == Some("23505") => {
+            ApiError::Conflict("operational identity already exists".into())
+        }
+        sqlx::Error::Database(database) if database.code().as_deref() == Some("23503") => {
+            ApiError::Conflict("operational reference does not exist".into())
+        }
+        _ => db_error(error),
+    }
+}
+fn db_error(_: sqlx::Error) -> ApiError {
+    ApiError::Unavailable("postgres query failed".into())
+}

@@ -11,7 +11,9 @@
       </div>
       <div class="lineage-graph__legend" aria-label="Lineage legend">
         <span><i class="lineage-legend-dot lineage-legend-dot--parent" />Input</span>
-        <span><i class="lineage-legend-dot lineage-legend-dot--transformation" />Transformation</span>
+        <span
+          ><i class="lineage-legend-dot lineage-legend-dot--transformation" />Transformation</span
+        >
         <span><i class="lineage-legend-dot lineage-legend-dot--child" />Output</span>
       </div>
     </header>
@@ -26,17 +28,20 @@
         aria-label="Graph showing asset parents, transformations, and derived assets"
       >
         <defs>
-          <marker id="lineage-arrow" markerWidth="8" markerHeight="8" refX="7" refY="4" orient="auto">
+          <marker
+            id="lineage-arrow"
+            markerWidth="8"
+            markerHeight="8"
+            refX="7"
+            refY="4"
+            orient="auto"
+          >
             <path d="M0,0 L8,4 L0,8 z" class="lineage-arrow" />
           </marker>
         </defs>
 
         <g v-for="edge in renderedEdges" :key="edge.key">
-          <path
-            :d="edge.path"
-            class="lineage-edge"
-            marker-end="url(#lineage-arrow)"
-          />
+          <path :d="edge.path" class="lineage-edge" marker-end="url(#lineage-arrow)" />
           <text :x="edge.labelX" :y="edge.labelY" class="lineage-edge__label">
             {{ roleLabel(edge.role) }} · {{ formatWeight(edge.weightGrams) }}
           </text>

@@ -57,9 +57,15 @@
 
       <AppCard v-if="edges.length" class="lineage-card">
         <div class="lineage-summary">
-          <div><span>Edges</span><strong>{{ edges.length }}</strong></div>
-          <div><span>Transformations</span><strong>{{ transformationCount }}</strong></div>
-          <div><span>Weight referenced</span><strong>{{ totalWeight }}</strong></div>
+          <div>
+            <span>Edges</span><strong>{{ edges.length }}</strong>
+          </div>
+          <div>
+            <span>Transformations</span><strong>{{ transformationCount }}</strong>
+          </div>
+          <div>
+            <span>Weight referenced</span><strong>{{ totalWeight }}</strong>
+          </div>
         </div>
         <LineageGraph :edges="edges" />
       </AppCard>
@@ -83,7 +89,10 @@
               </tr>
             </thead>
             <tbody>
-              <tr v-for="edge in edges" :key="`${edge.transformationId}-${edge.position}-${edge.childAssetId}`">
+              <tr
+                v-for="edge in edges"
+                :key="`${edge.transformationId}-${edge.position}-${edge.childAssetId}`"
+              >
                 <td class="mono">{{ shortId(edge.transformationId) }}</td>
                 <td class="mono">{{ shortId(edge.parentAssetId) }}</td>
                 <td class="mono">{{ shortId(edge.childAssetId) }}</td>
@@ -114,8 +123,12 @@ const edges = ref<LineageEdge[]>([])
 const busy = ref(false)
 const message = ref('Enter an asset ID to begin.')
 const messageTone = ref<'success' | 'danger' | undefined>()
-const transformationCount = computed(() => new Set(edges.value.map((edge) => edge.transformationId)).size)
-const totalWeight = computed(() => formatWeight(edges.value.reduce((sum, edge) => sum + edge.weightGrams, 0)))
+const transformationCount = computed(
+  () => new Set(edges.value.map((edge) => edge.transformationId)).size,
+)
+const totalWeight = computed(() =>
+  formatWeight(edges.value.reduce((sum, edge) => sum + edge.weightGrams, 0)),
+)
 
 if (assetId.value) void loadLineage()
 

@@ -352,7 +352,9 @@ pub async fn insert_transfer_tx(
     .await
     .map_err(db_error)?;
     if !asset_exists {
-        return Err(ApiError::NotFound("asset not found in this deployment".into()));
+        return Err(ApiError::NotFound(
+            "asset not found in this deployment".into(),
+        ));
     }
     let row = sqlx::query(
         "INSERT INTO v2_custody_transfers(transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,created_by_party_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PROPOSED',$9) RETURNING transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id",
@@ -528,7 +530,9 @@ pub async fn list_audit(
     offset: u32,
 ) -> Result<Vec<AuditRecord>, ApiError> {
     if limit == 0 || limit > 1000 {
-        return Err(ApiError::Validation("audit limit must be between 1 and 1000".into()));
+        return Err(ApiError::Validation(
+            "audit limit must be between 1 and 1000".into(),
+        ));
     }
     let rows = sqlx::query(
         "SELECT audit_id,deployment_id,actor_party_id,action,resource_type,resource_id,payload,created_at FROM v2_audit_log WHERE deployment_id=$1 ORDER BY audit_id DESC LIMIT $2 OFFSET $3",
@@ -574,7 +578,9 @@ async fn ensure_active_party_tx(
     if found {
         Ok(())
     } else {
-        Err(ApiError::Conflict("party is not active in this deployment".into()))
+        Err(ApiError::Conflict(
+            "party is not active in this deployment".into(),
+        ))
     }
 }
 
@@ -594,7 +600,9 @@ async fn ensure_active_facility_tx(
     if found {
         Ok(())
     } else {
-        Err(ApiError::Conflict("facility is not active in this deployment".into()))
+        Err(ApiError::Conflict(
+            "facility is not active in this deployment".into(),
+        ))
     }
 }
 
@@ -719,10 +727,7 @@ fn fixed<const N: usize>(row: &PgRow, column: &str) -> Result<[u8; N], ApiError>
     value.try_into().map_err(|_| ApiError::Internal)
 }
 
-fn optional_fixed<const N: usize>(
-    row: &PgRow,
-    column: &str,
-) -> Result<Option<[u8; N]>, ApiError> {
+fn optional_fixed<const N: usize>(row: &PgRow, column: &str) -> Result<Option<[u8; N]>, ApiError> {
     let value: Option<Vec<u8>> = row.try_get(column).map_err(db_error)?;
     value
         .map(|bytes| bytes.try_into().map_err(|_| ApiError::Internal))

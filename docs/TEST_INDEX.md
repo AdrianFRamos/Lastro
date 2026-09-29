@@ -113,9 +113,9 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 ## `apps/web/tests/pages/StoryRoutes.test.ts`
 
 - L19: `exposes the intended public information architecture`
-- L32: `renders the landing paths with Demo as the primary action`
-- L50: `renders the sourced physical trust gap story`
-- L69: `separates proven functionality from the future expansion path`
+- L40: `renders the landing paths with Demo as the primary action`
+- L58: `renders the sourced physical trust gap story`
+- L77: `separates proven functionality from the future expansion path`
 
 ## `apps/web/tests/pages/VerifyPage.test.ts`
 

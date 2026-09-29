@@ -8,8 +8,8 @@ use axum::{
     extract::{Path, Query, State},
     http::{HeaderMap, StatusCode},
 };
-use serde_json::json;
 use serde::Deserialize;
+use serde_json::json;
 use time::format_description::well_known::Rfc3339;
 use uuid::Uuid;
 
@@ -89,7 +89,12 @@ pub async fn create_facility(
     let facility_id = parse_hex32("facilityId", &body.facility_id)?;
     let owner_party_id = parse_hex32("ownerPartyId", &body.owner_party_id)?;
     let credential_hash = parse_hex32("credentialHash", &body.credential_hash)?;
-    validate_facility(&body.display_name, body.facility_type, body.valid_from, body.valid_until)?;
+    validate_facility(
+        &body.display_name,
+        body.facility_type,
+        body.valid_from,
+        body.valid_until,
+    )?;
 
     let mut tx = state.db.begin().await.map_err(db_unavailable)?;
     let record = operations::insert_facility_tx(
@@ -345,12 +350,9 @@ pub async fn revoke_authority_grant(
         .ok_or_else(|| ApiError::Validation("revokedByPartyId is required".into()))
         .and_then(|value| parse_hex32("revokedByPartyId", value))?;
     let mut tx = state.db.begin().await.map_err(db_unavailable)?;
-    let record = operations::revoke_authority_grant_tx(
-        &mut tx,
-        state.config.deployment_id,
-        grant_id,
-    )
-    .await?;
+    let record =
+        operations::revoke_authority_grant_tx(&mut tx, state.config.deployment_id, grant_id)
+            .await?;
     operations::append_audit_tx(
         &mut tx,
         state.config.deployment_id,
@@ -461,9 +463,10 @@ pub async fn list_audit_entries(
 }
 
 fn authorize_operator(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
-    let token = state.config.operator_token.as_deref().ok_or_else(|| {
-        ApiError::Unavailable("operational API token is not configured".into())
-    })?;
+    let token =
+        state.config.operator_token.as_deref().ok_or_else(|| {
+            ApiError::Unavailable("operational API token is not configured".into())
+        })?;
     authorize(headers, token)
 }
 
@@ -486,17 +489,23 @@ fn validate_facility(
         || valid_from < 0
         || valid_until <= valid_from
     {
-        return Err(ApiError::Validation("facility identity or validity is invalid".into()));
+        return Err(ApiError::Validation(
+            "facility identity or validity is invalid".into(),
+        ));
     }
     Ok(())
 }
 
 fn validate_lot(body: &CreateLotRequest) -> Result<(), ApiError> {
     if body.head_count == 0 || body.live_weight_grams == 0 || body.assets.is_empty() {
-        return Err(ApiError::Validation("lot counts and assets must be positive".into()));
+        return Err(ApiError::Validation(
+            "lot counts and assets must be positive".into(),
+        ));
     }
     if body.assets.len() > 512 {
-        return Err(ApiError::Validation("lot cannot contain more than 512 assets".into()));
+        return Err(ApiError::Validation(
+            "lot cannot contain more than 512 assets".into(),
+        ));
     }
     Ok(())
 }
