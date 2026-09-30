@@ -1,0 +1,7 @@
+# Python is used only for repository/spec validation, hardware/system gates and helper scripts.
+# Keep these versions explicit so CI and local validation execute the same parsers/test runner.
+pytest==9.1.1
+PyYAML==6.0.3
+jsonschema==4.26.0
+cryptography==50.0.1
+pyserial==3.5

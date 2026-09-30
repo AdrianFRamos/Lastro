@@ -1,0 +1,46 @@
+flowchart TD
+    A[Animal vivo: ANIMAL-123] --> B[Recebimento no frigorífico]
+    B --> C{Documentos, identidade e quantidade conferidos}
+    C -->|aprovado| D[SLAUGHTER_CONFIRMED]
+    C -->|divergência| E[QUALITY_HOLD / DISPUTE]
+    D --> F[CARCASS_CREATED]
+    F --> G[CARCASS_WEIGHED]
+    G --> H[Manifesto de transformação canônico]
+    H --> I{Entradas, saídas e perdas}
+    I --> J[Carcaças de entrada]
+    I --> K[Cortes e lotes de produto]
+    I --> L[Subprodutos]
+    I --> M[Perdas e ajustes documentados]
+    J --> N[Hash do manifesto]
+    K --> N
+    L --> N
+    M --> N
+    N --> O[TransformationAnchor na Solana]
+    O --> P[PostgreSQL guarda árvore detalhada]
+    P --> Q{Embalagem e logística}
+    Q --> R[PackageUnit / caixa]
+    Q --> S[Pallet / unidade logística]
+    R --> T[Shipment criado]
+    S --> T
+    T --> U[Aceite do destino]
+    U --> V[Custódia do produto transferida]
+    V --> W[Consulta pública por QR code]
+    V --> X[Consulta autorizada e auditoria]
+    A -. origem da linhagem .-> F
+    F -. pai .-> K
+    K -. pai .-> R
+    R -. contém .-> T
+    Y[Produto ou origem em não conformidade] --> Z[PRODUCT_RECALLED]
+    Z --> Q
+    Z --> X
+    X --> AA[Recall, bloqueio e investigação reversa]
+
+    classDef animal fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
+    classDef process fill:#fff3e0,stroke:#ef6c00,color:#e65100;
+    classDef chain fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
+    classDef public fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c;
+    class A animal;
+    class B,C,D,E,F,G,H,I,J,K,L,M process;
+    class N,O,P chain;
+    class Q,R,S,T,U,V,Y,Z process;
+    class W,X,AA public;

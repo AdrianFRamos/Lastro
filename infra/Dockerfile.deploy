@@ -1,0 +1,8 @@
+# Versioned deployment bundle: the exact server-side files for one release, shipped through the
+# same registry as the application images. Extracted on the server with `docker create` +
+# `docker cp` (no shell needed in the image).
+FROM scratch
+COPY infra/compose.deploy.yml /deploy/compose.deploy.yml
+COPY infra/Caddyfile.production /deploy/Caddyfile.production
+COPY scripts/deploy_production.sh /deploy/deploy_production.sh
+COPY scripts/backup_production.sh /deploy/backup_production.sh

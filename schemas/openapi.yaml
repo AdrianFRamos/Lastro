@@ -1,0 +1,1248 @@
+openapi: 3.1.0
+info:
+  title: Lastro API
+  version: 0.1.0
+  description: Coordination, immutable-evidence ingestion and read-projection API (protocol
+    v2). Custody and the current RFID binding are canonical in the Lastro v2 Solana program,
+    not PostgreSQL. JSON request bodies are capped at 1024 bytes on protocol routes.
+servers:
+- url: http://127.0.0.1:8080
+paths:
+  /api/health:
+    get:
+      operationId: health
+      responses:
+        '200':
+          description: Process is alive; dependency status is reported without hiding degradation.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/HealthResponse'
+  /api/captures/authorization-challenge:
+    post:
+      operationId: createCaptureAuthorizationChallenge
+      description: Creates a short-lived one-time message bound to the exact capture intent
+        and canonical wallet authority. The returned message must be signed before physical
+        Station work can be reserved.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CaptureIntentRequest'
+      responses:
+        '201':
+          description: One-time capture authorization challenge issued.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/CaptureAuthorizationChallenge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/captures:
+    post:
+      operationId: createCapture
+      description: Verifies and consumes one short-lived wallet authorization for the exact
+        capture intent before reserving physical Station work. Final custody authority is
+        still enforced independently by the Lastro Solana transaction.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateCaptureRequest'
+      responses:
+        '201':
+          description: New capture context reserved.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '200':
+          description: Exact idempotent retry returned the existing accepted/submitted capture.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/captures/{captureId}:
+    get:
+      operationId: getCapture
+      parameters:
+      - in: path
+        name: captureId
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '200':
+          description: Public capture lifecycle state used by DemoPage polling.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Capture'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/agent/commands:
+    get:
+      operationId: pollAgentCommand
+      security:
+      - AgentToken: []
+      responses:
+        '200':
+          description: One claimed command or JSON null when no command is available.
+          content:
+            application/json:
+              schema:
+                oneOf:
+                - $ref: '#/components/schemas/AgentCommand'
+                - type: 'null'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/agent/evidence:
+    post:
+      operationId: submitAgentEvidence
+      security:
+      - AgentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AgentEvidence'
+      responses:
+        '201':
+          description: New immutable evidence accepted.
+        '200':
+          description: Exact idempotent duplicate already accepted.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/agent/observations:
+    post:
+      operationId: ingestV2Observation
+      description: Authenticated Agent admission of a signed 220-byte domain envelope. The
+        API validates the Station signature and stores immutable evidence; it does not claim
+        that the event is finalized on Solana.
+      security:
+      - AgentToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DomainObservationRequest'
+      responses:
+        '201':
+          description: New v2 evidence accepted.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '200':
+          description: Exact idempotent duplicate returned.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/events/{eventHash}:
+    get:
+      operationId: getV2Event
+      parameters:
+      - $ref: '#/components/parameters/EventHash'
+      responses:
+        '200':
+          description: Public immutable v2 event evidence and current processing status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/assets/{assetId}/timeline:
+    get:
+      operationId: getV2AssetTimeline
+      parameters:
+      - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Chronological v2 event anchors for one subject.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 256
+                items:
+                  $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v2/transformations/{transformationId}:
+    get:
+      operationId: getV2Transformation
+      parameters:
+      - name: transformationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: Public transformation commitment and lifecycle status.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transformation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/transformations:
+    post:
+      operationId: registerV2Transformation
+      description: Operator registration of a transformation manifest. The API derives Merkle
+        roots, counts and mass totals from the submitted lineage leaves and returns per-leaf
+        Merkle proofs for the facility wallet's on-chain instructions.
+      security:
+      - OperatorToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+      responses:
+        '201':
+          description: Stored manifest with input and output proofs.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/v2/transformations/{transformationId}/sync:
+    post:
+      operationId: syncV2Transformation
+      description: Mirrors the finalized on-chain TransformationAnchor. FINALIZED requires
+        the facility owner's finalized finalize_transformation signature.
+      parameters:
+      - name: transformationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              properties:
+                txSignature:
+                  $ref: '#/components/schemas/SolanaSignature'
+      responses:
+        '200':
+          description: Projection updated from finalized Solana state.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Transformation'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/custody-transfers/{transferId}/transaction-data:
+    get:
+      operationId: getV2CustodyTransferTransaction
+      description: Wallet transaction for one phase of a two-phase custody transfer. phase=propose
+        is signed by the current on-chain custodian; phase=accept by the recipient wallet.
+      parameters:
+      - name: transferId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: phase
+        in: query
+        required: true
+        schema:
+          type: string
+          enum:
+          - propose
+          - accept
+      responses:
+        '200':
+          description: Inspectable transaction descriptors; the API never signs.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/custody-transfers/{transferId}/accept:
+    post:
+      operationId: acceptV2CustodyTransfer
+      description: Records acceptance only after the recipient-signed accept_custody_transfer
+        is finalized and the canonical custodian is the recipient. No operator authority involved.
+      parameters:
+      - name: transferId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - txSignature
+              additionalProperties: false
+              properties:
+                txSignature:
+                  $ref: '#/components/schemas/SolanaSignature'
+      responses:
+        '200':
+          description: Transfer accepted from finalized Solana state.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/assets/{assetId}/lineage:
+    get:
+      operationId: getV2AssetLineage
+      parameters:
+      - $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Public transformation edges touching the asset.
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 256
+                items:
+                  $ref: '#/components/schemas/LineageEdge'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+  /api/agent/evidence/{eventHash}:
+    get:
+      operationId: getAgentEvidenceStatus
+      security:
+      - AgentToken: []
+      parameters:
+      - &id001
+        $ref: '#/components/parameters/EventHash'
+      responses:
+        '200':
+          description: Lifecycle of evidence the Agent delivered.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AgentEvidenceStatus'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/events/{eventHash}/transaction-data:
+    get:
+      operationId: getV2EventTransactionData
+      description: Secp256r1 precompile instruction followed by the Lastro v2 instruction
+        for the event type (bind_identifier, replace_identifier or record_observation).
+      parameters:
+      - *id001
+      responses:
+        '200':
+          description: Inspectable ordered instructions required by the wallet client.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/events/{eventHash}/submit:
+    post:
+      operationId: submitV2EventTransaction
+      description: Persists a transaction signature only after confirmed RPC proves the exact
+        Lastro transaction. This endpoint never advances the local projection.
+      parameters:
+      - *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmEventRequest'
+      responses:
+        '200':
+          description: Exact transaction verified at confirmed commitment and stored as SUBMITTED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/events/{eventHash}/confirm:
+    post:
+      operationId: confirmV2Event
+      parameters:
+      - *id001
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConfirmEventRequest'
+      responses:
+        '200':
+          description: Finalized EventAnchor (and RFID state for identity events) verified;
+            event is FINALIZED.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DomainEventAnchor'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/assets/transaction-data:
+    post:
+      operationId: getRegisterAssetTransactionData
+      description: Builds the register_asset transaction for the deployment authority. Nothing
+        is stored; the asset exists only once the transaction is finalized.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/RegisterAssetRequest'
+      responses:
+        '200':
+          description: Inspectable register_asset transaction.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TransactionData'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/assets/by-rfid/{rfidHash}:
+    get:
+      operationId: getAssetByRfid
+      description: Resolves a canonical RFID hash through the on-chain RfidBinding. Tags are
+        never reused, so a RETIRED tag still resolves to the asset it once identified.
+      parameters:
+      - in: path
+        name: rfidHash
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: Asset the tag identifies or identified.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/RfidLookup'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/assets/{assetId}:
+    get:
+      operationId: getAsset
+      parameters:
+      - &id002
+        $ref: '#/components/parameters/AssetId'
+      responses:
+        '200':
+          description: Canonical AssetState read at finalized commitment.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/assets/{assetId}/sync:
+    post:
+      operationId: syncAsset
+      parameters:
+      - *id002
+      responses:
+        '200':
+          description: Local projection mirrored from the finalized AssetState.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Asset'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/assets/{assetId}/evidence-package:
+    get:
+      operationId: getEvidencePackage
+      parameters:
+      - *id002
+      responses:
+        '200':
+          description: Portable proof bundle for independent verification against Solana.
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/EvidencePackage'
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+components:
+  securitySchemes:
+    AgentToken:
+      type: http
+      scheme: bearer
+    OperatorToken:
+      type: http
+      scheme: bearer
+  parameters:
+    EventHash:
+      in: path
+      name: eventHash
+      required: true
+      schema:
+        $ref: '#/components/schemas/Hex32'
+    AssetId:
+      in: path
+      name: assetId
+      required: true
+      schema:
+        $ref: '#/components/schemas/Hex32'
+  schemas:
+    Hex32:
+      type: string
+      pattern: ^[0-9a-f]{64}$
+    Hex33:
+      type: string
+      pattern: ^[0-9a-f]{66}$
+    Hex64:
+      type: string
+      pattern: ^[0-9a-f]{128}$
+    DomainObservationRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - envelopeBytesBase64
+      - stationPubkeyHex
+      - stationSignatureHex
+      properties:
+        envelopeBytesBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 296
+          maxLength: 296
+        stationPubkeyHex:
+          $ref: '#/components/schemas/Hex33'
+        stationSignatureHex:
+          $ref: '#/components/schemas/Hex64'
+    DomainEventStatus:
+      type: string
+      enum:
+      - EVIDENCE_ACCEPTED
+      - SUBMITTED
+      - FINALIZED
+      - REJECTED
+    DomainEventAnchor:
+      type: object
+      additionalProperties: false
+      required:
+      - eventId
+      - eventHash
+      - deploymentId
+      - subjectId
+      - sourceId
+      - eventType
+      - stateVersion
+      - observedAt
+      - expiresAt
+      - expectedPreviousHash
+      - payloadHash
+      - envelopeBytesBase64
+      - stationPubkeyHex
+      - stationSignatureHex
+      - status
+      properties:
+        eventId:
+          $ref: '#/components/schemas/Hex32'
+        eventHash:
+          $ref: '#/components/schemas/Hex32'
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        subjectId:
+          $ref: '#/components/schemas/Hex32'
+        sourceId:
+          $ref: '#/components/schemas/Hex32'
+        eventType:
+          type: integer
+          minimum: 1
+          maximum: 19
+        stateVersion:
+          type: integer
+          minimum: 0
+        observedAt:
+          type: integer
+          minimum: 0
+        expiresAt:
+          type: integer
+          minimum: 0
+        expectedPreviousHash:
+          $ref: '#/components/schemas/Hex32'
+        payloadHash:
+          $ref: '#/components/schemas/Hex32'
+        envelopeBytesBase64: &id005
+          type: string
+          contentEncoding: base64
+          minLength: 296
+          maxLength: 296
+          pattern: ^[A-Za-z0-9+/]{294}==$
+        stationPubkeyHex:
+          $ref: '#/components/schemas/Hex33'
+        stationSignatureHex:
+          $ref: '#/components/schemas/Hex64'
+        status:
+          $ref: '#/components/schemas/DomainEventStatus'
+        txSignature:
+          oneOf:
+          - type: string
+          - type: 'null'
+        observedRfidHex:
+          oneOf:
+          - &id006
+            type: string
+            pattern: ^[0-9a-f]{16}$
+          - type: 'null'
+          description: Canonical RFID the Station read (captured events only).
+    Transformation:
+      type: object
+      additionalProperties: false
+      required:
+      - transformationId
+      - deploymentId
+      - facilityId
+      - transformationType
+      - inputRoot
+      - outputRoot
+      - inputCount
+      - outputCount
+      - inputWeightGrams
+      - outputWeightGrams
+      - byproductWeightGrams
+      - lossWeightGrams
+      - toleranceBasisPoints
+      - manifestNonce
+      - manifestHash
+      - manifestBytesBase64
+      - status
+      - sequence
+      - expiresAt
+      properties:
+        transformationId:
+          $ref: '#/components/schemas/Hex32'
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        facilityId:
+          $ref: '#/components/schemas/Hex32'
+        transformationType:
+          type: integer
+          minimum: 1
+        inputRoot:
+          $ref: '#/components/schemas/Hex32'
+        outputRoot:
+          $ref: '#/components/schemas/Hex32'
+        inputCount:
+          type: integer
+          minimum: 1
+        outputCount:
+          type: integer
+          minimum: 1
+        inputWeightGrams:
+          type: integer
+          minimum: 0
+        outputWeightGrams:
+          type: integer
+          minimum: 0
+        byproductWeightGrams:
+          type: integer
+          minimum: 0
+        lossWeightGrams:
+          type: integer
+          minimum: 0
+        toleranceBasisPoints:
+          type: integer
+          minimum: 0
+          maximum: 1000
+        manifestNonce:
+          type: integer
+          minimum: 0
+        manifestHash:
+          $ref: '#/components/schemas/Hex32'
+        manifestBytesBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 252
+          maxLength: 252
+        status:
+          type: string
+          enum:
+          - OPEN
+          - FINALIZING
+          - FINALIZED
+          - ABORTED
+          - EXPIRED
+        sequence:
+          type: integer
+          minimum: 0
+        expiresAt:
+          type: integer
+          minimum: 0
+        txSignature:
+          oneOf:
+          - type: string
+          - type: 'null'
+    LineageEdge:
+      type: object
+      additionalProperties: false
+      required:
+      - transformationId
+      - parentAssetId
+      - childAssetId
+      - role
+      - position
+      - quantity
+      - weightGrams
+      properties:
+        transformationId:
+          $ref: '#/components/schemas/Hex32'
+        parentAssetId:
+          $ref: '#/components/schemas/Hex32'
+        childAssetId:
+          $ref: '#/components/schemas/Hex32'
+        role:
+          type: integer
+          minimum: 1
+          maximum: 4
+        position:
+          type: integer
+          minimum: 0
+        quantity:
+          type: integer
+          minimum: 0
+        weightGrams:
+          type: integer
+          minimum: 0
+    Base58Address:
+      type: string
+      pattern: ^[1-9A-HJ-NP-Za-km-z]{32,44}$
+    HealthResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      - database
+      - rpc
+      properties:
+        status:
+          type: string
+          enum:
+          - ok
+          - degraded
+        database:
+          type: string
+          enum:
+          - ok
+          - error
+        rpc:
+          type: string
+          enum:
+          - ok
+          - error
+    CaptureIntentRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - action
+      - assetId
+      properties:
+        action: &id003
+          type: string
+          enum:
+          - BIND_IDENTIFIER
+          - REPLACE_IDENTIFIER
+          - OBSERVE_PRESENCE
+        assetId:
+          $ref: '#/components/schemas/Hex32'
+      description: BIND_IDENTIFIER requires an asset without RFID; REPLACE_IDENTIFIER and
+        OBSERVE_PRESENCE require an active RFID. All captures are authorized by the asset's
+        current custodian.
+    CaptureAuthorizationProof:
+      type: object
+      additionalProperties: false
+      required:
+      - challengeId
+      - signatureBase64
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        signatureBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 88
+          maxLength: 88
+          pattern: ^[A-Za-z0-9+/]{86}==$
+    CaptureAuthorizationChallenge:
+      type: object
+      additionalProperties: false
+      required:
+      - challengeId
+      - deploymentId
+      - requiredSigner
+      - messageBase64
+      - expiresAtUnix
+      properties:
+        challengeId:
+          type: string
+          format: uuid
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        requiredSigner:
+          $ref: '#/components/schemas/Base58Address'
+        messageBase64:
+          type: string
+          contentEncoding: base64
+          minLength: 4
+          maxLength: 1368
+        expiresAtUnix:
+          type: integer
+          minimum: 1
+    CreateCaptureRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - action
+      - assetId
+      - authorization
+      properties:
+        action: *id003
+        assetId:
+          $ref: '#/components/schemas/Hex32'
+        authorization:
+          $ref: '#/components/schemas/CaptureAuthorizationProof'
+    Capture:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - action
+      - assetId
+      - stateVersion
+      - status
+      - eventHash
+      - eventStatus
+      - txSignature
+      properties:
+        captureId:
+          type: string
+          format: uuid
+        action: *id003
+        assetId:
+          $ref: '#/components/schemas/Hex32'
+        stateVersion:
+          type: integer
+          minimum: 1
+        status:
+          type: string
+          enum:
+          - PENDING
+          - DISPATCHED
+          - EVIDENCE_ACCEPTED
+          - EXPIRED
+          - CANCELLED
+        eventHash:
+          oneOf:
+          - $ref: '#/components/schemas/Hex32'
+          - type: 'null'
+          description: Immutable accepted event hash; null until evidence admission.
+        eventStatus:
+          oneOf:
+          - $ref: '#/components/schemas/DomainEventStatus'
+          - type: 'null'
+          description: Event lifecycle; separate from the physical capture lifecycle.
+        txSignature:
+          oneOf:
+          - type: string
+            minLength: 32
+          - type: 'null'
+          description: Present only after exact transaction verification at confirmed commitment.
+    AgentCommand:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - eventType
+      - deploymentId
+      - assetId
+      - stateVersion
+      - previousEventHash
+      - expectedRfidHash
+      - observedAt
+      - expiresAt
+      description: Context for the 202-byte Station COMMAND. The event id is derived from
+        captureId by every party. The Station reads the RFID itself; the backend never supplies
+        the observed or new tag.
+      properties:
+        captureId:
+          type: string
+          format: uuid
+        eventType:
+          type: string
+          enum:
+          - IDENTIFIER_BOUND
+          - IDENTIFIER_REPLACED
+          - OBSERVATION_RECORDED
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        assetId:
+          $ref: '#/components/schemas/Hex32'
+        stateVersion:
+          type: integer
+          minimum: 1
+        previousEventHash:
+          $ref: '#/components/schemas/Hex32'
+        expectedRfidHash:
+          $ref: '#/components/schemas/Hex32'
+          description: Current on-chain RFID hash; all zeros when the asset has none.
+        observedAt: &id004
+          type: integer
+          minimum: 0
+        expiresAt: *id004
+    AgentEvidence:
+      type: object
+      additionalProperties: false
+      required:
+      - captureId
+      - envelopeBase64
+      - observedRfidHex
+      - stationPubkeyHex
+      - stationSignatureHex
+      properties:
+        captureId:
+          type: string
+          format: uuid
+        envelopeBase64: *id005
+        observedRfidHex: *id006
+        stationPubkeyHex:
+          $ref: '#/components/schemas/Hex33'
+        stationSignatureHex:
+          $ref: '#/components/schemas/Hex64'
+    AccountMeta:
+      type: object
+      additionalProperties: false
+      required:
+      - address
+      - isSigner
+      - isWritable
+      properties:
+        address:
+          $ref: '#/components/schemas/Base58Address'
+        isSigner:
+          type: boolean
+        isWritable:
+          type: boolean
+    Instruction:
+      type: object
+      additionalProperties: false
+      required:
+      - programId
+      - accounts
+      - dataBase64
+      properties:
+        programId:
+          $ref: '#/components/schemas/Base58Address'
+        accounts:
+          type: array
+          items:
+            $ref: '#/components/schemas/AccountMeta'
+        dataBase64:
+          type: string
+          contentEncoding: base64
+    TransactionData:
+      type: object
+      additionalProperties: false
+      required:
+      - requiredSigner
+      - lastroProgramId
+      - instructions
+      - measuredSerializedBytes
+      - transactionVersion
+      properties:
+        requiredSigner:
+          $ref: '#/components/schemas/Base58Address'
+        lastroProgramId:
+          $ref: '#/components/schemas/Base58Address'
+        instructions:
+          type: array
+          minItems: 1
+          maxItems: 4
+          items:
+            $ref: '#/components/schemas/Instruction'
+          description: 'Station events: index 0 Secp256r1 precompile, index 1 Lastro v2 instruction.
+            Wallet-only instructions (register_asset, custody) carry a single Lastro instruction.
+            Up to two trailing account-less ComputeBudget instructions may follow (priority
+            fee, capped at 200000 lamports by the browser).'
+        measuredSerializedBytes:
+          type: integer
+          minimum: 1
+          maximum: 1232
+        transactionVersion:
+          type: string
+          enum:
+          - legacy
+          - v0
+    ConfirmEventRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - txSignature
+      properties:
+        txSignature:
+          $ref: '#/components/schemas/SolanaSignature'
+    ErrorResponse:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - message
+      properties:
+        code:
+          type: string
+        message:
+          type: string
+    SolanaSignature:
+      type: string
+      minLength: 64
+      maxLength: 88
+      pattern: ^[1-9A-HJ-NP-Za-km-z]+$
+    AgentEvidenceStatus:
+      type: object
+      additionalProperties: false
+      required:
+      - status
+      properties:
+        status:
+          type: string
+          enum:
+          - EVIDENCE_ACCEPTED
+          - SUBMITTED
+          - FINALIZED
+    RegisterAssetRequest:
+      type: object
+      additionalProperties: false
+      required:
+      - assetId
+      - custodian
+      - assetType
+      - availableWeightGrams
+      properties:
+        assetId:
+          $ref: '#/components/schemas/Hex32'
+        custodian:
+          $ref: '#/components/schemas/Hex32'
+          description: Initial custodian wallet, 32-byte hex.
+        assetType:
+          type: integer
+          minimum: 1
+          maximum: 255
+        availableWeightGrams: *id004
+    Asset:
+      type: object
+      additionalProperties: false
+      required:
+      - assetId
+      - assetType
+      - status
+      - custodian
+      - stateVersion
+      - eventSequence
+      - lastEventHash
+      - currentRfidHash
+      - availableWeightGrams
+      properties:
+        assetId:
+          $ref: '#/components/schemas/Hex32'
+        assetType: *id004
+        status: *id004
+        custodian:
+          $ref: '#/components/schemas/Hex32'
+        stateVersion: *id004
+        eventSequence: *id004
+        lastEventHash:
+          $ref: '#/components/schemas/Hex32'
+        currentRfidHash:
+          oneOf:
+          - $ref: '#/components/schemas/Hex32'
+          - type: 'null'
+          description: Null until an RFID is bound.
+        availableWeightGrams: *id004
+    RfidLookup:
+      type: object
+      additionalProperties: false
+      required:
+      - rfidHash
+      - bindingStatus
+      - asset
+      properties:
+        rfidHash:
+          $ref: '#/components/schemas/Hex32'
+        bindingStatus:
+          type: string
+          enum:
+          - ACTIVE
+          - RETIRED
+        asset:
+          $ref: '#/components/schemas/Asset'
+    CustodyProof:
+      type: object
+      additionalProperties: false
+      required:
+      - transferId
+      - newCustodian
+      - txSignature
+      properties:
+        transferId:
+          type: string
+          format: uuid
+        newCustodian:
+          $ref: '#/components/schemas/Hex32'
+        txSignature:
+          $ref: '#/components/schemas/SolanaSignature'
+    EvidencePackage:
+      type: object
+      additionalProperties: false
+      required:
+      - schema
+      - deploymentId
+      - lastroProgramId
+      - asset
+      - events
+      - custodyTransfers
+      properties:
+        schema:
+          const: lastro.evidence-package.v2
+        deploymentId:
+          $ref: '#/components/schemas/Hex32'
+        lastroProgramId:
+          $ref: '#/components/schemas/Base58Address'
+        asset:
+          $ref: '#/components/schemas/Asset'
+        events:
+          type: array
+          items:
+            $ref: '#/components/schemas/DomainEventAnchor'
+          description: Finalized Station events in state-version order.
+        custodyTransfers:
+          type: array
+          items:
+            $ref: '#/components/schemas/CustodyProof'
+  responses:
+    BadRequest:
+      description: Input or representation is invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Conflict:
+      description: Request conflicts with immutable, canonical or capture state.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    NotFound:
+      description: Resource not found.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unauthorized:
+      description: Agent bearer token missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Unavailable:
+      description: Required canonical dependency is unavailable.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    PayloadTooLarge:
+      description: JSON request exceeds the application-wide 1024-byte request-body limit.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'

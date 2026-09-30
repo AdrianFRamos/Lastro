@@ -1,0 +1,430 @@
+use std::time::Duration;
+
+use bytes::Bytes;
+use lastro_protocol::{
+    crypto::{derive_station_id, verify_station_signature_bytes},
+    v2::{DomainEventEnvelope, EventType, capture_envelope},
+};
+use tokio::time::{sleep, timeout};
+
+const MAX_RETRY_BACKOFF: Duration = Duration::from_secs(30);
+
+use crate::{
+    api_client::{ApiClient, EvidenceStatus},
+    command::StationCommand,
+    error::AgentError,
+    serial::{
+        StationTransport,
+        frame::{Frame, MessageType},
+        payload::{
+            AckPayload, EventReadyPayload, decode_error, decode_event_ready, encode_ack,
+            encode_command,
+        },
+    },
+    spool::{
+        Spool,
+        model::{DomainOutboxRow, DomainOutboxState, OutboxRow, OutboxState},
+    },
+};
+
+/// Run one Station capture at a time. Evidence reaches durable LOCAL state before ACK or HTTP.
+pub async fn run<T: StationTransport>(
+    mut transport: T,
+    spool: &Spool,
+    api: &ApiClient,
+    expected_station_pubkey33: [u8; 33],
+    poll_interval: Duration,
+    station_response_timeout: Duration,
+) -> Result<(), AgentError> {
+    replay_durable_acks(&mut transport, spool, &expected_station_pubkey33).await?;
+    loop {
+        match retry_domain_pending_once(spool, api, poll_interval).await {
+            Ok(true) => {
+                sleep(poll_interval).await;
+                continue;
+            }
+            Ok(false) => {}
+            Err(AgentError::Api(message)) => {
+                tracing::warn!(error = %message, "Agent v2 API retry pass failed transiently; retrying");
+                sleep(poll_interval).await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+        match retry_pending_once(spool, api, poll_interval).await {
+            Ok(true) => {
+                sleep(poll_interval).await;
+                continue;
+            }
+            Ok(false) => {}
+            Err(AgentError::Api(message)) => {
+                tracing::warn!(error = %message, "Agent API retry pass failed transiently; retrying");
+                sleep(poll_interval).await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        }
+
+        let command = match api.poll_command().await {
+            Ok(command) => command,
+            Err(AgentError::Api(message)) => {
+                tracing::warn!(error = %message, "Agent command poll failed transiently; retrying");
+                sleep(poll_interval).await;
+                continue;
+            }
+            Err(error) => return Err(error),
+        };
+        let Some(command) = command else {
+            sleep(poll_interval).await;
+            continue;
+        };
+        match process_capture(
+            &mut transport,
+            spool,
+            api,
+            &expected_station_pubkey33,
+            station_response_timeout,
+            &command,
+        )
+        .await
+        {
+            Ok(()) => {}
+            Err(AgentError::Serial(message)) | Err(AgentError::Station(message)) => {
+                tracing::warn!(error = %message, "Station capture did not complete; polling for recovery");
+                sleep(poll_interval).await;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+}
+
+/// Replay ACK after process restart for all durable pending evidence, whether it is still LOCAL
+/// or has already advanced to SERVER. A duplicate ACK is safe: the Station accepts it only when
+/// capture_id and event_hash match its current WAIT_ACK evidence. Replaying SERVER rows closes the
+/// window where the host write succeeded and HTTP acceptance completed but the Station lost the ACK.
+pub async fn replay_durable_acks<T: StationTransport>(
+    transport: &mut T,
+    spool: &Spool,
+    expected_station_pubkey33: &[u8; 33],
+) -> Result<usize, AgentError> {
+    let mut sent = 0usize;
+    for row in spool.pending().await? {
+        if !matches!(row.state, OutboxState::Local | OutboxState::Server) {
+            continue;
+        }
+        if &row.station_pubkey != expected_station_pubkey33 {
+            return Err(AgentError::Contract(
+                "durable LOCAL evidence Station public key does not match configured Station"
+                    .into(),
+            ));
+        }
+        let ack = AckPayload {
+            capture_id: row.capture_id,
+            event_hash: row.event_hash,
+        };
+        transport
+            .send(Frame {
+                message_type: MessageType::Ack,
+                payload: Bytes::copy_from_slice(&encode_ack(&ack)),
+            })
+            .await?;
+        sent += 1;
+    }
+    Ok(sent)
+}
+
+/// Returns true when at least one retryable API failure remains pending.
+pub async fn retry_pending_once(
+    spool: &Spool,
+    api: &ApiClient,
+    base_delay: Duration,
+) -> Result<bool, AgentError> {
+    let mut retryable_failure = false;
+    for row in spool.pending().await? {
+        let delay = retry_delay(base_delay, row.attempts);
+        if !delay.is_zero() {
+            sleep(delay).await;
+        }
+
+        let result = match row.state {
+            OutboxState::Local => api
+                .post_evidence(&row)
+                .await
+                .map(|()| Some(OutboxState::Server)),
+            OutboxState::Server => api.evidence_status(&row.event_hash).await.map(|status| {
+                if status == EvidenceStatus::Finalized {
+                    Some(OutboxState::Finalized)
+                } else {
+                    None
+                }
+            }),
+            OutboxState::Finalized | OutboxState::Quarantined => Ok(None),
+        };
+
+        match result {
+            Ok(Some(next_state)) => spool.advance(row.capture_id, next_state).await?,
+            Ok(None) => {}
+            Err(AgentError::Api(message)) => {
+                spool.record_failure(row.capture_id, &message).await?;
+                retryable_failure = true;
+            }
+            Err(AgentError::ApiTerminal(message)) => {
+                spool.quarantine(row.capture_id, &message).await?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(retryable_failure)
+}
+
+/// Retry v2 domain evidence independently from the capture outbox.
+pub async fn retry_domain_pending_once(
+    spool: &Spool,
+    api: &ApiClient,
+    base_delay: Duration,
+) -> Result<bool, AgentError> {
+    let mut retryable_failure = false;
+    for row in spool.pending_domain().await? {
+        let delay = retry_delay(base_delay, row.attempts);
+        if !delay.is_zero() {
+            sleep(delay).await;
+        }
+        match api.post_domain_observation(&row).await {
+            Ok(()) => {
+                spool
+                    .advance_domain(row.event_hash, DomainOutboxState::Server)
+                    .await?
+            }
+            Err(AgentError::Api(message)) => {
+                spool
+                    .record_domain_failure(row.event_hash, &message)
+                    .await?;
+                retryable_failure = true;
+            }
+            Err(AgentError::ApiTerminal(message)) => {
+                spool.quarantine_domain(row.event_hash, &message).await?;
+            }
+            Err(error) => return Err(error),
+        }
+    }
+    Ok(retryable_failure)
+}
+
+/// Exponential retry delay derived from the durable attempt count. The first upload of a new
+/// LOCAL row is immediate; failed retries double from the configured poll interval up to 30 seconds.
+pub fn retry_delay(base_delay: Duration, attempts: u32) -> Duration {
+    if attempts == 0 || base_delay.is_zero() {
+        return Duration::ZERO;
+    }
+    let base = base_delay.min(MAX_RETRY_BACKOFF);
+    let shift = attempts.saturating_sub(1).min(31);
+    base.checked_mul(1u32 << shift)
+        .unwrap_or(MAX_RETRY_BACKOFF)
+        .min(MAX_RETRY_BACKOFF)
+}
+
+/// Validate, persist and deliver one Station-signed v2 observation.
+pub async fn process_domain_event_ready<T: StationTransport>(
+    transport: &mut T,
+    spool: &Spool,
+    api: &ApiClient,
+    expected_station_pubkey33: &[u8; 33],
+    payload: &[u8],
+) -> Result<(), AgentError> {
+    let ready = crate::serial::payload::decode_domain_event_ready(payload)?;
+    let row = validate_domain_event_ready(expected_station_pubkey33, &ready)?;
+    spool.persist_domain_local(&row).await?;
+    let ack = crate::serial::payload::DomainAckPayload {
+        event_hash: row.event_hash,
+    };
+    transport
+        .send(Frame {
+            message_type: MessageType::DomainAck,
+            payload: Bytes::copy_from_slice(&crate::serial::payload::encode_domain_ack(&ack)),
+        })
+        .await?;
+    match api.post_domain_observation(&row).await {
+        Ok(()) => {
+            spool
+                .advance_domain(row.event_hash, DomainOutboxState::Server)
+                .await
+        }
+        Err(AgentError::Api(message)) => {
+            spool.record_domain_failure(row.event_hash, &message).await
+        }
+        Err(AgentError::ApiTerminal(message)) => {
+            spool.quarantine_domain(row.event_hash, &message).await
+        }
+        Err(error) => Err(error),
+    }
+}
+
+fn validate_domain_event_ready(
+    expected_station_pubkey33: &[u8; 33],
+    ready: &crate::serial::payload::DomainEventReadyPayload,
+) -> Result<DomainOutboxRow, AgentError> {
+    if &ready.station_pubkey33 != expected_station_pubkey33 {
+        return Err(AgentError::Contract(
+            "DOMAIN_EVENT_READY Station public key does not match configured Station".into(),
+        ));
+    }
+    let envelope = DomainEventEnvelope::decode(&ready.envelope_bytes)
+        .map_err(|error| AgentError::Contract(format!("invalid v2 domain envelope: {error}")))?;
+    if envelope.event_type != EventType::ObservationRecorded as u16 {
+        return Err(AgentError::Contract(
+            "DOMAIN_EVENT_READY accepts only ObservationRecorded in this increment".into(),
+        ));
+    }
+    let station_id = derive_station_id(&ready.station_pubkey33)
+        .map_err(|error| AgentError::Contract(format!("invalid Station public key: {error}")))?;
+    if envelope.source_id != station_id {
+        return Err(AgentError::Contract(
+            "v2 envelope source_id does not match Station public key".into(),
+        ));
+    }
+    let now = time::OffsetDateTime::now_utc().unix_timestamp();
+    if now < envelope.observed_at || now > envelope.expires_at {
+        return Err(AgentError::Contract(
+            "v2 envelope is outside its validity window".into(),
+        ));
+    }
+    verify_station_signature_bytes(
+        &ready.envelope_bytes,
+        &ready.station_pubkey33,
+        &ready.station_signature64,
+    )
+    .map_err(|error| AgentError::Contract(format!("invalid v2 Station signature: {error}")))?;
+    Ok(DomainOutboxRow {
+        event_hash: envelope
+            .event_hash()
+            .map_err(|error| AgentError::Contract(format!("cannot hash v2 envelope: {error}")))?,
+        envelope_bytes: ready.envelope_bytes,
+        station_pubkey: ready.station_pubkey33,
+        station_signature: ready.station_signature64,
+        state: DomainOutboxState::Local,
+        attempts: 0,
+    })
+}
+
+pub async fn process_capture<T: StationTransport>(
+    transport: &mut T,
+    spool: &Spool,
+    api: &ApiClient,
+    expected_station_pubkey33: &[u8; 33],
+    station_response_timeout: Duration,
+    command: &StationCommand,
+) -> Result<(), AgentError> {
+    command.validate()?;
+    let command_payload = encode_command(command)?;
+    transport
+        .send(Frame {
+            message_type: MessageType::Command,
+            payload: Bytes::copy_from_slice(&command_payload),
+        })
+        .await?;
+
+    let response = timeout(station_response_timeout, transport.receive())
+        .await
+        .map_err(|_| AgentError::Serial("timed out waiting for Station response".into()))??;
+    match response.message_type {
+        MessageType::EventReady => {
+            let ready = decode_event_ready(&response.payload)?;
+            let row = validate_event_ready(command, expected_station_pubkey33, &ready)?;
+            spool.persist_local(&row).await?;
+
+            let ack = AckPayload {
+                capture_id: row.capture_id,
+                event_hash: row.event_hash,
+            };
+            transport
+                .send(Frame {
+                    message_type: MessageType::Ack,
+                    payload: Bytes::copy_from_slice(&encode_ack(&ack)),
+                })
+                .await?;
+
+            match api.post_evidence(&row).await {
+                Ok(()) => spool.advance(row.capture_id, OutboxState::Server).await,
+                Err(AgentError::Api(message)) => {
+                    spool.record_failure(row.capture_id, &message).await?;
+                    Ok(())
+                }
+                Err(AgentError::ApiTerminal(message)) => {
+                    spool.quarantine(row.capture_id, &message).await
+                }
+                Err(error) => Err(error),
+            }
+        }
+        MessageType::Error => {
+            let station_error = decode_error(&response.payload)?;
+            if !station_error.capture_id.is_nil()
+                && station_error.capture_id != command.capture_id()
+            {
+                return Err(AgentError::Contract(
+                    "Station ERROR capture_id does not match the active command".into(),
+                ));
+            }
+            Err(AgentError::Station(format!(
+                "Station rejected capture with {:?}",
+                station_error.code
+            )))
+        }
+        other => Err(AgentError::Contract(format!(
+            "unexpected Station response {:?} while capture is active",
+            other
+        ))),
+    }
+}
+
+fn validate_event_ready(
+    command: &StationCommand,
+    expected_station_pubkey33: &[u8; 33],
+    ready: &EventReadyPayload,
+) -> Result<OutboxRow, AgentError> {
+    if ready.capture_id != command.capture_id() {
+        return Err(AgentError::Contract(
+            "EVENT_READY capture_id does not match the active command".into(),
+        ));
+    }
+    if &ready.station_pubkey33 != expected_station_pubkey33 {
+        return Err(AgentError::Contract(
+            "EVENT_READY Station public key does not match configured Station".into(),
+        ));
+    }
+    let station_id = derive_station_id(&ready.station_pubkey33)
+        .map_err(|error| AgentError::Contract(format!("invalid Station public key: {error}")))?;
+
+    // The Station must have signed exactly the envelope implied by the command and the RFID it
+    // reports; any drift (context, payload or rule violation) is rejected before persistence.
+    let expected =
+        capture_envelope(&command.0, &ready.observed_rfid, station_id).map_err(|error| {
+            AgentError::Contract(format!("RFID violates the capture rule: {error}"))
+        })?;
+    let expected_bytes = expected
+        .encode()
+        .map_err(|error| AgentError::Contract(format!("invalid expected envelope: {error}")))?;
+    if expected_bytes != ready.event_bytes {
+        return Err(AgentError::Contract(
+            "signed envelope does not match the immutable command context and observed RFID".into(),
+        ));
+    }
+    verify_station_signature_bytes(
+        &ready.event_bytes,
+        &ready.station_pubkey33,
+        &ready.station_signature64,
+    )
+    .map_err(|error| AgentError::Contract(format!("invalid Station signature: {error}")))?;
+
+    Ok(OutboxRow {
+        capture_id: ready.capture_id,
+        event_hash: expected
+            .event_hash()
+            .map_err(|error| AgentError::Contract(format!("cannot hash envelope: {error}")))?,
+        event_bytes: ready.event_bytes,
+        observed_rfid: ready.observed_rfid,
+        station_pubkey: ready.station_pubkey33,
+        station_signature: ready.station_signature64,
+        state: OutboxState::Local,
+        attempts: 0,
+    })
+}

@@ -1,0 +1,53 @@
+flowchart TD
+    A[Cadastro do bovino ou lote] --> B{Identificador e fonte}
+    B -->|RFID/identificador observado| C[Station lê e assina observação]
+    B -->|Documento/fonte oficial| D[API registra proveniência]
+    C --> E[Agent valida e grava outbox SQLite]
+    E --> F[API admite bytes e assinatura]
+    D --> F
+    F --> G[EvidencePackage em camadas]
+    G --> H{Tipo de evento}
+    H --> I[Peso observado]
+    H --> J[Localização observada ou associada ao estabelecimento]
+    H --> K[Status operacional/sanitário]
+    H --> L[Movimentação com GTA/e-GTA]
+    H --> M[Transferência de custódia]
+    I --> N[Evento imutável + hash]
+    J --> N
+    K --> N
+    L --> O[Documento oficial referenciado]
+    M --> P[Intenção do remetente]
+    P --> Q[Aceite do comprador/recebedor]
+    Q --> R[Nonce e transação Solana]
+    O --> R
+    N --> R
+    R --> S[AnimalState/BovineState atualizado]
+    S --> T[LotManifest versionado]
+    T --> U{Operação do lote}
+    U -->|split| V[Novo manifesto com raiz criptográfica]
+    U -->|merge| W[Manifesto combinado]
+    U -->|movimento| X[Origem -> transporte -> destino]
+    U -->|abate/encerramento| Y[Animal ou lote aposentado]
+    X --> Z[Chegada/baixa reconciliada]
+    Y --> AA[Lineage de carcaça/produto, se escopo incluir pós-abate]
+    Z --> AB[Consulta autenticada e auditoria]
+    S --> AB
+    G --> AC[Consulta pública mínima]
+    AC --> AD[Hashes, status público e localização generalizada]
+    AB --> AE[Histórico autorizado e documentos]
+    AF[MAPA / PNIB / SISBOV] -. confirmação quando integrada .-> D
+    AG[OESA / SVO / BDU-PGA / GTA] -. trânsito e sanidade .-> O
+    AH[SEFAZ / NF-e e documentos comerciais] -. negócio e movimentação .-> O
+    AI[SIF / SIE / SIM] -. recebimento e abate .-> Y
+    AJ[Reconciliador server-side] --> Z
+    AJ --> R
+    AJ --> S
+
+    classDef source fill:#e8f5e9,stroke:#2e7d32,color:#1b5e20;
+    classDef chain fill:#e3f2fd,stroke:#1565c0,color:#0d47a1;
+    classDef private fill:#fff3e0,stroke:#ef6c00,color:#e65100;
+    classDef public fill:#f3e5f5,stroke:#6a1b9a,color:#4a148c;
+    class AF,AG,AH,AI source;
+    class R,S,T,N chain;
+    class C,D,E,F,G,I,J,K,L,M,O,P,Q,X,Y,Z,AA,AJ private;
+    class AC,AD,AB,AE public;

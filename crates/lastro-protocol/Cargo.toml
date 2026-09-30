@@ -1,0 +1,23 @@
+[package]
+name = "lastro-protocol"
+version = "0.1.0"
+edition.workspace = true
+# The on-chain program links this crate, and Solana's SBF toolchain ships its own (older) rustc.
+# Keep this at the oldest version both the host workspace and platform-tools can compile.
+rust-version = "1.85"
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+# no_std: the on-chain program links this crate, and `std`/`pem` would pull `getrandom`,
+# which does not build for the SBF target.
+p256 = { version = "0.13", default-features = false, features = ["ecdsa"] }
+sha2.workspace = true
+thiserror.workspace = true
+
+[dev-dependencies]
+hex.workspace = true
+serde_json.workspace = true
+p256 = { version = "0.13", features = ["ecdsa"] }

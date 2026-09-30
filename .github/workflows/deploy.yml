@@ -1,0 +1,145 @@
+name: deploy
+# Continuous deployment to the EC2 server (docs/DEPLOY_EC2.md).
+# A green `ci` run on main builds the images, publishes them to GHCR and releases them on the
+# server through AWS SSM Run Command. No SSH port and no long-lived AWS key: GitHub OIDC is
+# exchanged for a short-lived role session. Manual runs can redeploy or roll back any tag.
+on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: Existing image tag (commit SHA) to deploy; empty builds the current main
+        required: false
+        default: ''
+
+# A newer release supersedes a queued one; the server serializes releases with a lock, so a
+# cancelled job never leaves two deployments running at once.
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    if: >-
+      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
+      || (github.event_name == 'workflow_dispatch' && inputs.tag == '')
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      packages: write
+    outputs:
+      tag: ${{ steps.meta.outputs.tag }}
+    steps:
+      - name: Reset self-hosted workspace
+        shell: bash
+        run: |
+          mkdir -p "$GITHUB_WORKSPACE"
+          uid="$(id -u)"
+          gid="$(id -g)"
+          docker run --rm \
+            -v "$GITHUB_WORKSPACE:/workspace" \
+            debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28ed7da68e2e3687004faa906251 \
+            sh -c "chown -R ${uid}:${gid} /workspace"
+          find "$GITHUB_WORKSPACE" -mindepth 1 -maxdepth 1 -exec rm -rf -- {} +
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Image coordinates
+        id: meta
+        run: |
+          echo "tag=$(git rev-parse HEAD)" >> "$GITHUB_OUTPUT"
+          echo "registry=ghcr.io/${GITHUB_REPOSITORY_OWNER,,}" >> "$GITHUB_OUTPUT"
+      - name: Build and publish images
+        env:
+          TAG: ${{ steps.meta.outputs.tag }}
+          REGISTRY: ${{ steps.meta.outputs.registry }}
+          GHCR_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          # Public build configuration (repository variables, never secrets).
+          VITE_API_BASE_URL: ${{ vars.VITE_API_BASE_URL }}
+          VITE_SOLANA_RPC_URL: ${{ vars.VITE_SOLANA_RPC_URL }}
+          VITE_SOLANA_CHAIN: ${{ vars.VITE_SOLANA_CHAIN }}
+          VITE_LASTRO_PROGRAM_ID: ${{ vars.VITE_LASTRO_PROGRAM_ID }}
+          VITE_LASTRO_DEPLOYMENT_ID_HEX: ${{ vars.VITE_LASTRO_DEPLOYMENT_ID_HEX }}
+          VITE_LASTRO_AUTHORITY: ${{ vars.VITE_LASTRO_AUTHORITY }}
+        run: |
+          set -euo pipefail
+          echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
+          docker build -f infra/Dockerfile.api -t "$REGISTRY/lastro-api:$TAG" .
+          docker build -f infra/Dockerfile.web -t "$REGISTRY/lastro-web:$TAG" \
+            --build-arg VITE_API_BASE_URL --build-arg VITE_SOLANA_RPC_URL \
+            --build-arg VITE_SOLANA_CHAIN --build-arg VITE_LASTRO_PROGRAM_ID \
+            --build-arg VITE_LASTRO_DEPLOYMENT_ID_HEX --build-arg VITE_LASTRO_AUTHORITY .
+          docker build -f infra/Dockerfile.deploy -t "$REGISTRY/lastro-deploy:$TAG" .
+          for image in lastro-api lastro-web lastro-deploy; do
+            docker push "$REGISTRY/$image:$TAG"
+          done
+
+  deploy:
+    needs: [build]
+    if: >-
+      always()
+      && (needs.build.result == 'success'
+          || (needs.build.result == 'skipped' && github.event_name == 'workflow_dispatch' && inputs.tag != ''))
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: production
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Assume the deploy role with GitHub OIDC
+        env:
+          AWS_ROLE_ARN: ${{ vars.AWS_DEPLOY_ROLE_ARN }}
+          AWS_REGION: ${{ vars.AWS_REGION }}
+        run: |
+          set -euo pipefail
+          token="$(curl -fsS -H "Authorization: bearer $ACTIONS_ID_TOKEN_REQUEST_TOKEN" \
+            "$ACTIONS_ID_TOKEN_REQUEST_URL&audience=sts.amazonaws.com" | jq -r .value)"
+          creds="$(aws sts assume-role-with-web-identity --region "$AWS_REGION" \
+            --role-arn "$AWS_ROLE_ARN" --role-session-name "lastro-deploy-$GITHUB_RUN_ID" \
+            --web-identity-token "$token" --duration-seconds 3600 --query Credentials --output json)"
+          {
+            echo "AWS_ACCESS_KEY_ID=$(jq -r .AccessKeyId <<<"$creds")"
+            echo "AWS_SECRET_ACCESS_KEY=$(jq -r .SecretAccessKey <<<"$creds")"
+            echo "AWS_SESSION_TOKEN=$(jq -r .SessionToken <<<"$creds")"
+            echo "AWS_DEFAULT_REGION=$AWS_REGION"
+          } >> "$GITHUB_ENV"
+          echo "::add-mask::$(jq -r .SecretAccessKey <<<"$creds")"
+          echo "::add-mask::$(jq -r .SessionToken <<<"$creds")"
+      - name: Release on the server through SSM
+        env:
+          INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+          TAG: ${{ needs.build.outputs.tag || inputs.tag }}
+        run: |
+          set -euo pipefail
+          [[ "$TAG" =~ ^[A-Za-z0-9_.-]{1,128}$ ]] || { echo "invalid tag" >&2; exit 1; }
+          registry="ghcr.io/${GITHUB_REPOSITORY_OWNER,,}"
+          params="$(jq -n --arg reg "$registry" --arg tag "$TAG" '{commands: [
+            "set -e",
+            "cd /opt/lastro",
+            ("cid=$(docker create " + $reg + "/lastro-deploy:" + $tag + " x)"),
+            "docker cp \"$cid:/deploy/.\" /opt/lastro/",
+            "docker rm \"$cid\" >/dev/null",
+            ("bash /opt/lastro/deploy_production.sh " + $tag)
+          ], executionTimeout: ["1500"]}')"
+          command_id="$(aws ssm send-command --instance-ids "$INSTANCE_ID" \
+            --document-name AWS-RunShellScript --comment "lastro $TAG" \
+            --parameters "$params" --query Command.CommandId --output text)"
+          echo "SSM command $command_id"
+          for _ in $(seq 1 180); do
+            sleep 10
+            status="$(aws ssm get-command-invocation --command-id "$command_id" \
+              --instance-id "$INSTANCE_ID" --query Status --output text 2>/dev/null || echo Pending)"
+            case "$status" in Pending|InProgress|Delayed) continue ;; esac
+            break
+          done
+          aws ssm get-command-invocation --command-id "$command_id" --instance-id "$INSTANCE_ID" \
+            --query '[StandardOutputContent, StandardErrorContent]' --output text || true
+          [[ "$status" == "Success" ]] || { echo "deployment finished with status $status" >&2; exit 1; }

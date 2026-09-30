@@ -1,0 +1,5 @@
+# Compile-only overlay for the ESP32-C5 hardware-backed Station signer.
+# This does not provision or burn an eFuse key.
+CONFIG_MBEDTLS_HARDWARE_ECDSA_SIGN=y
+CONFIG_LASTRO_STATION_USE_EFUSE_KEY=y
+CONFIG_LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX=0

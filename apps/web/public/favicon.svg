@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024" fill="none">
+  <defs>
+    <linearGradient id="lastroDark" x1="170" y1="130" x2="780" y2="820" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#1B9C8F"/>
+      <stop offset="1" stop-color="#13786F"/>
+    </linearGradient>
+  </defs>
+
+  <!-- Structural L / foundation -->
+  <path
+    d="M190 160V820H820"
+    stroke="url(#lastroDark)"
+    stroke-width="58"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Canonical reference frame -->
+  <path
+    d="M360 300H445M360 300V385"
+    stroke="url(#lastroDark)"
+    stroke-width="44"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M664 300H579M664 300V385"
+    stroke="url(#lastroDark)"
+    stroke-width="44"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M360 604H445M360 604V519"
+    stroke="url(#lastroDark)"
+    stroke-width="44"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+  <path
+    d="M664 604H579M664 604V519"
+    stroke="url(#lastroDark)"
+    stroke-width="44"
+    stroke-linecap="round"
+    stroke-linejoin="round"
+  />
+
+  <!-- Canonical point -->
+  <circle cx="512" cy="452" r="42" fill="url(#lastroDark)"/>
+</svg>

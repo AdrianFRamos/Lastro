@@ -1,0 +1,707 @@
+import { webConfig } from '../config'
+import { parseEvidencePackage, type EvidencePackage } from '../protocol/evidence'
+import type {
+  AssetProjection,
+  Capture,
+  CaptureAction,
+  CaptureAuthorizationChallenge,
+  CaptureAuthorizationProof,
+  CustodyTransfer,
+  EventLifecycle,
+  EventStatus,
+  Hex32,
+  InstructionDto,
+  LineageEdge,
+  FacilityProjection,
+  LotProjection,
+  PartyProjection,
+  ProcessingProjection,
+  RecallProjection,
+  RfidLookup,
+  ShipmentProjection,
+  TransactionData,
+  TransformationProjection,
+} from './types'
+
+const DEFAULT_TIMEOUT_MS = 10_000
+
+export class ApiClientError extends Error {
+  constructor(
+    message: string,
+    readonly status: number | null,
+    readonly responseBody: string | null,
+  ) {
+    super(message)
+    this.name = 'ApiClientError'
+  }
+}
+
+async function request<T>(
+  path: string,
+  parser: (value: unknown) => T,
+  init?: RequestInit,
+): Promise<T> {
+  const controller = new AbortController()
+  const timeout = window.setTimeout(
+    () => controller.abort(new DOMException('API request timed out', 'TimeoutError')),
+    DEFAULT_TIMEOUT_MS,
+  )
+  const externalSignal = init?.signal
+  const abortFromExternal = () => controller.abort(externalSignal?.reason)
+  externalSignal?.addEventListener('abort', abortFromExternal, { once: true })
+
+  try {
+    let response: Response
+    try {
+      response = await fetch(`${webConfig.apiBaseUrl}${path}`, {
+        ...init,
+        signal: controller.signal,
+        headers: { 'content-type': 'application/json', ...(init?.headers ?? {}) },
+      })
+    } catch (error) {
+      if (controller.signal.aborted) {
+        throw new ApiClientError(
+          externalSignal?.aborted ? 'API request was aborted' : 'API request timed out',
+          null,
+          null,
+        )
+      }
+      throw new ApiClientError(
+        error instanceof Error ? error.message : 'API network request failed',
+        null,
+        null,
+      )
+    }
+
+    const text = await response.text()
+    if (!response.ok) {
+      throw new ApiClientError(
+        `API request failed with HTTP ${response.status}`,
+        response.status,
+        text,
+      )
+    }
+
+    let value: unknown
+    try {
+      value = text === '' ? null : JSON.parse(text)
+    } catch {
+      throw new ApiClientError('API returned invalid JSON', response.status, text)
+    }
+    try {
+      return parser(value)
+    } catch (error) {
+      throw new ApiClientError(
+        `API response failed validation: ${error instanceof Error ? error.message : 'invalid response'}`,
+        response.status,
+        text,
+      )
+    }
+  } finally {
+    window.clearTimeout(timeout)
+    externalSignal?.removeEventListener('abort', abortFromExternal)
+  }
+}
+
+export const api = {
+  /** `register_asset` transaction for the deployment authority; nothing is stored. */
+  getRegisterAssetTransaction: (body: {
+    assetId: Hex32
+    custodian: Hex32
+    assetType: number
+    availableWeightGrams: number
+  }) =>
+    request('/api/v2/assets/transaction-data', parseTransactionData, {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+  getAsset: (id: Hex32) => request(`/api/v2/assets/${id}`, parseAsset),
+  syncAsset: (id: Hex32) => request(`/api/v2/assets/${id}/sync`, parseAsset, { method: 'POST' }),
+  getAssetByRfid: (hash: Hex32) => request(`/api/v2/assets/by-rfid/${hash}`, parseRfidLookup),
+  getCaptureAuthorizationChallenge: (action: CaptureAction, assetId: Hex32) =>
+    request('/api/captures/authorization-challenge', parseCaptureAuthorizationChallenge, {
+      method: 'POST',
+      body: JSON.stringify({ action, assetId }),
+    }),
+  createCapture: (
+    action: CaptureAction,
+    assetId: Hex32,
+    authorization: CaptureAuthorizationProof,
+  ) =>
+    request('/api/captures', parseCapture, {
+      method: 'POST',
+      body: JSON.stringify({ action, assetId, authorization }),
+    }),
+  getCapture: (captureId: string) =>
+    request(`/api/captures/${encodeURIComponent(captureId)}`, parseCapture),
+  getEvidencePackage: (assetId: Hex32) =>
+    request(`/api/v2/assets/${assetId}/evidence-package`, parseEvidencePackage),
+  getTransactionData: (eventHash: Hex32) =>
+    request(`/api/v2/events/${eventHash}/transaction-data`, parseTransactionData),
+  submit: (eventHash: Hex32, txSignature: string) =>
+    request(`/api/v2/events/${eventHash}/submit`, parseEventLifecycle, {
+      method: 'POST',
+      body: JSON.stringify({ txSignature }),
+    }),
+  confirm: (eventHash: Hex32, txSignature: string) =>
+    request(`/api/v2/events/${eventHash}/confirm`, parseEventLifecycle, {
+      method: 'POST',
+      body: JSON.stringify({ txSignature }),
+    }),
+  createCustodyTransfer: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/custody-transfers', parseCustodyTransfer, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  getCustodyTransferTransaction: (transferId: string, phase: 'propose' | 'accept') =>
+    request(
+      `/api/v2/custody-transfers/${encodeURIComponent(transferId)}/transaction-data?phase=${phase}`,
+      parseTransactionData,
+    ),
+  acceptCustodyTransfer: (transferId: string, txSignature: string) =>
+    request(
+      `/api/v2/custody-transfers/${encodeURIComponent(transferId)}/accept`,
+      parseCustodyTransfer,
+      { method: 'POST', body: JSON.stringify({ txSignature }) },
+    ),
+  getTransformation: (transformationId: Hex32) =>
+    request(`/api/v2/transformations/${transformationId}`, parseTransformation),
+  getLineage: (assetId: Hex32) => request(`/api/v2/assets/${assetId}/lineage`, parseLineage),
+  createParty: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/parties', parseParty, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  createFacility: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/facilities', parseFacility, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  createLot: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/lots', parseLot, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  createProcessing: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/processing', parseProcessing, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  setProcessingReady: (token: string, operationId: Hex32) =>
+    request(`/api/v2/processing/${operationId}/ready`, parseProcessing, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+    }),
+  finalizeProcessing: (token: string, operationId: Hex32) =>
+    request(`/api/v2/processing/${operationId}/finalize`, parseProcessing, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+    }),
+  createShipment: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/shipments', parseShipment, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+  setShipmentStatus: (token: string, shipmentId: Hex32, status: string) =>
+    request(`/api/v2/shipments/${shipmentId}/status`, parseShipment, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify({ status }),
+    }),
+  openRecall: (token: string, body: Record<string, unknown>) =>
+    request('/api/v2/recalls', parseRecall, {
+      method: 'POST',
+      headers: operatorHeaders(token),
+      body: JSON.stringify(body),
+    }),
+}
+
+function operatorHeaders(token: string): HeadersInit {
+  if (token.trim().length === 0) throw new Error('operator token is required')
+  return { Authorization: `Bearer ${token}` }
+}
+
+function parseAsset(value: unknown): AssetProjection {
+  const record = requireRecord(value, 'Asset')
+  return {
+    assetId: requireHex32(record.assetId, 'assetId'),
+    assetType: requireSafeInteger(record.assetType, 'assetType'),
+    status: requireSafeInteger(record.status, 'status'),
+    custodian: requireHex32(record.custodian, 'custodian'),
+    stateVersion: requireSafeInteger(record.stateVersion, 'stateVersion'),
+    eventSequence: requireSafeInteger(record.eventSequence, 'eventSequence'),
+    lastEventHash: requireHex32(record.lastEventHash, 'lastEventHash'),
+    currentRfidHash: nullableHex32(record.currentRfidHash, 'currentRfidHash'),
+    availableWeightGrams: requireSafeInteger(record.availableWeightGrams, 'availableWeightGrams'),
+  }
+}
+
+function parseRfidLookup(value: unknown): RfidLookup {
+  const record = requireRecord(value, 'RfidLookup')
+  if (record.bindingStatus !== 'ACTIVE' && record.bindingStatus !== 'RETIRED')
+    throw new Error('invalid RFID binding status')
+  return {
+    rfidHash: requireHex32(record.rfidHash, 'rfidHash'),
+    bindingStatus: record.bindingStatus,
+    asset: parseAsset(record.asset),
+  }
+}
+
+function parseEventLifecycle(value: unknown): EventLifecycle {
+  const record = requireRecord(value, 'DomainEventAnchor')
+  return {
+    eventHash: requireHex32(record.eventHash, 'eventHash'),
+    status: requireEventStatus(record.status),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+  }
+}
+
+function parseCustodyTransfer(value: unknown): CustodyTransfer {
+  const record = requireRecord(value, 'CustodyTransfer')
+  return {
+    transferId: requireUuid(record.transferId, 'transferId'),
+    assetId: requireHex32(record.assetId, 'assetId'),
+    toPartyId: requireHex32(record.toPartyId, 'toPartyId'),
+    status: requireString(record.status, 'status'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+  }
+}
+
+function parseCaptureAuthorizationChallenge(value: unknown): CaptureAuthorizationChallenge {
+  const record = requireRecord(value, 'CaptureAuthorizationChallenge')
+  const expiresAtUnix = requireSafeInteger(record.expiresAtUnix, 'expiresAtUnix')
+  if (expiresAtUnix === 0) throw new Error('expiresAtUnix must be positive')
+  return {
+    challengeId: requireUuid(record.challengeId, 'challengeId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    requiredSigner: requireSolanaAddress(record.requiredSigner, 'requiredSigner'),
+    messageBase64: requireCanonicalBase64(record.messageBase64, 'messageBase64', 1024),
+    expiresAtUnix,
+  }
+}
+
+function parseCapture(value: unknown): Capture {
+  const record = requireRecord(value, 'Capture')
+  const action = record.action
+  const status = record.status
+  if (
+    action !== 'BIND_IDENTIFIER' &&
+    action !== 'REPLACE_IDENTIFIER' &&
+    action !== 'OBSERVE_PRESENCE'
+  )
+    throw new Error('invalid capture action')
+  if (
+    status !== 'PENDING' &&
+    status !== 'DISPATCHED' &&
+    status !== 'EVIDENCE_ACCEPTED' &&
+    status !== 'EXPIRED' &&
+    status !== 'CANCELLED'
+  ) {
+    throw new Error('invalid capture status')
+  }
+  const eventHash = nullableHex32(record.eventHash, 'eventHash')
+  const eventStatus = nullableEventStatus(record.eventStatus)
+  const txSignature = nullableSolanaSignature(record.txSignature, 'txSignature')
+  if (eventHash === null) {
+    if (eventStatus !== null || txSignature !== null)
+      throw new Error('capture event metadata requires eventHash')
+  } else if (eventStatus === null) {
+    throw new Error('eventStatus is required when eventHash is present')
+  }
+  if (eventStatus === 'EVIDENCE_ACCEPTED' && txSignature !== null) {
+    throw new Error('EVIDENCE_ACCEPTED capture must not contain txSignature')
+  }
+  if ((eventStatus === 'SUBMITTED' || eventStatus === 'FINALIZED') && txSignature === null) {
+    throw new Error(`${eventStatus} capture requires txSignature`)
+  }
+  return {
+    captureId: requireUuid(record.captureId, 'captureId'),
+    action,
+    assetId: requireHex32(record.assetId, 'assetId'),
+    stateVersion: requirePositiveSafeInteger(record.stateVersion, 'stateVersion'),
+    status,
+    eventHash,
+    eventStatus,
+    txSignature,
+  }
+}
+
+function nullableEventStatus(value: unknown): EventStatus | null {
+  if (value === null) return null
+  return requireEventStatus(value)
+}
+
+function requireEventStatus(value: unknown): EventStatus {
+  if (
+    value !== 'EVIDENCE_ACCEPTED' &&
+    value !== 'SUBMITTED' &&
+    value !== 'FINALIZED' &&
+    value !== 'REJECTED'
+  ) {
+    throw new Error('invalid event status')
+  }
+  return value
+}
+
+function nullableSolanaSignature(value: unknown, name: string): string | null {
+  if (value === null) return null
+  return requireSolanaSignature(value, name)
+}
+
+function parseTransactionData(value: unknown): TransactionData {
+  const record = requireRecord(value, 'TransactionData')
+  if (record.transactionVersion !== 'legacy' && record.transactionVersion !== 'v0')
+    throw new Error('invalid transactionVersion')
+  if (
+    !Array.isArray(record.instructions) ||
+    record.instructions.length < 1 ||
+    record.instructions.length > 4
+  )
+    throw new Error(
+      'instructions must contain one or two protocol entries and at most two fee entries',
+    )
+  return {
+    requiredSigner: requireString(record.requiredSigner, 'requiredSigner'),
+    lastroProgramId: requireString(record.lastroProgramId, 'lastroProgramId'),
+    instructions: [
+      parseInstruction(record.instructions[0]),
+      ...record.instructions.slice(1).map(parseInstruction),
+    ],
+    measuredSerializedBytes: requireSafeInteger(
+      record.measuredSerializedBytes,
+      'measuredSerializedBytes',
+    ),
+    transactionVersion: record.transactionVersion,
+  }
+}
+
+function parseTransformation(value: unknown): TransformationProjection {
+  const record = requireRecord(value, 'Transformation')
+  const status = record.status
+  if (
+    status !== 'OPEN' &&
+    status !== 'FINALIZING' &&
+    status !== 'FINALIZED' &&
+    status !== 'ABORTED' &&
+    status !== 'EXPIRED'
+  ) {
+    throw new Error('invalid transformation status')
+  }
+  return {
+    transformationId: requireHex32(record.transformationId, 'transformationId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    transformationType: requirePositiveSafeInteger(record.transformationType, 'transformationType'),
+    inputRoot: requireHex32(record.inputRoot, 'inputRoot'),
+    outputRoot: requireHex32(record.outputRoot, 'outputRoot'),
+    inputCount: requirePositiveSafeInteger(record.inputCount, 'inputCount'),
+    outputCount: requirePositiveSafeInteger(record.outputCount, 'outputCount'),
+    inputWeightGrams: requireSafeInteger(record.inputWeightGrams, 'inputWeightGrams'),
+    outputWeightGrams: requireSafeInteger(record.outputWeightGrams, 'outputWeightGrams'),
+    byproductWeightGrams: requireSafeInteger(record.byproductWeightGrams, 'byproductWeightGrams'),
+    lossWeightGrams: requireSafeInteger(record.lossWeightGrams, 'lossWeightGrams'),
+    toleranceBasisPoints: requireSafeInteger(record.toleranceBasisPoints, 'toleranceBasisPoints'),
+    manifestNonce: requireSafeInteger(record.manifestNonce, 'manifestNonce'),
+    manifestHash: requireHex32(record.manifestHash, 'manifestHash'),
+    manifestBytesBase64: requireCanonicalBase64Exact(
+      record.manifestBytesBase64,
+      'manifestBytesBase64',
+      188,
+    ),
+    status,
+    sequence: requireSafeInteger(record.sequence, 'sequence'),
+    expiresAt: requireSafeInteger(record.expiresAt, 'expiresAt'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+  }
+}
+
+function parseLineage(value: unknown): LineageEdge[] {
+  if (!Array.isArray(value)) throw new Error('Lineage must be an array')
+  if (value.length > 256) throw new Error('Lineage exceeds the public response limit')
+  return value.map(parseLineageEdge)
+}
+
+function parseLineageEdge(value: unknown): LineageEdge {
+  const record = requireRecord(value, 'LineageEdge')
+  const role = requirePositiveSafeInteger(record.role, 'role')
+  if (role > 4) throw new Error('role must be between 1 and 4')
+  return {
+    transformationId: requireHex32(record.transformationId, 'transformationId'),
+    parentAssetId: requireHex32(record.parentAssetId, 'parentAssetId'),
+    childAssetId: requireHex32(record.childAssetId, 'childAssetId'),
+    role,
+    position: requireSafeInteger(record.position, 'position'),
+    quantity: requireSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requireSafeInteger(record.weightGrams, 'weightGrams'),
+  }
+}
+
+function parseParty(value: unknown): PartyProjection {
+  const record = requireRecord(value, 'Party')
+  return {
+    partyId: requireHex32(record.partyId, 'partyId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    legalName: requireString(record.legalName, 'legalName'),
+    taxIdHash: nullableHex32(record.taxIdHash, 'taxIdHash'),
+    wallet: requireHex32(record.wallet, 'wallet'),
+    role: requirePositiveSafeInteger(record.role, 'role'),
+    status: requireString(record.status, 'status'),
+  }
+}
+
+function parseFacility(value: unknown): FacilityProjection {
+  const record = requireRecord(value, 'Facility')
+  return {
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    ownerPartyId: requireHex32(record.ownerPartyId, 'ownerPartyId'),
+    facilityType: requirePositiveSafeInteger(record.facilityType, 'facilityType'),
+    displayName: requireString(record.displayName, 'displayName'),
+    credentialHash: requireHex32(record.credentialHash, 'credentialHash'),
+    validFrom: requireSafeInteger(record.validFrom, 'validFrom'),
+    validUntil: requireSafeInteger(record.validUntil, 'validUntil'),
+    status: requireString(record.status, 'status'),
+  }
+}
+
+function parseLot(value: unknown): LotProjection {
+  const record = requireRecord(value, 'Lot')
+  if (!Array.isArray(record.assets)) throw new Error('lot assets must be an array')
+  return {
+    lotId: requireHex32(record.lotId, 'lotId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    ownerPartyId: requireHex32(record.ownerPartyId, 'ownerPartyId'),
+    externalReference: nullableString(record.externalReference, 'externalReference'),
+    headCount: requirePositiveSafeInteger(record.headCount, 'headCount'),
+    liveWeightGrams: requirePositiveSafeInteger(record.liveWeightGrams, 'liveWeightGrams'),
+    status: requireString(record.status, 'status'),
+    assets: record.assets.map(parseLotAsset),
+  }
+}
+
+function parseLotAsset(value: unknown): LotProjection['assets'][number] {
+  const record = requireRecord(value, 'LotAsset')
+  return {
+    assetId: requireHex32(record.assetId, 'assetId'),
+    quantity: requirePositiveSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requirePositiveSafeInteger(record.weightGrams, 'weightGrams'),
+    role: requireString(record.role, 'role'),
+  }
+}
+
+function parseProcessing(value: unknown): ProcessingProjection {
+  const record = requireRecord(value, 'Processing')
+  if (!Array.isArray(record.items)) throw new Error('processing items must be an array')
+  return {
+    operationId: requireHex32(record.operationId, 'operationId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    facilityId: requireHex32(record.facilityId, 'facilityId'),
+    lotId: nullableHex32(record.lotId, 'lotId'),
+    transformationId: nullableHex32(record.transformationId, 'transformationId'),
+    operatorPartyId: requireHex32(record.operatorPartyId, 'operatorPartyId'),
+    operationKind: requireString(record.operationKind, 'operationKind'),
+    status: requireString(record.status, 'status'),
+    notes: nullableString(record.notes, 'notes'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+    items: record.items.map(parseProcessingItem),
+  }
+}
+
+function parseProcessingItem(value: unknown): ProcessingProjection['items'][number] {
+  const record = requireRecord(value, 'ProcessingItem')
+  return {
+    position: requireSafeInteger(record.position, 'position'),
+    assetId: nullableHex32(record.assetId, 'assetId'),
+    direction: requireString(record.direction, 'direction'),
+    quantity: requirePositiveSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requirePositiveSafeInteger(record.weightGrams, 'weightGrams'),
+  }
+}
+
+function parseShipment(value: unknown): ShipmentProjection {
+  const record = requireRecord(value, 'Shipment')
+  if (!Array.isArray(record.items)) throw new Error('shipment items must be an array')
+  return {
+    shipmentId: requireHex32(record.shipmentId, 'shipmentId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    originFacilityId: requireHex32(record.originFacilityId, 'originFacilityId'),
+    destinationFacilityId: requireHex32(record.destinationFacilityId, 'destinationFacilityId'),
+    carrierPartyId: requireHex32(record.carrierPartyId, 'carrierPartyId'),
+    createdByPartyId: requireHex32(record.createdByPartyId, 'createdByPartyId'),
+    status: requireString(record.status, 'status'),
+    plannedDeparture: nullableString(record.plannedDeparture, 'plannedDeparture'),
+    departedAt: nullableString(record.departedAt, 'departedAt'),
+    deliveredAt: nullableString(record.deliveredAt, 'deliveredAt'),
+    notes: nullableString(record.notes, 'notes'),
+    txSignature: nullableSolanaSignature(record.txSignature, 'txSignature'),
+    items: record.items.map(parseShipmentItem),
+  }
+}
+
+function parseShipmentItem(value: unknown): ShipmentProjection['items'][number] {
+  const record = requireRecord(value, 'ShipmentItem')
+  return {
+    position: requireSafeInteger(record.position, 'position'),
+    assetId: requireHex32(record.assetId, 'assetId'),
+    quantity: requirePositiveSafeInteger(record.quantity, 'quantity'),
+    weightGrams: requirePositiveSafeInteger(record.weightGrams, 'weightGrams'),
+  }
+}
+
+function parseRecall(value: unknown): RecallProjection {
+  const record = requireRecord(value, 'Recall')
+  if (!Array.isArray(record.members)) throw new Error('recall members must be an array')
+  return {
+    recallId: requireHex32(record.recallId, 'recallId'),
+    deploymentId: requireHex32(record.deploymentId, 'deploymentId'),
+    openedByPartyId: requireHex32(record.openedByPartyId, 'openedByPartyId'),
+    scopeType: requireString(record.scopeType, 'scopeType'),
+    scopeId: requireHex32(record.scopeId, 'scopeId'),
+    reason: requireString(record.reason, 'reason'),
+    status: requireString(record.status, 'status'),
+    snapshotRoot: requireHex32(record.snapshotRoot, 'snapshotRoot'),
+    members: record.members.map(parseRecallMember),
+  }
+}
+
+function parseRecallMember(value: unknown): RecallProjection['members'][number] {
+  const record = requireRecord(value, 'RecallMember')
+  return {
+    assetId: requireHex32(record.assetId, 'assetId'),
+    traversalDepth: requireSafeInteger(record.traversalDepth, 'traversalDepth'),
+    relation: requireString(record.relation, 'relation'),
+  }
+}
+
+function parseInstruction(value: unknown): InstructionDto {
+  const record = requireRecord(value, 'Instruction')
+  if (!Array.isArray(record.accounts)) throw new Error('instruction accounts must be an array')
+  return {
+    programId: requireString(record.programId, 'programId'),
+    dataBase64: requireString(record.dataBase64, 'dataBase64'),
+    accounts: record.accounts.map((entry) => {
+      const account = requireRecord(entry, 'AccountMeta')
+      if (typeof account.isSigner !== 'boolean' || typeof account.isWritable !== 'boolean')
+        throw new Error('invalid account role flags')
+      return {
+        address: requireString(account.address, 'address'),
+        isSigner: account.isSigner,
+        isWritable: account.isWritable,
+      }
+    }),
+  }
+}
+
+function requireRecord(value: unknown, name: string): Record<string, unknown> {
+  if (typeof value !== 'object' || value === null || Array.isArray(value))
+    throw new Error(`${name} must be an object`)
+  return value as Record<string, unknown>
+}
+
+function requireString(value: unknown, name: string): string {
+  if (typeof value !== 'string' || value.length === 0)
+    throw new Error(`${name} must be a non-empty string`)
+  return value
+}
+
+function requireUuid(value: unknown, name: string): string {
+  if (
+    typeof value !== 'string' ||
+    !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value)
+  ) {
+    throw new Error(`${name} must be a lowercase UUID`)
+  }
+  return value
+}
+
+function requireSolanaAddress(value: unknown, name: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length < 32 ||
+    value.length > 44 ||
+    !/^[1-9A-HJ-NP-Za-km-z]+$/.test(value)
+  ) {
+    throw new Error(`${name} must be a base58 Solana address`)
+  }
+  return value
+}
+
+function requireCanonicalBase64(value: unknown, name: string, maxDecodedBytes: number): string {
+  if (
+    typeof value !== 'string' ||
+    value.length === 0 ||
+    value.length > Math.ceil(maxDecodedBytes / 3) * 4
+  ) {
+    throw new Error(`${name} must be bounded canonical base64`)
+  }
+  let decoded: string
+  try {
+    decoded = atob(value)
+  } catch {
+    throw new Error(`${name} must be bounded canonical base64`)
+  }
+  if (decoded.length === 0 || decoded.length > maxDecodedBytes || btoa(decoded) !== value) {
+    throw new Error(`${name} must be bounded canonical base64`)
+  }
+  return value
+}
+
+function requireCanonicalBase64Exact(value: unknown, name: string, decodedBytes: number): string {
+  const encoded = requireCanonicalBase64(value, name, decodedBytes)
+  let decoded: string
+  try {
+    decoded = atob(encoded)
+  } catch {
+    throw new Error(`${name} must be canonical base64`)
+  }
+  if (decoded.length !== decodedBytes)
+    throw new Error(`${name} must decode to ${decodedBytes} bytes`)
+  return encoded
+}
+
+function requireSolanaSignature(value: unknown, name: string): string {
+  if (
+    typeof value !== 'string' ||
+    value.length < 64 ||
+    value.length > 88 ||
+    !/^[1-9A-HJ-NP-Za-km-z]+$/.test(value)
+  ) {
+    throw new Error(`${name} must be base58 text for a 64-byte Solana signature`)
+  }
+  return value
+}
+
+function requireHex32(value: unknown, name: string): Hex32 {
+  if (typeof value !== 'string' || !/^[0-9a-f]{64}$/.test(value))
+    throw new Error(`${name} must be 32-byte lowercase hex`)
+  return value
+}
+
+function nullableHex32(value: unknown, name: string): Hex32 | null {
+  return value === null ? null : requireHex32(value, name)
+}
+
+function nullableString(value: unknown, name: string): string | null {
+  return value === null ? null : requireString(value, name)
+}
+
+function requireSafeInteger(value: unknown, name: string): number {
+  if (typeof value !== 'number' || !Number.isSafeInteger(value) || value < 0)
+    throw new Error(`${name} must be a non-negative safe integer`)
+  return value
+}
+
+function requirePositiveSafeInteger(value: unknown, name: string): number {
+  const parsed = requireSafeInteger(value, name)
+  if (parsed === 0) throw new Error(`${name} must be positive`)
+  return parsed
+}
+
+export type { EvidencePackage }
