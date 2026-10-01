@@ -21,7 +21,7 @@ use crate::instructions::{
     SetStationStatus, TransferConfigAuthority,
 };
 
-declare_id!("7H5tixrcDMrAFGhbbXJ2sTy9sYPmezQKexhJ6FMBvD8F");
+declare_id!("B7Tpp81YtUuGhTrkY8MQzCk5Av3bymgBzdQJYxYvfvRr");
 
 // Keep these aliases at the crate root for Anchor 1.2 generated client helpers.
 pub(crate) use instructions::assets::__client_accounts_register_asset;
