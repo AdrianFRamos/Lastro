@@ -429,8 +429,20 @@ impl SolanaRpc for HttpSolanaRpc {
         signature: &str,
         expected: &TransactionDataResponse,
     ) -> Result<bool, ApiError> {
-        self.transaction_matches_at_commitment(signature, expected, "finalized")
-            .await
+        let result = self
+            .call(
+                "getTransaction",
+                json!([signature, {"commitment":"finalized","encoding":"json","maxSupportedTransactionVersion":0}]),
+            )
+            .await?;
+        // Not finalized *yet* is transient: callers (and the reconciler) retry instead of
+        // treating a pending transaction as a mismatch and quarantining it.
+        if result.is_null() {
+            return Err(ApiError::Unavailable(
+                "Solana transaction is not finalized yet".into(),
+            ));
+        }
+        transaction_matches_json(&result, signature, expected)
     }
 }
 

@@ -804,9 +804,15 @@ function isSubmissionPending(error: unknown): boolean {
   )
 }
 
+/** 503: the API could not prove finality yet (e.g. the transaction is not finalized). Transient. */
+function isUnavailable(error: unknown): boolean {
+  return error instanceof ApiClientError && error.status === 503
+}
+
 function isFinalityPending(error: unknown): boolean {
   const reason = conflictMessage(error)
   return (
+    isUnavailable(error) ||
     reason === 'transaction is not the finalized exact transaction for this v2 event' ||
     reason === 'finalized transaction did not produce EventAnchor'
   )
@@ -815,6 +821,7 @@ function isFinalityPending(error: unknown): boolean {
 function isCustodyPending(error: unknown): boolean {
   const reason = conflictMessage(error)
   return (
+    isUnavailable(error) ||
     reason === 'finalized Solana state does not show the recipient as custodian' ||
     reason === 'transaction is not the finalized recipient acceptance of this transfer'
   )

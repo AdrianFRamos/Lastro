@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # One-time preparation of an Ubuntu 24.04 EC2 instance for .github/workflows/deploy.yml.
 # Run as root once (e.g. `sudo bash ec2_bootstrap.sh` through SSM Session Manager).
-# Idempotent: re-running only fills in what is missing. See docs/DEPLOY_EC2.md.
+# Idempotent: re-running only fills in what is missing.
 set -euo pipefail
 
 [[ "$(id -u)" == 0 ]] || { echo "run as root" >&2; exit 1; }

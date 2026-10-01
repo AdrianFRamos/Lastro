@@ -71,6 +71,6 @@ if [[ -n "$previous" ]]; then
   "${COMPOSE[@]}" up -d --remove-orphans
   healthy && echo "rolled back to $previous" >&2
   # Migrations are forward-only: if the failed release migrated the schema, restore the backup
-  # taken in step 1 (see docs/DEPLOY_EC2.md).
+  # taken in step 1.
 fi
 exit 1

@@ -191,13 +191,14 @@ class Api:
         return self.call("POST", path, body, token=self.env.agent_token)
 
     def poll_conflict(self, path: str, body: Any, pending: set[str], what: str) -> Any:
-        """POST until the API stops answering 409 with one of the `pending` finality messages."""
+        """POST until the API stops answering 503 (finality not provable yet) or 409 with one of
+        the `pending` finality messages."""
 
         def attempt():
             try:
                 return self.post(path, body) or True
             except HttpStatusError as error:
-                if error.status == 409 and error.message in pending:
+                if error.status == 503 or (error.status == 409 and error.message in pending):
                     return None
                 raise
             except TimeoutError:

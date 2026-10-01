@@ -1,5 +1,5 @@
 name: deploy
-# Continuous deployment to the EC2 server (docs/DEPLOY_EC2.md).
+# Continuous deployment to the EC2 server.
 # A green `ci` run on main builds the images, publishes them to GHCR and releases them on the
 # server through AWS SSM Run Command. No SSH port and no long-lived AWS key: GitHub OIDC is
 # exchanged for a short-lived role session. Manual runs can redeploy or roll back any tag.
