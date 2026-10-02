@@ -41,7 +41,6 @@ jobs:
       LASTRO_OPERATOR_TOKEN: ${{ secrets.LASTRO_OPERATOR_TOKEN }}
       LASTRO_SYSTEM_STATION_PRIVATE_SCALAR_HEX: ${{ secrets.LASTRO_DEVNET_STATION_PRIVATE_SCALAR_HEX }}
       LASTRO_DEVNET_TEST: '1'
-      LASTRO_DEVNET_TEST: '1'
 
     steps:
       - name: Reset self-hosted workspace
