@@ -3,6 +3,110 @@ import LastroTrustStack from '../components/story/LastroTrustStack.vue'
 import StoryHeader from '../components/story/StoryHeader.vue'
 import StoryPageFooter from '../components/story/StoryPageFooter.vue'
 import StorySectionHeading from '../components/story/StorySectionHeading.vue'
+import { useCopy } from '../i18n'
+
+const copy = useCopy({
+  en: {
+    kicker: 'LASTRO TRUST STACK',
+    title: 'Start with what the physical asset is. Build upward from proof.',
+    thesisLabel: 'LASTRO THESIS',
+    thesis:
+      'You cannot build trusted financial infrastructure around a physical asset before you can prove what it is, who controls it, and what happened to it.',
+    thesisStrong: 'Lastro starts with identity and custody.',
+    stackKicker: 'ARCHITECTURE',
+    stackTitle: 'Proof at the base. Optional systems above it.',
+    stackDescription:
+      'The current hackathon core demonstrates the first two layers and the processing lineage of the third: which cuts came from which animal. Everything else is an expansion path, not implemented functionality.',
+    expansionKicker: 'HOW EXPANSION WORKS',
+    expansionTitle: 'More evidence around the same identity primitive.',
+    today: 'TODAY',
+    proven: 'PROVEN',
+    next: 'NEXT',
+    later: 'LATER',
+    path: 'EXPANSION PATH',
+    todayItems: [
+      'Individual physical asset',
+      'Signed physical evidence',
+      'Persistent identity',
+      'Custody',
+      'Processing lineage (animal → cuts)',
+      'Verification',
+    ],
+    nextItems: [
+      'Suppliers',
+      'Certifiers',
+      'Official systems',
+      'Geolocated origin',
+      'Compliance evidence',
+    ],
+    laterItems: ['Verified asset history', 'Risk models', 'Insurance', 'Credit', 'Collateral'],
+    boundaryKicker: 'PRODUCT BOUNDARY',
+    boundaryTitle: 'The ambition is broad. The proof remains deliberately narrow.',
+    softwareLabel: 'SOFTWARE DEMONSTRATED',
+    software:
+      'Signed Station envelopes, persistent AssetID, custody authorization, re-identification, processing lineage from animal to cuts, canonical Solana state and independent verification in the software demo. Physical reader validation remains a separate hardware gate.',
+    expansionLabel: 'EXPANSION PATH',
+    expansion:
+      'Certification, official-system interoperability, geolocated origin, compliance, risk and financial infrastructure built around verifiable physical history.',
+    demoLabel: 'ABOUT THE OPEN DEMO',
+    demo: 'The Open Demo walks one cut from the producer to the market with simulated records. Vaccination history, weight history and the property map show what the expansion path could add; they are not recorded by the current software.',
+    footerTitle: 'See the narrow primitive work end to end.',
+    footerLink: 'Open Demo',
+  },
+  pt: {
+    kicker: 'PILHA DE CONFIANÇA LASTRO',
+    title: 'Comece pelo que o ativo físico é. Construa a partir da prova.',
+    thesisLabel: 'TESE DO LASTRO',
+    thesis:
+      'Não dá para construir infraestrutura financeira confiável em torno de um ativo físico antes de provar o que ele é, quem o controla e o que aconteceu com ele.',
+    thesisStrong: 'O Lastro começa pela identidade e pela custódia.',
+    stackKicker: 'ARQUITETURA',
+    stackTitle: 'Prova na base. Sistemas opcionais acima dela.',
+    stackDescription:
+      'O núcleo atual do hackathon demonstra as duas primeiras camadas e a linhagem do processamento da terceira: quais cortes vieram de qual animal. O resto é caminho de expansão, não funcionalidade implementada.',
+    expansionKicker: 'COMO A EXPANSÃO FUNCIONA',
+    expansionTitle: 'Mais evidências em torno da mesma primitiva de identidade.',
+    today: 'HOJE',
+    proven: 'PROVADO',
+    next: 'PRÓXIMO',
+    later: 'DEPOIS',
+    path: 'CAMINHO DE EXPANSÃO',
+    todayItems: [
+      'Ativo físico individual',
+      'Evidência física assinada',
+      'Identidade persistente',
+      'Custódia',
+      'Linhagem do processamento (animal → cortes)',
+      'Verificação',
+    ],
+    nextItems: [
+      'Fornecedores',
+      'Certificadoras',
+      'Sistemas oficiais',
+      'Origem georreferenciada',
+      'Evidência de conformidade',
+    ],
+    laterItems: [
+      'Histórico verificado do ativo',
+      'Modelos de risco',
+      'Seguro',
+      'Crédito',
+      'Garantia',
+    ],
+    boundaryKicker: 'LIMITE DO PRODUTO',
+    boundaryTitle: 'A ambição é ampla. A prova continua deliberadamente estreita.',
+    softwareLabel: 'DEMONSTRADO NO SOFTWARE',
+    software:
+      'Envelopes assinados pela Station, AssetID persistente, autorização de custódia, reidentificação, linhagem do processamento do animal aos cortes, estado canônico na Solana e verificação independente na demo de software. A validação do leitor físico continua sendo uma etapa de hardware separada.',
+    expansionLabel: 'CAMINHO DE EXPANSÃO',
+    expansion:
+      'Certificação, integração com sistemas oficiais, origem georreferenciada, conformidade, risco e infraestrutura financeira construídos sobre um histórico físico verificável.',
+    demoLabel: 'SOBRE O ABRIR DEMO',
+    demo: 'O Abrir Demo acompanha um corte do produtor até o mercado com registros simulados. Histórico de vacinas, histórico de pesos e o mapa da propriedade mostram o que o caminho de expansão pode trazer; o software atual não registra esses dados.',
+    footerTitle: 'Veja a primitiva funcionando de ponta a ponta.',
+    footerLink: 'Abrir Demo',
+  },
+})
 </script>
 
 <template>
@@ -12,25 +116,22 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
       <section class="future-hero" aria-labelledby="future-title">
         <div>
-          <p class="future-kicker">LASTRO TRUST STACK</p>
-          <h1 id="future-title">Start with what the physical asset is. Build upward from proof.</h1>
+          <p class="future-kicker">{{ copy.kicker }}</p>
+          <h1 id="future-title">{{ copy.title }}</h1>
         </div>
         <div class="future-hero__thesis">
-          <span>LASTRO THESIS</span>
-          <p>
-            You cannot build trusted financial infrastructure around a physical asset before you can
-            prove what it is, who controls it, and what happened to it.
-          </p>
-          <strong>Lastro starts with identity and custody.</strong>
+          <span>{{ copy.thesisLabel }}</span>
+          <p>{{ copy.thesis }}</p>
+          <strong>{{ copy.thesisStrong }}</strong>
         </div>
       </section>
 
       <section class="trust-stack" aria-labelledby="stack-title">
         <StorySectionHeading
-          kicker="ARCHITECTURE"
-          title="Proof at the base. Optional systems above it."
+          :kicker="copy.stackKicker"
+          :title="copy.stackTitle"
           heading-id="stack-title"
-          description="Only the first two layers are demonstrated by the current hackathon core. Everything above them is an expansion path, not implemented functionality."
+          :description="copy.stackDescription"
         />
 
         <LastroTrustStack />
@@ -38,23 +139,19 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
       <section class="expansion" aria-labelledby="expansion-title">
         <StorySectionHeading
-          kicker="HOW EXPANSION WORKS"
-          title="More evidence around the same identity primitive."
+          :kicker="copy.expansionKicker"
+          :title="copy.expansionTitle"
           heading-id="expansion-title"
         />
 
         <div class="expansion__flow">
           <article class="expansion-stage expansion-stage--today">
             <div class="expansion-stage__head">
-              <span>TODAY</span>
-              <strong>PROVEN</strong>
+              <span>{{ copy.today }}</span>
+              <strong>{{ copy.proven }}</strong>
             </div>
             <ol>
-              <li>Individual physical asset</li>
-              <li>Signed physical evidence</li>
-              <li>Persistent identity</li>
-              <li>Custody</li>
-              <li>Verification</li>
+              <li v-for="item in copy.todayItems" :key="item">{{ item }}</li>
             </ol>
           </article>
 
@@ -62,16 +159,11 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
           <article class="expansion-stage">
             <div class="expansion-stage__head">
-              <span>NEXT</span>
-              <strong>EXPANSION PATH</strong>
+              <span>{{ copy.next }}</span>
+              <strong>{{ copy.path }}</strong>
             </div>
             <ol>
-              <li>More participants</li>
-              <li>Suppliers</li>
-              <li>Certifiers</li>
-              <li>Processors</li>
-              <li>Official systems</li>
-              <li>Compliance evidence</li>
+              <li v-for="item in copy.nextItems" :key="item">{{ item }}</li>
             </ol>
           </article>
 
@@ -79,15 +171,11 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
           <article class="expansion-stage">
             <div class="expansion-stage__head">
-              <span>LATER</span>
-              <strong>EXPANSION PATH</strong>
+              <span>{{ copy.later }}</span>
+              <strong>{{ copy.path }}</strong>
             </div>
             <ol>
-              <li>Verified asset history</li>
-              <li>Risk models</li>
-              <li>Insurance</li>
-              <li>Credit</li>
-              <li>Collateral</li>
+              <li v-for="item in copy.laterItems" :key="item">{{ item }}</li>
             </ol>
           </article>
         </div>
@@ -95,32 +183,29 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
       <section class="boundary" aria-labelledby="boundary-title">
         <div>
-          <p class="future-kicker">PRODUCT BOUNDARY</p>
-          <h2 id="boundary-title">The ambition is broad. The proof remains deliberately narrow.</h2>
+          <p class="future-kicker">{{ copy.boundaryKicker }}</p>
+          <h2 id="boundary-title">{{ copy.boundaryTitle }}</h2>
         </div>
         <div class="boundary__columns">
           <article>
-            <span class="boundary__label boundary__label--proven">SOFTWARE DEMONSTRATED</span>
-            <p>
-              Signed Station envelopes, persistent AssetID, custody authorization,
-              re-identification, canonical Solana state and independent verification in the software
-              demo. Physical reader validation remains a separate hardware gate.
-            </p>
+            <span class="boundary__label boundary__label--proven">{{ copy.softwareLabel }}</span>
+            <p>{{ copy.software }}</p>
           </article>
           <article>
-            <span class="boundary__label">EXPANSION PATH</span>
-            <p>
-              Traceability, compliance interoperability, risk and financial infrastructure built
-              around verifiable physical history.
-            </p>
+            <span class="boundary__label">{{ copy.expansionLabel }}</span>
+            <p>{{ copy.expansion }}</p>
+          </article>
+          <article class="boundary__demo">
+            <span class="boundary__label boundary__label--demo">{{ copy.demoLabel }}</span>
+            <p>{{ copy.demo }}</p>
           </article>
         </div>
       </section>
 
       <StoryPageFooter
-        title="See the narrow primitive work end to end."
-        to="/demo"
-        link-label="Open Demo"
+        :title="copy.footerTitle"
+        to="/chain-history"
+        :link-label="copy.footerLink"
       />
     </div>
   </main>
@@ -315,6 +400,15 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
 .boundary__label--proven {
   color: var(--proof);
+}
+
+.boundary__columns .boundary__demo {
+  grid-column: 1 / -1;
+  border-color: color-mix(in srgb, var(--warning) 35%, var(--border));
+}
+
+.boundary__label--demo {
+  color: var(--warning);
 }
 
 @media (max-width: 1000px) {

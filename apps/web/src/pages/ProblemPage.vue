@@ -3,6 +3,106 @@ import PhysicalTrustGapDiagram from '../components/story/PhysicalTrustGapDiagram
 import StoryHeader from '../components/story/StoryHeader.vue'
 import StoryPageFooter from '../components/story/StoryPageFooter.vue'
 import StorySectionHeading from '../components/story/StorySectionHeading.vue'
+import { useCopy } from '../i18n'
+
+const copy = useCopy({
+  en: {
+    kicker: 'THE PHYSICAL TRUST GAP',
+    title: 'The asset moves. The data fragments. The market still needs proof.',
+    lede: 'Physical supply chains depend on evidence of identity, origin, custody, history and compliance while the underlying asset moves across organizations, systems and jurisdictions.',
+    movementKicker: 'CURRENT WORLD',
+    movementTitle: 'One physical asset. Many institutional handoffs.',
+    evidenceKicker: 'WHY THIS MATTERS',
+    evidenceTitle: 'Traceability is becoming infrastructure, not paperwork.',
+    brazilType: 'FACT / BRAZIL',
+    brazilTitle:
+      'Brazil is moving from lot-based traceability toward individual cattle and buffalo identification.',
+    brazilBody:
+      "MAPA's PNIB rolls out in four phases from July 2025 to the end of 2032. From 1 January 2033, cattle and buffalo that are not individually identified and registered in the official system can no longer be moved.",
+    brazilSource: 'Source · MAPA / PNIB ↗',
+    brazilSchedule: 'Schedule · Portaria SDA/MAPA 1.331/2025 ↗',
+    euType: 'FACT / EUROPEAN UNION',
+    euTitle: 'Cattle are within the scope of the EU Deforestation Regulation.',
+    euBody:
+      'Operators and traders placing covered commodities on the EU market must be able to show that the products do not originate from recently deforested land or contribute to forest degradation. Current application dates begin 30 December 2026 for large and medium operators.',
+    euSource: 'Source · European Commission ↗',
+    woahType: 'FACT / INTERNATIONAL STANDARD',
+    woahTitle:
+      'Animal identification and traceability support health, food safety, certification and trade.',
+    woahBody:
+      'WOAH treats identification and traceability as tools that can strengthen disease response, movement controls, inspection, certification and fair trade practices.',
+    woahSource: 'Source · WOAH Terrestrial Code ↗',
+    thesisKicker: 'LASTRO THESIS',
+    thesisTitle: 'Move from reconciliation toward independently verifiable continuity.',
+    currentLabel: 'CURRENT WORLD',
+    current: [
+      'Physical reality',
+      'Multiple organizations',
+      'Fragmented records',
+      'Reconciliation',
+      'Trust',
+    ],
+    lastroLabel: 'LASTRO PRIMITIVE',
+    lastro: [
+      'Physical event',
+      'Signed evidence',
+      'Persistent identity',
+      'Canonical history',
+      'Independent verification',
+    ],
+    note: 'Lastro does not claim to replace official traceability or compliance systems. The thesis is narrower: verifiable identity and custody can become a foundation those architectures can reference.',
+    footerTitle: 'See how the primitive can expand without confusing vision with proof.',
+    footerLink: 'Explore The Future',
+  },
+  pt: {
+    kicker: 'A LACUNA DE CONFIANÇA FÍSICA',
+    title: 'O ativo se move. Os dados se fragmentam. O mercado ainda precisa de prova.',
+    lede: 'Cadeias físicas dependem de evidências de identidade, origem, custódia, histórico e conformidade, enquanto o ativo passa por empresas, sistemas e jurisdições diferentes.',
+    movementKicker: 'MUNDO ATUAL',
+    movementTitle: 'Um ativo físico. Muitas passagens entre instituições.',
+    evidenceKicker: 'POR QUE ISSO IMPORTA',
+    evidenceTitle: 'Rastreabilidade está virando infraestrutura, não papelada.',
+    brazilType: 'FATO / BRASIL',
+    brazilTitle:
+      'O Brasil está saindo da rastreabilidade por lote para a identificação individual de bovinos e búfalos.',
+    brazilBody:
+      'O PNIB, do MAPA, é implantado em quatro fases, de julho de 2025 até o fim de 2032. A partir de 1º de janeiro de 2033, bovinos e búfalos sem identificação individual e registro no sistema oficial não poderão mais ser movimentados.',
+    brazilSource: 'Fonte · MAPA / PNIB ↗',
+    brazilSchedule: 'Cronograma · Portaria SDA/MAPA 1.331/2025 ↗',
+    euType: 'FATO / UNIÃO EUROPEIA',
+    euTitle: 'O gado está no escopo do Regulamento Europeu Antidesmatamento (EUDR).',
+    euBody:
+      'Quem coloca esses produtos no mercado europeu precisa demonstrar que eles não vêm de áreas desmatadas recentemente nem contribuem para a degradação florestal. A aplicação começa em 30 de dezembro de 2026 para empresas grandes e médias.',
+    euSource: 'Fonte · Comissão Europeia ↗',
+    woahType: 'FATO / PADRÃO INTERNACIONAL',
+    woahTitle:
+      'Identificação e rastreabilidade animal apoiam sanidade, segurança dos alimentos, certificação e comércio.',
+    woahBody:
+      'A WOAH trata identificação e rastreabilidade como ferramentas que fortalecem a resposta a doenças, o controle de trânsito, a inspeção, a certificação e práticas comerciais justas.',
+    woahSource: 'Fonte · Código Terrestre da WOAH ↗',
+    thesisKicker: 'TESE DO LASTRO',
+    thesisTitle: 'Sair da conciliação para uma continuidade verificável por qualquer um.',
+    currentLabel: 'MUNDO ATUAL',
+    current: [
+      'Realidade física',
+      'Várias organizações',
+      'Registros fragmentados',
+      'Conciliação',
+      'Confiança',
+    ],
+    lastroLabel: 'PRIMITIVA LASTRO',
+    lastro: [
+      'Evento físico',
+      'Evidência assinada',
+      'Identidade persistente',
+      'Histórico canônico',
+      'Verificação independente',
+    ],
+    note: 'O Lastro não pretende substituir os sistemas oficiais de rastreabilidade ou conformidade. A tese é mais estreita: identidade e custódia verificáveis podem virar uma base que esses sistemas consigam referenciar.',
+    footerTitle: 'Veja como a primitiva pode crescer sem confundir visão com prova.',
+    footerLink: 'Explorar O Futuro',
+  },
+})
 </script>
 
 <template>
@@ -12,22 +112,16 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
       <section class="problem-hero" aria-labelledby="problem-title">
         <div>
-          <p class="story-kicker">THE PHYSICAL TRUST GAP</p>
-          <h1 id="problem-title">
-            The asset moves. The data fragments. The market still needs proof.
-          </h1>
+          <p class="story-kicker">{{ copy.kicker }}</p>
+          <h1 id="problem-title">{{ copy.title }}</h1>
         </div>
-        <p class="problem-hero__lede">
-          Physical supply chains depend on evidence of identity, origin, custody, history and
-          compliance while the underlying asset moves across organizations, systems and
-          jurisdictions.
-        </p>
+        <p class="problem-hero__lede">{{ copy.lede }}</p>
       </section>
 
       <section class="movement" aria-labelledby="movement-title">
         <StorySectionHeading
-          kicker="CURRENT WORLD"
-          title="One physical asset. Many institutional handoffs."
+          :kicker="copy.movementKicker"
+          :title="copy.movementTitle"
           heading-id="movement-title"
         />
 
@@ -36,65 +130,55 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
       <section class="evidence" aria-labelledby="evidence-title">
         <StorySectionHeading
-          kicker="WHY THIS MATTERS"
-          title="Traceability is becoming infrastructure, not paperwork."
+          :kicker="copy.evidenceKicker"
+          :title="copy.evidenceTitle"
           heading-id="evidence-title"
         />
 
         <div class="evidence__grid">
           <article class="fact-block">
-            <span class="fact-block__type">FACT / BRAZIL</span>
-            <h3>
-              Brazil is moving from lot-based traceability toward individual cattle and buffalo
-              identification.
-            </h3>
-            <p>
-              MAPA's PNIB plan describes a gradual transition to individual identification, with a
-              2025–2032 implementation horizon.
-            </p>
+            <span class="fact-block__type">{{ copy.brazilType }}</span>
+            <h3>{{ copy.brazilTitle }}</h3>
+            <p>{{ copy.brazilBody }}</p>
             <a
               href="https://www.gov.br/agricultura/pt-br/assuntos/sanidade-animal-e-vegetal/saude-animal/rastreabilidade-animal/pnib"
               target="_blank"
               rel="noreferrer"
             >
-              Source · MAPA / PNIB ↗
+              {{ copy.brazilSource }}
+            </a>
+            <a
+              href="https://www.in.gov.br/en/web/dou/-/portaria-sda/mapa-n-1.331-de-21-de-julho-de-2025-643581903"
+              target="_blank"
+              rel="noreferrer"
+            >
+              {{ copy.brazilSchedule }}
             </a>
           </article>
 
           <article class="fact-block">
-            <span class="fact-block__type">FACT / EUROPEAN UNION</span>
-            <h3>Cattle are within the scope of the EU Deforestation Regulation.</h3>
-            <p>
-              Operators and traders placing covered commodities on the EU market must be able to
-              show that the products do not originate from recently deforested land or contribute to
-              forest degradation. Current application dates begin 30 December 2026 for large and
-              medium operators.
-            </p>
+            <span class="fact-block__type">{{ copy.euType }}</span>
+            <h3>{{ copy.euTitle }}</h3>
+            <p>{{ copy.euBody }}</p>
             <a
               href="https://environment.ec.europa.eu/topics/forests/deforestation/regulation-deforestation-free-products_en"
               target="_blank"
               rel="noreferrer"
             >
-              Source · European Commission ↗
+              {{ copy.euSource }}
             </a>
           </article>
 
           <article class="fact-block">
-            <span class="fact-block__type">FACT / INTERNATIONAL STANDARD</span>
-            <h3>
-              Animal identification and traceability support health, food safety, certification and
-              trade.
-            </h3>
-            <p>
-              WOAH treats identification and traceability as tools that can strengthen disease
-              response, movement controls, inspection, certification and fair trade practices.
-            </p>
+            <span class="fact-block__type">{{ copy.woahType }}</span>
+            <h3>{{ copy.woahTitle }}</h3>
+            <p>{{ copy.woahBody }}</p>
             <a
               href="https://www.woah.org/fileadmin/Home/eng/Health_standards/tahc/current/en_chapitre_ident_traceability.htm"
               target="_blank"
               rel="noreferrer"
             >
-              Source · WOAH Terrestrial Code ↗
+              {{ copy.woahSource }}
             </a>
           </article>
         </div>
@@ -102,49 +186,33 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 
       <section class="comparison" aria-labelledby="comparison-title">
         <StorySectionHeading
-          kicker="LASTRO THESIS"
-          title="Move from reconciliation toward independently verifiable continuity."
+          :kicker="copy.thesisKicker"
+          :title="copy.thesisTitle"
           heading-id="comparison-title"
         />
 
         <div class="comparison__grid">
           <article class="flow-panel flow-panel--current">
-            <span class="flow-panel__label">CURRENT WORLD</span>
+            <span class="flow-panel__label">{{ copy.currentLabel }}</span>
             <ol>
-              <li>Physical reality</li>
-              <li>Multiple organizations</li>
-              <li>Fragmented records</li>
-              <li>Reconciliation</li>
-              <li>Trust</li>
+              <li v-for="step in copy.current" :key="step">{{ step }}</li>
             </ol>
           </article>
 
           <div class="comparison__bridge" aria-hidden="true">→</div>
 
           <article class="flow-panel flow-panel--lastro">
-            <span class="flow-panel__label">LASTRO PRIMITIVE</span>
+            <span class="flow-panel__label">{{ copy.lastroLabel }}</span>
             <ol>
-              <li>Physical event</li>
-              <li>Signed evidence</li>
-              <li>Persistent identity</li>
-              <li>Canonical history</li>
-              <li>Independent verification</li>
+              <li v-for="step in copy.lastro" :key="step">{{ step }}</li>
             </ol>
           </article>
         </div>
 
-        <p class="comparison__note">
-          Lastro does not claim to replace official traceability or compliance systems. The thesis
-          is narrower: verifiable identity and custody can become a foundation those architectures
-          can reference.
-        </p>
+        <p class="comparison__note">{{ copy.note }}</p>
       </section>
 
-      <StoryPageFooter
-        title="See how the primitive can expand without confusing vision with proof."
-        to="/future"
-        link-label="Explore The Future"
-      />
+      <StoryPageFooter :title="copy.footerTitle" to="/future" :link-label="copy.footerLink" />
     </div>
   </main>
 </template>
@@ -242,6 +310,10 @@ import StorySectionHeading from '../components/story/StorySectionHeading.vue'
   color: var(--chain);
   font: 650 11px/1.4 var(--font-mono);
   text-underline-offset: 4px;
+}
+
+.fact-block a + a {
+  margin-top: 8px;
 }
 
 .comparison__grid {

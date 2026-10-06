@@ -1,17 +1,20 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import { useCopy } from '../../i18n'
 
 defineProps<{
   title: string
   to: string
   linkLabel: string
 }>()
+
+const copy = useCopy({ en: { kicker: 'NEXT' }, pt: { kicker: 'PRÓXIMO' } })
 </script>
 
 <template>
   <footer class="story-page-footer">
     <div>
-      <p class="story-page-footer__kicker">NEXT</p>
+      <p class="story-page-footer__kicker">{{ copy.kicker }}</p>
       <h2>{{ title }}</h2>
     </div>
     <RouterLink class="story-page-footer__link" :to="to">

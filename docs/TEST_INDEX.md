@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 365
-**Files containing test cases:** 69
+**Declared cases:** 372
+**Files containing test cases:** 73
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -63,6 +63,21 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L49: `fails closed and removes malformed local storage`
 - L64: `rejects malformed or oversized durable identifiers from local storage`
 
+## `apps/web/tests/i18n.test.ts`
+
+- L20: `switches the page between English and Portuguese`
+- L46: `remembers the chosen language in this browser`
+
+## `apps/web/tests/pages/ChainHistoryPage.test.ts`
+
+- L21: `renders the product journey newest stage first with the current stage marked`
+- L51: `links every stage to its detail page`
+
+## `apps/web/tests/pages/ChainStagePages.test.ts`
+
+- L109: `connects the records back to the animal and its property`
+- L134: `derives stable demo identifiers`
+
 ## `apps/web/tests/pages/DemoPage.test.ts`
 
 - L161: `offers BIND only to the custodian of an untagged asset`
@@ -77,12 +92,16 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L445: `lets a recipient on another device accept a shared transfer ID`
 - L472: `exposes the stale-custodian check without creating work`
 
+## `apps/web/tests/pages/LoginPage.test.ts`
+
+- L20: `renders the login form and explains that access is simulated`
+
 ## `apps/web/tests/pages/StoryRoutes.test.ts`
 
 - L19: `exposes the intended public information architecture`
-- L40: `renders the landing paths with Demo as the primary action`
-- L58: `renders the sourced physical trust gap story`
-- L77: `separates proven functionality from the future expansion path`
+- L48: `renders the landing paths with Demo as the primary action`
+- L66: `renders the sourced physical trust gap story`
+- L85: `separates proven functionality from the future expansion path`
 
 ## `apps/web/tests/pages/VerifyPage.test.ts`
 

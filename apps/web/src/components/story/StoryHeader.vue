@@ -1,7 +1,14 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import LanguageSwitch from '../LanguageSwitch.vue'
+import { useCopy } from '../../i18n'
 
 defineProps<{ active?: 'problem' | 'future' | 'demo' }>()
+
+const copy = useCopy({
+  en: { problem: 'The Problem', future: 'The Future', demo: 'Open Demo', nav: 'Primary' },
+  pt: { problem: 'O Problema', future: 'O Futuro', demo: 'Abrir Demo', nav: 'Principal' },
+})
 </script>
 
 <template>
@@ -11,20 +18,21 @@ defineProps<{ active?: 'problem' | 'future' | 'demo' }>()
       <span>LASTRO</span>
     </RouterLink>
 
-    <nav class="story-header__nav" aria-label="Primary">
+    <nav class="story-header__nav" :aria-label="copy.nav">
       <RouterLink to="/problem" :aria-current="active === 'problem' ? 'page' : undefined">
-        The Problem
+        {{ copy.problem }}
       </RouterLink>
       <RouterLink to="/future" :aria-current="active === 'future' ? 'page' : undefined">
-        The Future
+        {{ copy.future }}
       </RouterLink>
       <RouterLink
         class="story-header__demo"
-        to="/demo"
+        to="/chain-history"
         :aria-current="active === 'demo' ? 'page' : undefined"
       >
-        Open Demo
+        {{ copy.demo }}
       </RouterLink>
+      <LanguageSwitch />
     </nav>
   </header>
 </template>
@@ -91,6 +99,7 @@ defineProps<{ active?: 'problem' | 'future' | 'demo' }>()
   }
 
   .story-header__nav {
+    flex-wrap: wrap;
     width: 100%;
     justify-content: space-between;
     gap: 10px;

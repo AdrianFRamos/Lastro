@@ -1,19 +1,43 @@
 <script setup lang="ts">
-const participants = [
-  'Producer',
-  'Trader',
-  'Transport',
-  'Processor',
-  'Exporter',
-  'Importer / Market',
-] as const
+import { useCopy } from '../../i18n'
 
-const evidenceStores = [
-  'Private systems',
-  'Government systems',
-  'Certification systems',
-  'Spreadsheets & documents',
-] as const
+const copy = useCopy({
+  en: {
+    participants: ['Producer', 'Trader', 'Transport', 'Processor', 'Exporter', 'Importer / Market'],
+    evidenceStores: [
+      'Private systems',
+      'Government systems',
+      'Certification systems',
+      'Spreadsheets & documents',
+    ],
+    asset: 'PHYSICAL ASSET',
+    assetHint: 'Identity persists in the real world.',
+    chain: 'Example supply-chain participants',
+    fragments: 'EVIDENCE FRAGMENTS ACROSS',
+    result: 'NO SHARED VERIFIABLE HISTORY',
+  },
+  pt: {
+    participants: [
+      'Produtor',
+      'Comprador',
+      'Transporte',
+      'Frigorífico',
+      'Exportador',
+      'Importador / Mercado',
+    ],
+    evidenceStores: [
+      'Sistemas privados',
+      'Sistemas do governo',
+      'Sistemas de certificação',
+      'Planilhas e documentos',
+    ],
+    asset: 'ATIVO FÍSICO',
+    assetHint: 'A identidade continua no mundo real.',
+    chain: 'Exemplo de participantes da cadeia',
+    fragments: 'A EVIDÊNCIA SE ESPALHA POR',
+    result: 'NENHUM HISTÓRICO VERIFICÁVEL COMPARTILHADO',
+  },
+})
 </script>
 
 <template>
@@ -21,29 +45,33 @@ const evidenceStores = [
     <div class="trust-gap__asset">
       <span class="trust-gap__asset-mark" aria-hidden="true">ID</span>
       <div>
-        <strong>PHYSICAL ASSET</strong>
-        <span>Identity persists in the real world.</span>
+        <strong>{{ copy.asset }}</strong>
+        <span>{{ copy.assetHint }}</span>
       </div>
     </div>
 
-    <ol class="trust-gap__chain" aria-label="Example supply-chain participants">
-      <li v-for="(participant, index) in participants" :key="participant">
+    <ol class="trust-gap__chain" :aria-label="copy.chain">
+      <li v-for="(participant, index) in copy.participants" :key="participant">
         <span class="trust-gap__index">0{{ index + 1 }}</span>
         <strong>{{ participant }}</strong>
-        <span v-if="index < participants.length - 1" class="trust-gap__arrow" aria-hidden="true">
+        <span
+          v-if="index < copy.participants.length - 1"
+          class="trust-gap__arrow"
+          aria-hidden="true"
+        >
           ↓
         </span>
       </li>
     </ol>
 
     <div class="trust-gap__fragmentation">
-      <p>EVIDENCE FRAGMENTS ACROSS</p>
+      <p>{{ copy.fragments }}</p>
       <div class="trust-gap__stores">
-        <span v-for="store in evidenceStores" :key="store">{{ store }}</span>
+        <span v-for="store in copy.evidenceStores" :key="store">{{ store }}</span>
       </div>
       <div class="trust-gap__result">
         <span aria-hidden="true"></span>
-        <strong>NO SHARED VERIFIABLE HISTORY</strong>
+        <strong>{{ copy.result }}</strong>
       </div>
     </div>
   </div>

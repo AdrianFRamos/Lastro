@@ -19,7 +19,7 @@ const routes = [
   {
     path: '/demo',
     screenshotName: 'demo',
-    heading: 'Physical evidence → canonical custody',
+    heading: 'Physical evidence → canonical identity and custody',
   },
   {
     path: '/verify',

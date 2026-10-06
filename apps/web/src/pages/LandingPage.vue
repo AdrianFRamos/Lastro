@@ -1,6 +1,31 @@
 <script setup lang="ts">
 import { RouterLink } from 'vue-router'
+import LanguageSwitch from '../components/LanguageSwitch.vue'
 import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
+import { useCopy } from '../i18n'
+
+const copy = useCopy({
+  en: {
+    title: 'Verifiable identity and custody for physical livestock.',
+    support: ['Physical identifiers can change.', 'Verifiable identity and custody should not.'],
+    demo: 'Open Demo',
+    paths: 'Secondary exploration',
+    problem: 'The Problem',
+    problemHint: 'Understand the global physical trust gap.',
+    future: 'The Future',
+    futureHint: 'See what verifiable physical history can enable.',
+  },
+  pt: {
+    title: 'Identidade e custódia verificáveis para o rebanho.',
+    support: ['O identificador físico pode mudar.', 'A identidade e a custódia verificáveis, não.'],
+    demo: 'Abrir Demo',
+    paths: 'Explorar mais',
+    problem: 'O Problema',
+    problemHint: 'Entenda a lacuna de confiança nas cadeias físicas.',
+    future: 'O Futuro',
+    futureHint: 'Veja o que um histórico físico verificável permite.',
+  },
+})
 </script>
 
 <template>
@@ -14,29 +39,30 @@ import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
             <img src="/logo.svg" alt="" width="36" height="36" />
             <span>LASTRO</span>
           </RouterLink>
+          <LanguageSwitch />
         </header>
 
         <div class="landing-hero__content">
           <p class="landing-hero__eyebrow">LASTRO</p>
-          <h1 id="landing-title">Verifiable identity and custody for physical livestock.</h1>
+          <h1 id="landing-title">{{ copy.title }}</h1>
           <p class="landing-hero__support">
-            Physical identifiers can change.<br />
-            Verifiable identity and custody should not.
+            {{ copy.support[0] }}<br />
+            {{ copy.support[1] }}
           </p>
 
-          <RouterLink class="landing-hero__cta" to="/demo">
-            <span>Open Demo</span>
+          <RouterLink class="landing-hero__cta" to="/chain-history">
+            <span>{{ copy.demo }}</span>
             <span aria-hidden="true">→</span>
           </RouterLink>
 
-          <nav class="landing-paths" aria-label="Secondary exploration">
+          <nav class="landing-paths" :aria-label="copy.paths">
             <RouterLink class="landing-path" to="/problem">
-              <span>The Problem</span>
-              <small>Understand the global physical trust gap.</small>
+              <span>{{ copy.problem }}</span>
+              <small>{{ copy.problemHint }}</small>
             </RouterLink>
             <RouterLink class="landing-path" to="/future">
-              <span>The Future</span>
-              <small>See what verifiable physical history can enable.</small>
+              <span>{{ copy.future }}</span>
+              <small>{{ copy.futureHint }}</small>
             </RouterLink>
           </nav>
         </div>
