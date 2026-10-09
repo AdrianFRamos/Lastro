@@ -1,18 +1,23 @@
 <script setup lang="ts">
 /**
  * Demo login screen reached from ENTRAR, over the same animated asset backdrop as the home.
- * Authentication is not wired yet, so submitting only validates the fields and explains that
- * access is simulated.
+ * There are no real accounts yet: the visitor picks an access profile (producer, carrier,
+ * slaughterhouse, exporter, merchant or common user) and is taken to that profile's workspace.
  */
 import { ref } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRouter } from 'vue-router'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
-import { useCopy } from '../i18n'
+import { findRole, roles, type RoleId } from '../demo/roles'
+import { signIn } from '../demo/workspace'
+import { tr, useCopy } from '../i18n'
+
+const router = useRouter()
 
 const email = ref('')
 const password = ref('')
-const submitted = ref(false)
+const role = ref<RoleId | ''>('')
+const error = ref('')
 
 const copy = useCopy({
   en: {
@@ -21,8 +26,11 @@ const copy = useCopy({
     email: 'Email',
     emailPlaceholder: 'you@company.com',
     password: 'Password',
+    role: 'Access profile',
+    choose: 'Select your profile…',
     submit: 'Sign in',
-    notice: 'Demo: access is not connected to a real account yet.',
+    notice: 'Demo: pick a profile to open its workspace. No real account is checked yet.',
+    missing: 'Fill in the email, the password and the access profile.',
   },
   pt: {
     back: 'Voltar ao histórico',
@@ -30,13 +38,24 @@ const copy = useCopy({
     email: 'E-mail',
     emailPlaceholder: 'voce@empresa.com',
     password: 'Senha',
+    role: 'Perfil de acesso',
+    choose: 'Selecione seu perfil…',
     submit: 'Entrar',
-    notice: 'Demonstração: o acesso ainda não está conectado a uma conta real.',
+    notice:
+      'Demonstração: escolha um perfil para abrir o painel dele. Nenhuma conta real é verificada ainda.',
+    missing: 'Preencha o e-mail, a senha e o perfil de acesso.',
   },
 })
 
-function submit() {
-  submitted.value = true
+async function submit() {
+  const chosen = findRole(role.value)
+  if (!email.value || !password.value || !chosen) {
+    error.value = copy.value.missing
+    return
+  }
+  error.value = ''
+  signIn(chosen.id, email.value)
+  await router.push({ name: 'workspace' })
 }
 </script>
 
@@ -55,7 +74,7 @@ function submit() {
     <section class="login__card" aria-labelledby="login-title">
       <h1 id="login-title">{{ copy.title }}</h1>
 
-      <form class="login__form" @submit.prevent="submit">
+      <form class="login__form" novalidate @submit.prevent="submit">
         <label for="login-email">{{ copy.email }}</label>
         <input
           id="login-email"
@@ -76,12 +95,20 @@ function submit() {
           required
         />
 
+        <label for="login-role">{{ copy.role }}</label>
+        <select id="login-role" v-model="role" required>
+          <option value="" disabled>{{ copy.choose }}</option>
+          <option v-for="option in roles" :key="option.id" :value="option.id">
+            {{ tr(option.label) }}
+          </option>
+        </select>
+
+        <p v-if="error" class="login__error" role="alert">{{ error }}</p>
+
         <button type="submit">{{ copy.submit }}</button>
       </form>
 
-      <p v-if="submitted" class="login__notice" role="status">
-        {{ copy.notice }}
-      </p>
+      <p class="login__notice">{{ copy.notice }}</p>
     </section>
   </main>
 </template>
@@ -164,7 +191,8 @@ function submit() {
   text-transform: uppercase;
 }
 
-.login__form input {
+.login__form input,
+.login__form select {
   width: 100%;
   padding: 12px 14px;
   border: 1px solid var(--border);
@@ -175,7 +203,12 @@ function submit() {
   font-size: 15px;
 }
 
-.login__form input:focus-visible {
+.login__form select {
+  color-scheme: dark;
+}
+
+.login__form input:focus-visible,
+.login__form select:focus-visible {
   border-color: var(--proof);
   outline: 2px solid color-mix(in srgb, var(--proof) 35%, transparent);
   outline-offset: 1px;
@@ -198,6 +231,13 @@ function submit() {
 .login__form button:hover,
 .login__form button:focus-visible {
   background: color-mix(in srgb, var(--primary) 42%, var(--canvas));
+}
+
+.login__error {
+  margin: 8px 0 0;
+  color: var(--warning);
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .login__notice {

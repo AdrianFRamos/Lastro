@@ -1,6 +1,7 @@
 /** Public browser surface: product story, working demo console and independent verifier. */
 import { createRouter, createWebHistory } from 'vue-router'
 import LandingPage from './pages/LandingPage.vue'
+import { session } from './demo/workspace'
 
 export const router = createRouter({
   history: createWebHistory(),
@@ -44,6 +45,13 @@ export const router = createRouter({
       component: () => import('./pages/chain/MarketPage.vue'),
     },
     { path: '/login', name: 'login', component: () => import('./pages/LoginPage.vue') },
+    {
+      path: '/painel',
+      name: 'workspace',
+      component: () => import('./pages/WorkspacePage.vue'),
+      // Simulated access: the workspace needs a demo profile chosen on the login screen.
+      beforeEnter: () => (session.value ? true : { name: 'login' }),
+    },
     { path: '/demo', name: 'demo', component: () => import('./pages/DemoPage.vue') },
     {
       path: '/lineage/:assetId?',

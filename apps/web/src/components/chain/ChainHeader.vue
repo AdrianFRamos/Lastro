@@ -1,13 +1,17 @@
 <script setup lang="ts">
 /**
- * Top bar of the Open Demo chain pages: brand on the left; language flags and actions
- * (sign in by default) on the right.
+ * Top bar of the Open Demo chain pages: brand on the left; language flags and actions on the
+ * right (sign in by default, or the workspace once a demo profile is signed in).
  */
 import { RouterLink } from 'vue-router'
 import LanguageSwitch from '../LanguageSwitch.vue'
+import { session } from '../../demo/workspace'
 import { useCopy } from '../../i18n'
 
-const copy = useCopy({ en: { signIn: 'Sign in' }, pt: { signIn: 'Entrar' } })
+const copy = useCopy({
+  en: { signIn: 'Sign in', workspace: 'My workspace' },
+  pt: { signIn: 'Entrar', workspace: 'Meu painel' },
+})
 </script>
 
 <template>
@@ -19,7 +23,10 @@ const copy = useCopy({ en: { signIn: 'Sign in' }, pt: { signIn: 'Entrar' } })
     <div class="chain-header__actions">
       <LanguageSwitch />
       <slot>
-        <RouterLink class="chain-header__button" to="/login">{{ copy.signIn }}</RouterLink>
+        <RouterLink v-if="session" class="chain-header__button" to="/painel">
+          {{ copy.workspace }}
+        </RouterLink>
+        <RouterLink v-else class="chain-header__button" to="/login">{{ copy.signIn }}</RouterLink>
       </slot>
     </div>
   </header>

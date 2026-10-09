@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 372
-**Files containing test cases:** 73
+**Declared cases:** 381
+**Files containing test cases:** 75
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -63,6 +63,14 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L49: `fails closed and removes malformed local storage`
 - L64: `rejects malformed or oversized durable identifiers from local storage`
 
+## `apps/web/tests/demo/workspace.test.ts`
+
+- L30: `gives each chain participant its own sections and the common user read access`
+- L60: `creates, updates and deletes records and keeps them across a reload`
+- L88: `fails closed to the example rows when stored records are malformed`
+- L103: `restores the example data`
+- L119: `remembers the signed-in profile and rejects unknown ones`
+
 ## `apps/web/tests/i18n.test.ts`
 
 - L20: `switches the page between English and Portuguese`
@@ -94,7 +102,8 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/pages/LoginPage.test.ts`
 
-- L20: `renders the login form and explains that access is simulated`
+- L37: `asks for an access profile and explains that access is simulated`
+- L68: `signs in with the chosen profile and opens its workspace`
 
 ## `apps/web/tests/pages/StoryRoutes.test.ts`
 
@@ -109,6 +118,12 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L89: `initial verification layers are NOT_CHECKED rather than optimistic VALID`
 - L105: `malformed or unsupported packages can never reach a canonical VALID result`
 - L138: `shows RPC unavailability separately from local evidence validity`
+
+## `apps/web/tests/pages/WorkspacePage.test.ts`
+
+- L38: `lets the producer create, edit and delete its records`
+- L82: `shows the whole chain to the common user without any change action`
+- L111: `returns to the login after signing out`
 
 ## `apps/web/tests/protocol/evidence.test.ts`
 
