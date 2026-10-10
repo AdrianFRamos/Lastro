@@ -5,18 +5,29 @@
  * of the key) and the workspace role is read from the wallet's PartyRecord on Solana. Without a
  * wallet, a visitor can still browse every participant's records read-only.
  */
-import { onMounted, onUnmounted, ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
+import {
+  RECOMMENDED_WALLETS,
+  connectForLogin,
+  loginWallets,
+  onLoginWalletsChange,
+  signLoginMessage,
+  type StandardWallet,
+} from '../auth/loginWallets'
 import { loginWithConnectedWallet } from '../auth/walletLogin'
 import { signInAsVisitor, signInWithWallet } from '../demo/workspace'
 import { useCopy } from '../i18n'
-import { connectWalletByName, discoveredWalletNames, onWalletStateChange } from '../solana/wallet'
 
 const router = useRouter()
 
-const wallets = ref<string[]>([])
+const wallets = shallowRef<StandardWallet[]>([])
+/** Recommended wallets not detected in this browser, offered as install links. */
+const missing = computed(() =>
+  RECOMMENDED_WALLETS.filter((option) => !wallets.value.some((w) => w.name === option.name)),
+)
 const busyWallet = ref('')
 const error = ref('')
 
@@ -27,9 +38,10 @@ const copy = useCopy({
     intro: 'Sign in with the Solana wallet registered for your company in the chain.',
     connect: 'Sign in with',
     signing: 'Check your wallet…',
-    noWallet:
-      'No Solana wallet was found in this browser. Install Phantom (or another Solana wallet) and switch it to devnet.',
-    install: 'Get Phantom',
+    noWallet: 'No Solana wallet was found in this browser.',
+    install: 'Install',
+    walletHint:
+      'In MetaMask, use the Solana account (not the 0x… Ethereum one). Any Solana network works to sign in.',
     or: 'or',
     visitor: 'Explore as a visitor',
     visitorNote: 'Read-only, no wallet. Records shown are simulated.',
@@ -47,9 +59,10 @@ const copy = useCopy({
     intro: 'Entre com a carteira Solana cadastrada para a sua empresa na cadeia.',
     connect: 'Entrar com',
     signing: 'Confirme na sua carteira…',
-    noWallet:
-      'Nenhuma carteira Solana foi encontrada neste navegador. Instale a Phantom (ou outra carteira Solana) e mude para a devnet.',
-    install: 'Instalar a Phantom',
+    noWallet: 'Nenhuma carteira Solana foi encontrada neste navegador.',
+    install: 'Instalar',
+    walletHint:
+      'Na MetaMask, use a conta Solana (não a conta Ethereum 0x…). Qualquer rede Solana serve para entrar.',
     or: 'ou',
     visitor: 'Explorar como visitante',
     visitorNote: 'Somente leitura, sem carteira. Os registros exibidos são simulados.',
@@ -66,12 +79,12 @@ const copy = useCopy({
 let stopWatchingWallets: (() => void) | null = null
 
 function refreshWallets(): void {
-  wallets.value = discoveredWalletNames()
+  wallets.value = loginWallets()
 }
 
 onMounted(() => {
   refreshWallets()
-  stopWatchingWallets = onWalletStateChange(refreshWallets)
+  stopWatchingWallets = onLoginWalletsChange(refreshWallets)
 })
 
 onUnmounted(() => stopWatchingWallets?.())
@@ -81,13 +94,16 @@ function isUserRejection(cause: unknown): boolean {
   return /reject|denied|cancel/i.test(text)
 }
 
-async function signInWith(name: string): Promise<void> {
+async function signInWith(wallet: StandardWallet): Promise<void> {
   if (busyWallet.value) return
-  busyWallet.value = name
+  busyWallet.value = wallet.name
   error.value = ''
   try {
-    await connectWalletByName(name)
-    const outcome = await loginWithConnectedWallet()
+    const account = await connectForLogin(wallet)
+    const outcome = await loginWithConnectedWallet({
+      connectedWallet: () => account.address,
+      signMessage: (message) => signLoginMessage(wallet, account, message),
+    })
     if (outcome.kind === 'blocked') {
       error.value = copy.value[outcome.status]
       return
@@ -124,25 +140,30 @@ async function exploreAsVisitor(): Promise<void> {
       <p class="login__intro">{{ copy.intro }}</p>
 
       <div class="login__form">
-        <template v-if="wallets.length > 0">
-          <button
-            v-for="name in wallets"
-            :key="name"
-            type="button"
-            data-action="wallet-login"
-            :data-wallet="name"
-            :disabled="busyWallet !== ''"
-            @click="signInWith(name)"
-          >
-            {{ busyWallet === name ? copy.signing : `${copy.connect} ${name}` }}
-          </button>
-        </template>
-        <p v-else class="login__empty">
-          {{ copy.noWallet }}
-          <a href="https://phantom.com/download" target="_blank" rel="noopener noreferrer">{{
-            copy.install
-          }}</a>
-        </p>
+        <button
+          v-for="wallet in wallets"
+          :key="wallet.name"
+          type="button"
+          data-action="wallet-login"
+          :data-wallet="wallet.name"
+          :disabled="busyWallet !== ''"
+          @click="signInWith(wallet)"
+        >
+          <img v-if="wallet.icon" :src="wallet.icon" alt="" width="18" height="18" />
+          {{ busyWallet === wallet.name ? copy.signing : `${copy.connect} ${wallet.name}` }}
+        </button>
+        <p v-if="wallets.length === 0" class="login__empty">{{ copy.noWallet }}</p>
+        <a
+          v-for="option in missing"
+          :key="option.name"
+          class="login__install"
+          :data-install="option.name"
+          :href="option.install"
+          target="_blank"
+          rel="noopener noreferrer"
+          >{{ copy.install }} {{ option.name }} ↗</a
+        >
+        <p class="login__hint">{{ copy.walletHint }}</p>
 
         <p v-if="error" class="login__error" role="alert">{{ error }}</p>
 
@@ -283,10 +304,38 @@ async function exploreAsVisitor(): Promise<void> {
   line-height: 1.5;
 }
 
-.login__empty a {
-  display: inline-block;
+.login__install {
+  display: block;
   margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font: 700 12px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.login__install:hover,
+.login__install:focus-visible {
+  border-color: var(--proof);
   color: var(--proof);
+}
+
+.login__hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.login__form button[data-action='wallet-login'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
 }
 
 .login__or {

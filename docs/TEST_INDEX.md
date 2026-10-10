@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 393
-**Files containing test cases:** 77
+**Declared cases:** 396
+**Files containing test cases:** 78
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -26,6 +26,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L162: `rejects inconsistent capture event lifecycle metadata`
 - L184: `submits only the transaction signature to the v2 confirmed-verification endpoint`
 - L206: `rejects malformed or oversized durable identifiers`
+
+## `apps/web/tests/auth/loginWallets.test.ts`
+
+- L49: `offers every wallet able to sign a Solana message, whatever its cluster`
+- L73: `signs in with the Solana account, never the Ethereum one`
 
 ## `apps/web/tests/auth/partyRegistry.test.ts`
 
@@ -117,9 +122,10 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/pages/LoginPage.test.ts`
 
-- L67: `signs a registered wallet into the role recorded on Solana`
-- L97: `refuses revoked registrations and cancelled signatures`
-- L121: `offers a read-only visitor session when no wallet is installed`
+- L74: `signs a registered wallet into the role recorded on Solana`
+- L106: `refuses revoked registrations and cancelled signatures`
+- L132: `signs in with MetaMask like any other Solana wallet`
+- L160: `offers a read-only visitor session when no wallet is installed`
 
 ## `apps/web/tests/pages/StoryRoutes.test.ts`
 

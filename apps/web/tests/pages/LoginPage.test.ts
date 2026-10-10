@@ -6,6 +6,8 @@ import LoginPage from '../../src/pages/LoginPage.vue'
 import { reloadWorkspace, session } from '../../src/demo/workspace'
 import { setLocale } from '../../src/i18n'
 
+const WALLET = vi.hoisted(() => 'Vote111111111111111111111111111111111111111')
+
 const wallet = vi.hoisted(() => ({
   names: ['Phantom'] as string[],
   connected: [] as string[],
@@ -14,12 +16,19 @@ const login = vi.hoisted(() => ({
   outcome: null as LoginOutcome | Error | null,
 }))
 
-vi.mock('../../src/solana/wallet', () => ({
-  discoveredWalletNames: () => wallet.names,
-  onWalletStateChange: () => () => {},
-  connectWalletByName: async (name: string) => {
-    wallet.connected.push(name)
+vi.mock('../../src/auth/loginWallets', () => ({
+  RECOMMENDED_WALLETS: [
+    { name: 'Phantom', install: 'https://phantom.com/download' },
+    { name: 'MetaMask', install: 'https://metamask.io/download' },
+  ],
+  loginWallets: () =>
+    wallet.names.map((name) => ({ name, chains: [], accounts: [], features: {} })),
+  onLoginWalletsChange: () => () => {},
+  connectForLogin: async (detected: { name: string }) => {
+    wallet.connected.push(detected.name)
+    return { address: WALLET, chains: ['solana:devnet'], features: [] }
   },
+  signLoginMessage: async () => new Uint8Array(64),
 }))
 
 vi.mock('../../src/auth/walletLogin', () => ({
@@ -28,8 +37,6 @@ vi.mock('../../src/auth/walletLogin', () => ({
     return login.outcome
   },
 }))
-
-const WALLET = 'Vote111111111111111111111111111111111111111'
 
 async function mountLogin() {
   const router = createRouter({
@@ -77,6 +84,8 @@ describe('wallet login page', () => {
     await flushPromises()
 
     expect(wallet.connected).toEqual(['Phantom'])
+    expect(wrapper.find('[data-install="Phantom"]').exists()).toBe(false)
+    expect(wrapper.find('[data-install="MetaMask"]').exists()).toBe(true)
     expect(session.value).toEqual({
       mode: 'wallet',
       role: 'slaughterhouse',
@@ -113,6 +122,36 @@ describe('wallet login page', () => {
   })
 
   /**
+   * ARRANGE: a browser with MetaMask exposing a Solana account; the chain registers it as an
+   *          exporter.
+   * ACTION: sign in with MetaMask.
+   * ASSERT: MetaMask is offered next to the other wallets and signs the visitor into the exporter
+   *         workspace.
+   * FAILURE MEANS: MetaMask users could not sign in even though their wallet supports Solana.
+   */
+  it('signs in with MetaMask like any other Solana wallet', async () => {
+    wallet.names = ['Phantom', 'MetaMask']
+    login.outcome = {
+      kind: 'signed-in',
+      session: { role: 'exporter', wallet: WALLET, partyId: '08'.repeat(32) },
+    }
+    const { wrapper, router } = await mountLogin()
+
+    expect(wrapper.findAll('[data-action="wallet-login"]').map((b) => b.text())).toEqual([
+      'Entrar com Phantom',
+      'Entrar com MetaMask',
+    ])
+    expect(wrapper.find('[data-install]').exists()).toBe(false)
+    await wrapper.get('[data-wallet="MetaMask"]').trigger('click')
+    await flushPromises()
+
+    expect(wallet.connected).toEqual(['MetaMask'])
+    expect(session.value).toMatchObject({ mode: 'wallet', role: 'exporter' })
+    expect(router.currentRoute.value.name).toBe('workspace')
+    wrapper.unmount()
+  })
+
+  /**
    * ARRANGE: a browser without any Solana wallet.
    * ACTION: open the login and continue as a visitor.
    * ASSERT: the page explains how to get a wallet, and the visitor opens a read-only session.
@@ -124,6 +163,12 @@ describe('wallet login page', () => {
 
     expect(wrapper.find('[data-action="wallet-login"]').exists()).toBe(false)
     expect(wrapper.text()).toContain('Nenhuma carteira Solana')
+    expect(wrapper.get('[data-install="Phantom"]').attributes('href')).toBe(
+      'https://phantom.com/download',
+    )
+    expect(wrapper.get('[data-install="MetaMask"]').attributes('href')).toBe(
+      'https://metamask.io/download',
+    )
     await wrapper.get('[data-action="visitor-login"]').trigger('click')
     await flushPromises()
 

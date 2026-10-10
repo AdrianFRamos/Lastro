@@ -27,16 +27,6 @@ export function availableWalletChoices(): WalletChoice[] {
   })
 }
 
-/** Names of every Wallet Standard wallet discovered for the configured chain, connected or not. */
-export function discoveredWalletNames(): string[] {
-  return solanaClient.wallet.getState().wallets.map((wallet) => wallet.name)
-}
-
-/** Call `listener` whenever wallet discovery or connection state changes; returns unsubscribe. */
-export function onWalletStateChange(listener: () => void): () => void {
-  return solanaClient.wallet.subscribe(listener)
-}
-
 /** Connect one explicitly selected Wallet Standard wallet. */
 export async function connectWalletByName(name: string): Promise<void> {
   const { wallets } = solanaClient.wallet.getState()
