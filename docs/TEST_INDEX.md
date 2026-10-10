@@ -2,7 +2,7 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 396
+**Declared cases:** 398
 **Files containing test cases:** 78
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
@@ -34,10 +34,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/auth/partyRegistry.test.ts`
 
-- L52: `decodes a party of this deployment registered for the wallet`
-- L70: `rejects parties of other deployments, other wallets or forged layouts`
-- L91: `keeps only locally verified parties from the RPC answer`
-- L106: `maps on-chain roles to workspace profiles`
+- L53: `decodes a party of this deployment registered for the wallet`
+- L71: `rejects parties of other deployments, other wallets or forged layouts`
+- L92: `keeps only locally verified parties from the RPC answer`
+- L107: `maps on-chain roles to workspace profiles`
+- L136: `keeps the exporter distinct from commerce and shaped like transport`
 
 ## `apps/web/tests/auth/walletLogin.test.ts`
 
@@ -256,7 +257,8 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L24: `account_space_constants_match_serialized_layouts`
 - L199: `asset_state_space_matches_api_decoder_layout`
 - L229: `enum_ranges_are_closed_and_stable`
-- L244: `asset_closed_is_terminal_for_closed_and_retired_statuses`
+- L245: `exporter_is_its_own_stable_party_role`
+- L264: `asset_closed_is_terminal_for_closed_and_retired_statuses`
 
 ## `crates/lastro-protocol/tests/envelope_v2.rs`
 

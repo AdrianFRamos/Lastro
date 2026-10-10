@@ -70,6 +70,9 @@ pub const PARTY_ROLE_DISTRIBUTOR: u16 = 8;
 pub const PARTY_ROLE_RETAILER: u16 = 9;
 pub const PARTY_ROLE_AUDITOR: u16 = 10;
 pub const PARTY_ROLE_OFFICIAL_SOURCE: u16 = 11;
+/// Moves product out of the country: same custody/transport records as a transporter, but a
+/// distinct link of the chain (export certificates, container, ports).
+pub const PARTY_ROLE_EXPORTER: u16 = 12;
 
 pub fn is_valid_asset_type(value: u8) -> bool {
     matches!(value, 1..=8)
@@ -80,7 +83,7 @@ pub fn is_valid_facility_type(value: u8) -> bool {
 }
 
 pub fn is_valid_party_role(value: u16) -> bool {
-    matches!(value, 1..=11)
+    matches!(value, PARTY_ROLE_PRODUCER..=PARTY_ROLE_EXPORTER)
 }
 
 pub fn is_valid_station_status(value: u8) -> bool {

@@ -24,19 +24,35 @@ const PARTY_SEED = new TextEncoder().encode('party')
 /** On-chain party statuses (programs/lastro-v2/src/instructions/parties.rs). */
 export const PARTY_STATUS = { ACTIVE: 1, SUSPENDED: 2, REVOKED: 3, EXPIRED: 4 } as const
 
+/** On-chain party roles (programs/lastro-v2/src/constants.rs). */
+export const PARTY_ROLE = {
+  PRODUCER: 1,
+  CUSTODIAN: 2,
+  SELLER: 3,
+  BUYER: 4,
+  TRANSPORTER: 5,
+  SLAUGHTERHOUSE: 6,
+  PROCESSING_FACILITY: 7,
+  DISTRIBUTOR: 8,
+  RETAILER: 9,
+  AUDITOR: 10,
+  OFFICIAL_SOURCE: 11,
+  EXPORTER: 12,
+} as const
+
 /**
- * On-chain party roles (programs/lastro-v2/src/constants.rs) shown as a workspace profile.
- * The program has no dedicated exporter role, so the distributor role stands for it. Roles
- * without a workspace of their own (custodian, seller, buyer, auditor, official source) browse
- * the chain read-only.
+ * The workspace each on-chain role opens, following the chain: producer → transporter →
+ * slaughterhouse → exporter (transport out of the country) → retailer (commerce). Roles without
+ * a workspace of their own (custodian, seller, buyer, distributor, auditor, official source)
+ * browse the chain read-only.
  */
 const WORKSPACE_ROLE_BY_PARTY_ROLE: Record<number, RoleId> = {
-  1: 'producer',
-  5: 'carrier',
-  6: 'slaughterhouse',
-  7: 'slaughterhouse',
-  8: 'exporter',
-  9: 'merchant',
+  [PARTY_ROLE.PRODUCER]: 'producer',
+  [PARTY_ROLE.TRANSPORTER]: 'carrier',
+  [PARTY_ROLE.SLAUGHTERHOUSE]: 'slaughterhouse',
+  [PARTY_ROLE.PROCESSING_FACILITY]: 'slaughterhouse',
+  [PARTY_ROLE.EXPORTER]: 'exporter',
+  [PARTY_ROLE.RETAILER]: 'merchant',
 }
 
 export function workspaceRoleOf(partyRole: number): RoleId {

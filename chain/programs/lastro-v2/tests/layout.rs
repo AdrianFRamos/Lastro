@@ -237,7 +237,27 @@ fn enum_ranges_are_closed_and_stable() {
     assert!(!is_valid_facility_type(8));
     assert!(is_valid_party_role(1));
     assert!(is_valid_party_role(11));
-    assert!(!is_valid_party_role(12));
+    assert!(!is_valid_party_role(0));
+    assert!(!is_valid_party_role(13));
+}
+
+#[test]
+fn exporter_is_its_own_stable_party_role() {
+    // PURPOSE: the exporter (moves product out of the country) is a distinct on-chain role,
+    //          separate from the transporter, distributor and retailer.
+    // FAILURE MEANS: an exporter wallet would be indistinguishable from another link of the chain.
+    use lastro_v2::constants::{
+        PARTY_ROLE_DISTRIBUTOR, PARTY_ROLE_EXPORTER, PARTY_ROLE_RETAILER, PARTY_ROLE_TRANSPORTER,
+    };
+    assert_eq!(PARTY_ROLE_EXPORTER, 12);
+    assert!(is_valid_party_role(PARTY_ROLE_EXPORTER));
+    for other in [
+        PARTY_ROLE_TRANSPORTER,
+        PARTY_ROLE_DISTRIBUTOR,
+        PARTY_ROLE_RETAILER,
+    ] {
+        assert_ne!(PARTY_ROLE_EXPORTER, other);
+    }
 }
 
 #[test]

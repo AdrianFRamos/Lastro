@@ -8,7 +8,11 @@ existing record instead of creating a second one. This helper never stores priva
 
 Roles (programs/lastro-v2/src/constants.rs): 1 producer, 2 custodian, 3 seller, 4 buyer,
 5 transporter, 6 slaughterhouse, 7 processing facility, 8 distributor, 9 retailer,
-10 auditor, 11 official source.
+10 auditor, 11 official source, 12 exporter.
+
+A registered role cannot be changed. To move a wallet to another role, register a new party with
+`--party-id-hex` and retire the old one with `--set-status 3` (REVOKED is terminal); both stay
+on-chain as an auditable history.
 """
 
 from __future__ import annotations
@@ -38,7 +42,8 @@ from initialize_protocol_config import meta, send  # noqa: E402
 
 SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
 PARTY_LENGTH = 76
-VALID_ROLES = range(1, 12)
+VALID_ROLES = range(1, 13)
+VALID_STATUSES = range(1, 5)  # 1 active, 2 suspended, 3 revoked (terminal), 4 expired
 
 
 def parse_args() -> argparse.Namespace:
@@ -50,6 +55,9 @@ def parse_args() -> argparse.Namespace:
     parser.add_argument("--role", type=int, required=True)
     parser.add_argument("--party-id-hex", help="defaults to SHA-256('LASTRO_PARTY\\0' || wallet)")
     parser.add_argument("--authority-keypair", help="deployment authority; omit to only validate")
+    parser.add_argument(
+        "--set-status", type=int, help="change an existing party's status (1..4) instead of registering"
+    )
     return parser.parse_args()
 
 
@@ -64,7 +72,7 @@ def global_discriminator(name: str) -> bytes:
 def main() -> int:
     args = parse_args()
     if args.role not in VALID_ROLES:
-        raise SystemContractError("role must be between 1 and 11")
+        raise SystemContractError("role must be between 1 and 12")
     program_id = b58decode_exact(args.program_id, 32, "program ID")
     deployment_id = decode_hex_exact(args.deployment_id_hex, 32, "deployment ID")
     wallet = b58decode_exact(args.wallet, 32, "participant wallet")
@@ -76,7 +84,26 @@ def main() -> int:
     party_address, party_bump = find_program_address([b"party", deployment_id, party_id], program_id)
     party = b58encode(party_address)
     transaction = None
-    if rpc.account(party) is None:
+    if args.set_status is not None:
+        if args.set_status not in VALID_STATUSES:
+            raise SystemContractError("status must be between 1 and 4")
+        if not args.authority_keypair or rpc.account(party) is None:
+            raise SystemContractError("--set-status needs an existing party and --authority-keypair")
+        authority = WalletActor.from_solana_keypair(Path(args.authority_keypair))
+        instruction = {
+            "programId": args.program_id,
+            "accounts": [
+                meta(authority.address, True, False),
+                meta(b58encode(find_program_address([b"config-v2", deployment_id], program_id)[0])),
+                meta(b58encode(find_program_address([b"party-registry", deployment_id], program_id)[0])),
+                meta(party, writable=True),
+            ],
+            "dataBase64": base64.b64encode(
+                global_discriminator("set_party_status") + bytes([args.set_status])
+            ).decode(),
+        }
+        transaction = send(rpc, authority, [instruction], "set_party_status")
+    elif rpc.account(party) is None:
         if not args.authority_keypair:
             raise SystemContractError("party is not registered; pass --authority-keypair to register it")
         authority = WalletActor.from_solana_keypair(Path(args.authority_keypair))
@@ -102,6 +129,8 @@ def main() -> int:
     role = struct.unpack("<H", record[72:74])[0]
     if role != args.role:
         raise SystemContractError(f"party already registered with role {role}, not {args.role}")
+    if args.set_status is not None and record[74] != args.set_status:
+        raise SystemContractError(f"party status is {record[74]} after set_party_status")
     print(
         json.dumps(
             {

@@ -137,7 +137,9 @@ python scripts/register_party.py \
   --authority-keypair /caminho/seguro/authority.json
 ```
 
-Papéis usados pelo painel: 1 produtor, 5 transportador, 6 frigorífico (7 unidade de processamento), 8 distribuidor (exibido como exportador), 9 varejista (exibido como comerciante). Os demais papéis entram em somente leitura. O script é idempotente: repetir para a mesma carteira apenas valida o cadastro.
+Papéis usados pelo painel, na ordem da cadeia: 1 produtor, 5 transportador, 6 frigorífico (7 unidade de processamento), 12 exportador (transporte para fora do país, com os mesmos registros do transportador), 9 varejista (exibido como comerciante). Os demais papéis (incluindo 8 distribuidor) entram em somente leitura. O script é idempotente: repetir para a mesma carteira apenas valida o cadastro.
+
+Um papel já cadastrado não muda. Para trocar o papel de uma carteira, cadastre um novo participante com `--party-id-hex` e revogue o antigo com `--set-status 3`; os dois registros ficam on-chain como histórico auditável.
 
 ## Backup e restauração
 

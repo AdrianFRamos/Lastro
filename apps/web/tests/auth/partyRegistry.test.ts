@@ -2,6 +2,7 @@ import { address, getAddressEncoder, getProgramDerivedAddress } from '@solana/ki
 import { describe, expect, it } from 'vitest'
 import {
   PARTY_RECORD_SIZE,
+  PARTY_ROLE,
   PARTY_STATUS,
   decodeParty,
   findPartiesByWallet,
@@ -106,7 +107,7 @@ describe('auth/partyRegistry on-chain party lookup', () => {
   it('maps on-chain roles to workspace profiles', () => {
     expect(
       Object.fromEntries(
-        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 99].map((r) => [r, workspaceRoleOf(r)]),
+        [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 99].map((r) => [r, workspaceRoleOf(r)]),
       ),
     ).toEqual({
       1: 'producer',
@@ -116,11 +117,31 @@ describe('auth/partyRegistry on-chain party lookup', () => {
       5: 'carrier',
       6: 'slaughterhouse',
       7: 'slaughterhouse',
-      8: 'exporter',
+      8: 'viewer',
       9: 'merchant',
       10: 'viewer',
       11: 'viewer',
+      12: 'exporter',
       99: 'viewer',
     })
+  })
+
+  /**
+   * ARRANGE: the dedicated exporter role and the retailer role.
+   * ACTION: map both to workspace profiles.
+   * ASSERT: the exporter (transport out of the country) and the retailer (commerce) open
+   *         different workspaces, and the exporter has the same records as the carrier.
+   * FAILURE MEANS: an exporter wallet could land in the commerce workspace, or vice versa.
+   */
+  it('keeps the exporter distinct from commerce and shaped like transport', async () => {
+    const { resourcesOf } = await import('../../src/demo/roles')
+    expect(workspaceRoleOf(PARTY_ROLE.EXPORTER)).toBe('exporter')
+    expect(workspaceRoleOf(PARTY_ROLE.RETAILER)).toBe('merchant')
+    expect(resourcesOf('exporter').map((r) => r.label.pt)).toEqual(
+      resourcesOf('carrier').map((r) => r.label.pt),
+    )
+    expect(resourcesOf('merchant').map((r) => r.label.pt)).not.toEqual(
+      resourcesOf('exporter').map((r) => r.label.pt),
+    )
   })
 })

@@ -564,7 +564,8 @@ fn authorize_operator(state: &AppState, headers: &HeaderMap) -> Result<(), ApiEr
 }
 
 fn validate_party(name: &str, role: u16) -> Result<(), ApiError> {
-    if name.trim().len() < 2 || name.len() > 200 || !(1..=11).contains(&role) {
+    // Party roles 1..=12 mirror programs/lastro-v2/src/constants.rs (12 = exporter).
+    if name.trim().len() < 2 || name.len() > 200 || !(1..=12).contains(&role) {
         return Err(ApiError::Validation("party identity is invalid".into()));
     }
     Ok(())
@@ -702,4 +703,24 @@ fn audit_response(record: operations::AuditRecord) -> AuditEntryResponse {
 
 fn db_unavailable(_: sqlx::Error) -> ApiError {
     ApiError::Unavailable("postgres transaction failed".into())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_party;
+
+    #[test]
+    fn party_roles_follow_the_on_chain_registry_including_exporter() {
+        // PURPOSE: the API accepts exactly the party roles the Lastro program accepts.
+        // ASSERT: roles 1..=12 (12 = exporter) pass; 0 and 13 are rejected.
+        // FAILURE MEANS: the API could register a role the chain refuses, or refuse the exporter.
+        for role in 1..=12 {
+            assert!(
+                validate_party("Lastro Export Ltda", role).is_ok(),
+                "role {role}"
+            );
+        }
+        assert!(validate_party("Lastro Export Ltda", 0).is_err());
+        assert!(validate_party("Lastro Export Ltda", 13).is_err());
+    }
 }
