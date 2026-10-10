@@ -15,7 +15,9 @@ describe('chain history demo page', () => {
   /**
    * ARRANGE: mount ChainHistoryPage with stubbed RouterLink.
    * ACTION: inspect the rendered timeline stages.
-   * ASSERT: the four stages render newest first with periods, durations and one current stage.
+   * ASSERT: the seven stages render newest first (producer → carrier → slaughterhouse → carrier →
+   *         exporter → carrier → market), each custody starting where the previous one ended,
+   *         with one current stage.
    * FAILURE MEANS: the Open Demo chain history no longer shows the simulated product journey.
    */
   it('renders the product journey newest stage first with the current stage marked', () => {
@@ -26,15 +28,30 @@ describe('chain history demo page', () => {
     const stages = wrapper.findAll('.chain-stage')
     expect(stages.map((stage) => stage.get('.chain-stage__name').text())).toEqual([
       'Mercado',
+      'Transportadora no destino',
+      'Exportador',
       'Transportadora de carne',
       'Frigorífico',
+      'Transportadora de gado',
       'Produtor da Silva',
     ])
     expect(stages.map((stage) => stage.get('.chain-stage__period').text())).toEqual([
-      expect.stringMatching(/21\/10\/2026 → hoje\s*Em andamento/),
+      expect.stringMatching(/13\/11\/2026 → hoje\s*Em andamento/),
+      expect.stringMatching(/12\/11\/2026 → 13\/11\/2026\s*1 dia/),
+      expect.stringMatching(/21\/10\/2026 → 12\/11\/2026\s*22 dias/),
       expect.stringMatching(/20\/10\/2026 → 21\/10\/2026\s*1 dia/),
       expect.stringMatching(/12\/10\/2026 → 20\/10\/2026\s*8 dias/),
-      expect.stringMatching(/15\/09\/2024 → 12\/10\/2026\s*757 dias/),
+      expect.stringMatching(/11\/10\/2026 → 12\/10\/2026\s*1 dia/),
+      expect.stringMatching(/15\/09\/2024 → 11\/10\/2026\s*756 dias/),
+    ])
+    expect(stages.map((stage) => stage.get('.chain-stage__step').text())).toEqual([
+      'Etapa 07',
+      'Etapa 06',
+      'Etapa 05',
+      'Etapa 04',
+      'Etapa 03',
+      'Etapa 02',
+      'Etapa 01',
     ])
     expect(wrapper.findAll('.chain-stage--current')).toHaveLength(1)
     expect(stages[0]?.classes()).toContain('chain-stage--current')
@@ -55,8 +72,11 @@ describe('chain history demo page', () => {
 
     expect(wrapper.findAll('.chain-stage__link').map((link) => link.attributes('href'))).toEqual([
       '/chain-history/mercado',
-      '/chain-history/transportadora',
+      '/chain-history/transportadora/entrega',
+      '/chain-history/exportador',
+      '/chain-history/transportadora/carne',
       '/chain-history/frigorifico',
+      '/chain-history/transportadora/gado',
       '/chain-history/produtor',
     ])
     wrapper.unmount()

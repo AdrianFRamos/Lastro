@@ -1,8 +1,9 @@
 import { mount } from '@vue/test-utils'
 import { beforeEach, describe, expect, it } from 'vitest'
 import type { Component } from 'vue'
-import { demoHash, slaughterhouse } from '../../src/demo/chainHistory'
+import { demoHash, routes, slaughterhouse } from '../../src/demo/chainHistory'
 import CarrierPage from '../../src/pages/chain/CarrierPage.vue'
+import ExporterPage from '../../src/pages/chain/ExporterPage.vue'
 import MarketPage from '../../src/pages/chain/MarketPage.vue'
 import ProducerAnimalPage from '../../src/pages/chain/ProducerAnimalPage.vue'
 import ProducerPage from '../../src/pages/chain/ProducerPage.vue'
@@ -15,8 +16,8 @@ const routerLinkStub = {
   template: '<a :href="to"><slot /></a>',
 }
 
-function mountPage(page: Component) {
-  return mount(page, { global: { stubs: { RouterLink: routerLinkStub } } })
+function mountPage(page: Component, props: Record<string, unknown> = {}) {
+  return mount(page, { props, global: { stubs: { RouterLink: routerLinkStub } } })
 }
 
 function labels(wrapper: ReturnType<typeof mountPage>): string[] {
@@ -51,15 +52,16 @@ describe('chain history stage pages', () => {
       ],
     ],
     [
-      'Transportadora',
-      CarrierPage,
+      'Exportador',
+      ExporterPage,
       [
         'hash de transferência',
-        'remetente',
-        'destinatário',
-        'peso transportado',
-        'paradas no caminho',
-        'peças transportadas',
+        'contêiner',
+        'porto de embarque',
+        'porto de destino',
+        'cadeia de frio',
+        'documentos de exportação',
+        'peças exportadas',
       ],
     ],
     [
@@ -97,6 +99,35 @@ describe('chain history stage pages', () => {
   ])('%s shows the fields from its design', (_name, page, expected) => {
     const wrapper = mountPage(page)
     expect(labels(wrapper)).toEqual(expect.arrayContaining(expected))
+    wrapper.unmount()
+  })
+
+  /**
+   * ARRANGE: mount the carrier page once per transport leg.
+   * ACTION: read its kicker, record fields, sender and recipient links.
+   * ASSERT: each leg sits at its own stage number and hands custody between the expected
+   *         neighbours: producer → slaughterhouse, slaughterhouse → exporter, exporter → market.
+   * FAILURE MEANS: a transport leg would show the wrong custodians or the wrong stage number.
+   */
+  it.each([
+    ['livestock', 'Etapa 02', routes.producer, routes.slaughterhouse, 'animais transportados'],
+    ['meat', 'Etapa 04', routes.slaughterhouse, routes.exporter, 'peças transportadas'],
+    ['delivery', 'Etapa 06', routes.exporter, routes.market, 'peças transportadas'],
+  ])('carrier leg %s links its sender and recipient', (leg, kicker, sender, recipient, cargo) => {
+    const wrapper = mountPage(CarrierPage, { leg })
+    expect(wrapper.get('.stage-kicker').text()).toContain(kicker.toUpperCase())
+    expect(labels(wrapper)).toEqual(
+      expect.arrayContaining([
+        'hash de transferência',
+        'remetente',
+        'destinatário',
+        'peso transportado',
+        'paradas no caminho',
+        cargo,
+      ]),
+    )
+    const links = wrapper.findAll('a').map((link) => link.attributes('href'))
+    expect(links).toEqual(expect.arrayContaining([sender, recipient]))
     wrapper.unmount()
   })
 

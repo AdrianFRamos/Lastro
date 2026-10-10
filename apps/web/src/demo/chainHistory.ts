@@ -66,8 +66,11 @@ export const routes = {
   producer: '/chain-history/produtor',
   producerAnimal: '/chain-history/produtor/animal',
   producerProperty: '/chain-history/produtor/propriedade',
+  carrierLivestock: '/chain-history/transportadora/gado',
   slaughterhouse: '/chain-history/frigorifico',
-  carrier: '/chain-history/transportadora',
+  carrierMeat: '/chain-history/transportadora/carne',
+  exporter: '/chain-history/exportador',
+  carrierDelivery: '/chain-history/transportadora/entrega',
   market: '/chain-history/mercado',
 } as const
 
@@ -102,8 +105,8 @@ export const product = {
 
 export const producer = {
   name: 'Produtor da Silva',
-  period: { startedAt: '2024-09-15', endedAt: '2026-10-12' } satisfies Period,
-  transferHash: demoHash('transfer-produtor-frigorifico'),
+  period: { startedAt: '2024-09-15', endedAt: '2026-10-11' } satisfies Period,
+  transferHash: demoHash('transfer-produtor-transportadora'),
   lotHash,
   property: {
     name: { pt: 'Propriedade 1', en: 'Property 1' } satisfies Localized,
@@ -170,7 +173,7 @@ export const animal = {
 export const slaughterhouse = {
   name: { pt: 'Frigorífico', en: 'Slaughterhouse' } satisfies Localized,
   period: { startedAt: '2026-10-12', endedAt: '2026-10-20' } satisfies Period,
-  transferHash: demoHash('transfer-frigorifico-transportadora'),
+  transferHash: demoHash('transfer-frigorifico-transportadora-carne'),
   lotHash,
   animalHash,
   weight: { pt: '538 kg (vivo)', en: '538 kg (live)' } satisfies Localized,
@@ -189,39 +192,179 @@ export const slaughterhouse = {
   ] satisfies LinkedItem[],
 }
 
-export const carrier = {
-  name: { pt: 'Transportadora de carne', en: 'Meat carrier' } satisfies Localized,
-  period: { startedAt: '2026-10-20', endedAt: '2026-10-21' } satisfies Period,
-  transferHash: demoHash('transfer-transportadora-mercado'),
-  sender: { label: slaughterhouse.name, to: routes.slaughterhouse },
-  recipient: { label: { pt: 'Mercado', en: 'Market' } satisfies Localized, to: routes.market },
-  transportedWeight: {
-    pt: '1.240 kg (carga refrigerada a 0–4 °C)',
-    en: '1,240 kg (refrigerated load at 0–4 °C)',
-  } satisfies Localized,
-  stops: [
-    {
-      label: { pt: 'Saída do frigorífico', en: 'Left the slaughterhouse' },
-      note: '20/10/2026 · 22:10',
+const MARKET_NAME: Localized = { pt: 'Mercado', en: 'Market' }
+const EXPORTER_NAME: Localized = { pt: 'Exportador', en: 'Exporter' }
+
+export interface CarrierLeg {
+  /** 1-based position of this stage in the chain, from the producer. */
+  step: number
+  name: Localized
+  description: Localized
+  period: Period
+  transferHash: string
+  sender: { label: Text; to: string }
+  recipient: { label: Text; to: string }
+  transportedWeight: Localized
+  stops: LinkedItem[]
+  cargoTitle: Localized
+  cargo: LinkedItem[]
+  to: string
+}
+
+/** The three transport legs between custodians, keyed by the route that opens them. */
+export const carriers = {
+  livestock: {
+    step: 2,
+    name: { pt: 'Transportadora de gado', en: 'Livestock carrier' },
+    description: {
+      pt: 'Transporte dos animais vivos da fazenda até o frigorífico.',
+      en: 'Live animal transport from the farm to the slaughterhouse.',
     },
-    {
-      label: { pt: 'Centro de distribuição', en: 'Distribution centre' },
-      note: {
-        pt: '21/10/2026 · 03:40 · conferência de temperatura',
-        en: '21/10/2026 · 03:40 · temperature check',
+    period: { startedAt: '2026-10-11', endedAt: '2026-10-12' },
+    transferHash: demoHash('transfer-transportadora-gado-frigorifico'),
+    sender: { label: producer.name, to: routes.producer },
+    recipient: { label: slaughterhouse.name, to: routes.slaughterhouse },
+    transportedWeight: {
+      pt: '2.152 kg (4 animais vivos)',
+      en: '2,152 kg (4 live animals)',
+    },
+    stops: [
+      {
+        label: { pt: 'Saída da fazenda', en: 'Left the farm' },
+        note: '11/10/2026 · 16:30',
       },
+      {
+        label: { pt: 'Posto de fiscalização sanitária', en: 'Animal health checkpoint' },
+        note: {
+          pt: '11/10/2026 · 21:05 · conferência da GTA',
+          en: '11/10/2026 · 21:05 · animal transit permit check',
+        },
+      },
+      {
+        label: { pt: 'Chegada ao frigorífico', en: 'Arrived at the slaughterhouse' },
+        note: '12/10/2026 · 05:20',
+      },
+    ],
+    cargoTitle: { pt: 'Animais transportados', en: 'Transported animals' },
+    cargo: producer.animals,
+    to: routes.carrierLivestock,
+  },
+  meat: {
+    step: 4,
+    name: { pt: 'Transportadora de carne', en: 'Meat carrier' },
+    description: {
+      pt: 'Transporte refrigerado do frigorífico até o exportador.',
+      en: 'Refrigerated transport from the slaughterhouse to the exporter.',
+    },
+    period: { startedAt: '2026-10-20', endedAt: '2026-10-21' },
+    transferHash: demoHash('transfer-transportadora-carne-exportador'),
+    sender: { label: slaughterhouse.name, to: routes.slaughterhouse },
+    recipient: { label: EXPORTER_NAME, to: routes.exporter },
+    transportedWeight: {
+      pt: '1.240 kg (carga refrigerada a 0–4 °C)',
+      en: '1,240 kg (refrigerated load at 0–4 °C)',
+    },
+    stops: [
+      {
+        label: { pt: 'Saída do frigorífico', en: 'Left the slaughterhouse' },
+        note: '20/10/2026 · 22:10',
+      },
+      {
+        label: { pt: 'Centro de distribuição', en: 'Distribution centre' },
+        note: {
+          pt: '21/10/2026 · 03:40 · conferência de temperatura',
+          en: '21/10/2026 · 03:40 · temperature check',
+        },
+      },
+      {
+        label: {
+          pt: 'Chegada ao terminal do exportador',
+          en: "Arrived at the exporter's terminal",
+        },
+        note: '21/10/2026 · 09:15',
+      },
+    ],
+    cargoTitle: { pt: 'Peças transportadas', en: 'Transported pieces' },
+    cargo: [cuts.picanha, cuts.alcatra, cuts.contrafile],
+    to: routes.carrierMeat,
+  },
+  delivery: {
+    step: 6,
+    name: { pt: 'Transportadora no destino', en: 'Destination carrier' },
+    description: {
+      pt: 'Entrega refrigerada do porto de destino até o mercado.',
+      en: 'Refrigerated delivery from the destination port to the market.',
+    },
+    period: { startedAt: '2026-11-12', endedAt: '2026-11-13' },
+    transferHash: demoHash('transfer-transportadora-destino-mercado'),
+    sender: { label: EXPORTER_NAME, to: routes.exporter },
+    recipient: { label: MARKET_NAME, to: routes.market },
+    transportedWeight: {
+      pt: '320 kg (carga refrigerada a 0–4 °C)',
+      en: '320 kg (refrigerated load at 0–4 °C)',
+    },
+    stops: [
+      {
+        label: { pt: 'Liberação no porto de Roterdã', en: 'Released at the Port of Rotterdam' },
+        note: '12/11/2026 · 14:00',
+      },
+      {
+        label: { pt: 'Centro de distribuição', en: 'Distribution centre' },
+        note: {
+          pt: '12/11/2026 · 23:30 · conferência de temperatura',
+          en: '12/11/2026 · 23:30 · temperature check',
+        },
+      },
+      {
+        label: { pt: 'Chegada ao mercado', en: 'Arrived at the market' },
+        note: '13/11/2026 · 06:45',
+      },
+    ],
+    cargoTitle: { pt: 'Peças transportadas', en: 'Transported pieces' },
+    cargo: [cuts.picanha, cuts.contrafile],
+    to: routes.carrierDelivery,
+  },
+} satisfies Record<string, CarrierLeg>
+
+export type CarrierLegId = keyof typeof carriers
+
+export const exporter = {
+  name: EXPORTER_NAME,
+  period: { startedAt: '2026-10-21', endedAt: '2026-11-12' } satisfies Period,
+  transferHash: demoHash('transfer-exportador-transportadora-destino'),
+  container: 'MSKU 482915-3',
+  originPort: { pt: 'Porto de Santos (BR)', en: 'Port of Santos (BR)' } satisfies Localized,
+  destinationPort: {
+    pt: 'Porto de Roterdã (NL)',
+    en: 'Port of Rotterdam (NL)',
+  } satisfies Localized,
+  temperature: {
+    pt: 'Refrigerado, −1 a 2 °C durante toda a viagem',
+    en: 'Chilled, −1 to 2 °C for the whole voyage',
+  } satisfies Localized,
+  documents: [
+    {
+      label: {
+        pt: 'Certificado Sanitário Internacional',
+        en: 'International Health Certificate',
+      },
+      hash: demoHash('csi-2026-1012'),
     },
     {
-      label: { pt: 'Chegada ao mercado', en: 'Arrived at the market' },
-      note: '21/10/2026 · 07:15',
+      label: { pt: 'Declaração de exportação', en: 'Export declaration' },
+      hash: demoHash('due-2026-1012'),
+    },
+    {
+      label: { pt: 'Conhecimento de embarque', en: 'Bill of lading' },
+      hash: demoHash('bl-2026-1012'),
     },
   ] satisfies LinkedItem[],
-  pieces: [cuts.picanha, cuts.alcatra, cuts.contrafile] satisfies LinkedItem[],
+  pieces: [cuts.picanha, cuts.contrafile] satisfies LinkedItem[],
 }
 
 export const market = {
-  name: { pt: 'Mercado', en: 'Market' } satisfies Localized,
-  period: { startedAt: '2026-10-21' } satisfies Period,
+  name: MARKET_NAME,
+  period: { startedAt: '2026-11-13' } satisfies Period,
   transferHash: demoHash('transfer-mercado-recebimento'),
   pieceHash,
   animalHash,
@@ -232,7 +375,7 @@ export const market = {
   } satisfies Localized,
 }
 
-export type StageIcon = 'store' | 'truck' | 'factory' | 'farm'
+export type StageIcon = 'store' | 'truck' | 'ship' | 'factory' | 'farm'
 
 export interface ChainStage {
   id: string
@@ -243,30 +386,47 @@ export interface ChainStage {
   to: string
 }
 
-/** Timeline order: newest custody first. */
+function carrierStage(id: CarrierLegId): ChainStage {
+  const leg = carriers[id]
+  return {
+    id: `carrier-${id}`,
+    name: leg.name,
+    description: leg.description,
+    icon: 'truck',
+    period: leg.period,
+    to: leg.to,
+  }
+}
+
+/**
+ * Timeline order: newest custody first. The journey runs producer → carrier → slaughterhouse →
+ * carrier → exporter → carrier → market.
+ */
 export const stages: ChainStage[] = [
   {
     id: 'market',
     name: market.name,
     description: {
-      pt: 'Recebimento, conferência da etiqueta e exposição para venda.',
-      en: 'Receiving, label check and display for sale.',
+      pt: 'Recebimento, conferência da etiqueta e exposição para venda no destino.',
+      en: 'Receiving, label check and display for sale at the destination.',
     },
     icon: 'store',
     period: market.period,
     to: routes.market,
   },
+  carrierStage('delivery'),
   {
-    id: 'carrier',
-    name: carrier.name,
+    id: 'exporter',
+    name: exporter.name,
     description: {
-      pt: 'Transporte refrigerado do frigorífico até o ponto de venda.',
-      en: 'Refrigerated transport from the slaughterhouse to the point of sale.',
+      pt: 'Certificação sanitária, conteinerização refrigerada e embarque para o exterior.',
+      en: 'Health certification, refrigerated containerisation and shipping abroad.',
     },
-    icon: 'truck',
-    period: carrier.period,
-    to: routes.carrier,
+    icon: 'ship',
+    period: exporter.period,
+    to: routes.exporter,
   },
+  carrierStage('meat'),
   {
     id: 'slaughterhouse',
     name: slaughterhouse.name,
@@ -278,6 +438,7 @@ export const stages: ChainStage[] = [
     period: slaughterhouse.period,
     to: routes.slaughterhouse,
   },
+  carrierStage('livestock'),
   {
     id: 'producer',
     name: producer.name,

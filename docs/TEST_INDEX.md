@@ -78,13 +78,13 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/pages/ChainHistoryPage.test.ts`
 
-- L21: `renders the product journey newest stage first with the current stage marked`
-- L51: `links every stage to its detail page`
+- L23: `renders the product journey newest stage first with the current stage marked`
+- L68: `links every stage to its detail page`
 
 ## `apps/web/tests/pages/ChainStagePages.test.ts`
 
-- L109: `connects the records back to the animal and its property`
-- L134: `derives stable demo identifiers`
+- L140: `connects the records back to the animal and its property`
+- L165: `derives stable demo identifiers`
 
 ## `apps/web/tests/pages/DemoPage.test.ts`
 
@@ -108,9 +108,9 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 ## `apps/web/tests/pages/StoryRoutes.test.ts`
 
 - L19: `exposes the intended public information architecture`
-- L48: `renders the landing paths with Demo as the primary action`
-- L66: `renders the sourced physical trust gap story`
-- L85: `separates proven functionality from the future expansion path`
+- L52: `renders the landing paths with Demo as the primary action`
+- L70: `renders the sourced physical trust gap story`
+- L89: `separates proven functionality from the future expansion path`
 
 ## `apps/web/tests/pages/VerifyPage.test.ts`
 

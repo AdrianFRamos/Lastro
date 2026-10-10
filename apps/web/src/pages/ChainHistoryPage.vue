@@ -134,6 +134,10 @@ function stepLabel(index: number): string {
                 <circle cx="7" cy="17.5" r="1.8" />
                 <circle cx="17" cy="17.5" r="1.8" />
               </template>
+              <template v-else-if="stage.icon === 'ship'">
+                <path d="M3 15h18l-2.5 4.5h-13z" />
+                <path d="M6 15V9h12v6M9 9V6h6v3M12 6V3.5" />
+              </template>
               <template v-else-if="stage.icon === 'farm'">
                 <path d="M3 20V11l6-5 6 5v9z" />
                 <path d="M7 20v-5h4v5M15 13h6v7h-6M17 10l2-2 2 2" />
