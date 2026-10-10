@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 381
-**Files containing test cases:** 75
+**Declared cases:** 393
+**Files containing test cases:** 77
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -26,6 +26,20 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L162: `rejects inconsistent capture event lifecycle metadata`
 - L184: `submits only the transaction signature to the v2 confirmed-verification endpoint`
 - L206: `rejects malformed or oversized durable identifiers`
+
+## `apps/web/tests/auth/partyRegistry.test.ts`
+
+- L52: `decodes a party of this deployment registered for the wallet`
+- L70: `rejects parties of other deployments, other wallets or forged layouts`
+- L91: `keeps only locally verified parties from the RPC answer`
+- L106: `maps on-chain roles to workspace profiles`
+
+## `apps/web/tests/auth/walletLogin.test.ts`
+
+- L30: `binds the login message to the site, wallet, deployment and a fresh nonce`
+- L58: `accepts only a signature made by the claimed wallet over the exact message`
+- L85: `chooses the workspace from the wallet registration status and role`
+- L119: `proves control of the wallet before reading its party`
 
 ## `apps/web/tests/components/AnimalState.test.ts`
 
@@ -65,11 +79,12 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/demo/workspace.test.ts`
 
-- L30: `gives each chain participant its own sections and the common user read access`
-- L60: `creates, updates and deletes records and keeps them across a reload`
-- L88: `fails closed to the example rows when stored records are malformed`
-- L103: `restores the example data`
-- L119: `remembers the signed-in profile and rejects unknown ones`
+- L32: `gives each chain participant its own sections and the common user read access`
+- L62: `creates, updates and deletes records and keeps them across a reload`
+- L90: `fails closed to the example rows when stored records are malformed`
+- L105: `restores the example data`
+- L121: `remembers wallet and visitor sessions across a reload`
+- L147: `drops stored sessions that no login could have produced`
 
 ## `apps/web/tests/i18n.test.ts`
 
@@ -102,8 +117,9 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/pages/LoginPage.test.ts`
 
-- L37: `asks for an access profile and explains that access is simulated`
-- L68: `signs in with the chosen profile and opens its workspace`
+- L67: `signs a registered wallet into the role recorded on Solana`
+- L97: `refuses revoked registrations and cancelled signatures`
+- L121: `offers a read-only visitor session when no wallet is installed`
 
 ## `apps/web/tests/pages/StoryRoutes.test.ts`
 
@@ -121,9 +137,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/pages/WorkspacePage.test.ts`
 
-- L38: `lets the producer create, edit and delete its records`
-- L82: `shows the whole chain to the common user without any change action`
-- L111: `returns to the login after signing out`
+- L63: `lets the producer create, edit and delete its records`
+- L107: `shows the whole chain to the common user without any change action`
+- L136: `drops a stored wallet session whose party was revoked on Solana`
+- L153: `follows the on-chain role over the stored one`
+- L175: `returns to the login after signing out`
 
 ## `apps/web/tests/protocol/evidence.test.ts`
 

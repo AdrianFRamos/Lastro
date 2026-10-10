@@ -8,12 +8,14 @@ import {
   resetRecords,
   saveRecord,
   session,
-  signIn,
+  signInAsVisitor,
+  signInWithWallet,
   signOut,
 } from '../../src/demo/workspace'
 
 const RECORDS_KEY = 'lastro.demo.records.v1'
-const SESSION_KEY = 'lastro.demo.session.v1'
+const SESSION_KEY = 'lastro.session.v2'
+const WALLET = 'Vote111111111111111111111111111111111111111'
 
 describe('demo workspace state', () => {
   beforeEach(() => {
@@ -111,22 +113,50 @@ describe('demo workspace state', () => {
   })
 
   /**
-   * ARRANGE: no demo profile signed in.
-   * ACTION: sign in as a carrier, reload, then sign out; then store an unknown profile.
-   * ASSERT: the session survives a reload, is cleared on sign out and unknown profiles are dropped.
-   * FAILURE MEANS: the workspace opens with the wrong permissions or none at all.
+   * ARRANGE: no session.
+   * ACTION: sign in with a carrier wallet, reload, sign out; then as a visitor, reload.
+   * ASSERT: both sessions survive a reload and sign out clears them.
+   * FAILURE MEANS: the workspace forgets who signed in or keeps a session after leaving.
    */
-  it('remembers the signed-in profile and rejects unknown ones', () => {
-    signIn('carrier', 'carrier@lastro.demo')
+  it('remembers wallet and visitor sessions across a reload', () => {
+    signInWithWallet({ role: 'carrier', wallet: WALLET, partyId: '07'.repeat(32) })
     reloadWorkspace()
-    expect(session.value).toEqual({ role: 'carrier', email: 'carrier@lastro.demo' })
+    expect(session.value).toEqual({
+      mode: 'wallet',
+      role: 'carrier',
+      wallet: WALLET,
+      partyId: '07'.repeat(32),
+    })
 
     signOut()
     expect(session.value).toBeNull()
 
-    window.localStorage.setItem(SESSION_KEY, JSON.stringify({ role: 'admin', email: 'x@y.z' }))
+    signInAsVisitor()
     reloadWorkspace()
-    expect(session.value).toBeNull()
-    expect(window.localStorage.getItem(SESSION_KEY)).toBeNull()
+    expect(session.value).toEqual({ mode: 'visitor', role: 'viewer' })
+  })
+
+  /**
+   * ARRANGE: hand-edited stored sessions: an unknown role, a visitor claiming write access, an
+   *          unregistered wallet claiming a participant role, a malformed wallet, and the old
+   *          email-based session format.
+   * ACTION: reload the workspace for each.
+   * ASSERT: every one is dropped from memory and from storage.
+   * FAILURE MEANS: editing browser storage could open a participant workspace without a wallet.
+   */
+  it('drops stored sessions that no login could have produced', () => {
+    const forged = [
+      { mode: 'wallet', role: 'admin', wallet: WALLET, partyId: '07'.repeat(32) },
+      { mode: 'visitor', role: 'producer' },
+      { mode: 'wallet', role: 'producer', wallet: WALLET, partyId: null },
+      { mode: 'wallet', role: 'carrier', wallet: 'not-a-wallet', partyId: '07'.repeat(32) },
+      { role: 'carrier', email: 'carrier@lastro.demo' },
+    ]
+    for (const value of forged) {
+      window.localStorage.setItem(SESSION_KEY, JSON.stringify(value))
+      reloadWorkspace()
+      expect(session.value, JSON.stringify(value)).toBeNull()
+      expect(window.localStorage.getItem(SESSION_KEY)).toBeNull()
+    }
   })
 })

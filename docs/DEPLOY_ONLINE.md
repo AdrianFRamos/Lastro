@@ -123,6 +123,22 @@ Os programas só aceitam `initialize`/`initialize_v2` assinados pelo **upgrade a
 - inicialize **antes** de tornar o programa imutável (`solana program set-upgrade-authority --final`), pois um programa imutável não tem upgrade authority;
 - no v2, a autoridade do deployment pode depois ser migrada para uma multisig com `transfer_config_authority`.
 
+## Cadastro de participantes (login com carteira)
+
+O login do site (`/login`) usa a carteira Solana do participante: ela assina uma mensagem de login (sem custo, sem transação) e o perfil do painel vem do `PartyRecord` dessa carteira no deployment. Carteira sem cadastro entra como usuário comum, somente leitura; cadastro suspenso, revogado ou expirado é recusado.
+
+Cadastre cada participante com a mesma chave que inicializou o deployment (somente ela pode chamar `register_party`):
+
+```bash
+python scripts/register_party.py \
+  --rpc-url "$LASTRO_SOLANA_RPC_URL" --program-id "$LASTRO_PROGRAM_ID" \
+  --deployment-id-hex "$LASTRO_DEPLOYMENT_ID_HEX" \
+  --wallet ENDERECO_DA_CARTEIRA --role 1 \
+  --authority-keypair /caminho/seguro/authority.json
+```
+
+Papéis usados pelo painel: 1 produtor, 5 transportador, 6 frigorífico (7 unidade de processamento), 8 distribuidor (exibido como exportador), 9 varejista (exibido como comerciante). Os demais papéis entram em somente leitura. O script é idempotente: repetir para a mesma carteira apenas valida o cadastro.
+
 ## Backup e restauração
 
 Crie o primeiro backup depois que o banco estiver saudável:

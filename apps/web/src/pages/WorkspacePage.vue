@@ -1,16 +1,18 @@
 <script setup lang="ts">
 /**
- * Workspace reached after the demo login. Each chain participant manages its own records
- * (create, read, update, delete); the common user browses every participant's records without
- * changing them. Simulated: records stay in this browser and nothing reaches the API or chain.
+ * Workspace reached after login. Each chain participant manages its own records (create, read,
+ * update, delete); the common user browses every participant's records without changing them.
+ * The role of a wallet session is re-read from the on-chain party registry when the page opens.
+ * Records are still simulated: they stay in this browser and nothing reaches the API or chain.
  */
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
+import { recheckWalletRole } from '../auth/walletLogin'
 import ChainHeader from '../components/chain/ChainHeader.vue'
 import ResourceManager from '../components/workspace/ResourceManager.vue'
 import { routes } from '../demo/chainHistory'
 import { findRole, participants, resourcesOf, type ParticipantId } from '../demo/roles'
-import { resetRecords, session, signOut } from '../demo/workspace'
+import { resetRecords, session, signInWithWallet, signOut } from '../demo/workspace'
 import { tr, useCopy } from '../i18n'
 
 const router = useRouter()
@@ -23,6 +25,11 @@ const copy = useCopy({
     full: 'Full access: create, view, edit and delete',
     read: 'Read only: view the records of the whole chain',
     simulated: 'Simulated: records stay in this browser',
+    visitor: 'Visitor without a wallet',
+    verified: 'Role verified on Solana',
+    unregistered: 'Wallet not registered: read-only',
+    checking: 'Checking the role on Solana…',
+    unchecked: 'Could not reach Solana to re-check the role',
     participant: 'Chain participant',
     sections: 'Sections',
     reset: 'Restore example data',
@@ -36,6 +43,11 @@ const copy = useCopy({
     full: 'Acesso completo: cadastrar, ver, editar e excluir',
     read: 'Somente leitura: consulta os registros de toda a cadeia',
     simulated: 'Simulação: os registros ficam neste navegador',
+    visitor: 'Visitante sem carteira',
+    verified: 'Perfil verificado na Solana',
+    unregistered: 'Carteira não cadastrada: somente leitura',
+    checking: 'Conferindo o perfil na Solana…',
+    unchecked: 'Não foi possível conferir o perfil na Solana agora',
     participant: 'Elo da cadeia',
     sections: 'Seções',
     reset: 'Restaurar dados de exemplo',
@@ -70,6 +82,44 @@ watch(
   { immediate: true },
 )
 
+/** Wallet sessions only restore the screen; the role is trusted again after this re-check. */
+const roleCheck = ref<'checking' | 'verified' | 'unchecked' | 'none'>('none')
+
+const identity = computed(() => {
+  const current = session.value
+  if (!current || current.mode === 'visitor') return copy.value.visitor
+  return `${current.wallet.slice(0, 4)}…${current.wallet.slice(-4)}`
+})
+
+const roleNote = computed(() => {
+  const current = session.value
+  if (!current || current.mode === 'visitor') return ''
+  if (roleCheck.value === 'checking') return copy.value.checking
+  if (roleCheck.value === 'unchecked') return copy.value.unchecked
+  return current.partyId ? copy.value.verified : copy.value.unregistered
+})
+
+onMounted(async () => {
+  const current = session.value
+  if (!current || current.mode !== 'wallet') return
+  roleCheck.value = 'checking'
+  try {
+    const outcome = await recheckWalletRole(current.wallet)
+    if (session.value !== current) return
+    if (outcome.kind === 'blocked') {
+      signOut()
+      return
+    }
+    if (outcome.session.role !== current.role || outcome.session.partyId !== current.partyId) {
+      signInWithWallet(outcome.session)
+    }
+    roleCheck.value = 'verified'
+  } catch {
+    // Keep the screen, but say the role could not be re-checked; actions still need signatures.
+    roleCheck.value = 'unchecked'
+  }
+})
+
 function leave(): void {
   signOut()
 }
@@ -103,7 +153,8 @@ function restore(): void {
           <span :class="readOnly ? 'is-read' : 'is-full'">{{
             readOnly ? copy.read : copy.full
           }}</span>
-          <span>{{ session.email }}</span>
+          <span data-identity>{{ identity }}</span>
+          <span v-if="roleNote" data-role-check>{{ roleNote }}</span>
           <span class="is-muted">{{ copy.simulated }}</span>
         </div>
       </section>

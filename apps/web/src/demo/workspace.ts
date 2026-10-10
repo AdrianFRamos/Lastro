@@ -1,9 +1,15 @@
 /**
- * State of the simulated workspace: who is signed in (a demo profile, no real account) and the
- * records each participant keeps. Both live in this browser's storage so a presentation survives
- * a reload; malformed stored data fails closed back to the example rows. Storage may be
- * unavailable (private mode, sandboxed frames): the workspace then still works for the visit.
+ * State of the workspace: who is signed in and the records each participant keeps.
+ *
+ * Sign-in is either a wallet whose control was proven by a signature and whose role was read
+ * from its on-chain PartyRecord (auth/walletLogin), or a read-only visitor without a wallet.
+ * The stored session only restores the screen after a reload; the workspace re-reads the party
+ * on Solana before trusting it, and every on-chain action still needs a wallet signature.
+ * Records are still simulated in this browser's storage; malformed stored data fails closed back
+ * to the example rows. Storage may be unavailable (private mode, sandboxed frames): the
+ * workspace then still works for the visit.
  */
+import { address } from '@solana/kit'
 import { ref } from 'vue'
 import {
   findResource,
@@ -14,13 +20,18 @@ import {
   type RoleDef,
 } from './roles'
 
-const SESSION_KEY = 'lastro.demo.session.v1'
+const SESSION_KEY = 'lastro.session.v2'
 const RECORDS_KEY = 'lastro.demo.records.v1'
 
-export interface DemoSession {
-  role: RoleDef['id']
-  email: string
-}
+export type DemoSession =
+  | {
+      mode: 'wallet'
+      role: RoleDef['id']
+      wallet: string
+      /** Hex PartyRecord id, or null for a wallet that is not a registered party. */
+      partyId: string | null
+    }
+  | { mode: 'visitor'; role: 'viewer' }
 
 type RecordTable = Record<string, DemoRecord[]>
 
@@ -80,22 +91,65 @@ function loadRecords(): RecordTable {
   return table
 }
 
+function isWalletAddress(value: unknown): value is string {
+  if (typeof value !== 'string') return false
+  try {
+    address(value)
+    return true
+  } catch {
+    return false
+  }
+}
+
+function parseSession(stored: unknown): DemoSession | null {
+  if (typeof stored !== 'object' || stored === null) return null
+  const candidate = stored as Record<string, unknown>
+  if (candidate.mode === 'visitor' && candidate.role === 'viewer') {
+    return { mode: 'visitor', role: 'viewer' }
+  }
+  const partyId = candidate.partyId
+  if (
+    candidate.mode === 'wallet' &&
+    findRole(candidate.role) &&
+    isWalletAddress(candidate.wallet) &&
+    (partyId === null
+      ? candidate.role === 'viewer'
+      : typeof partyId === 'string' && /^[0-9a-f]{64}$/.test(partyId))
+  ) {
+    return {
+      mode: 'wallet',
+      role: candidate.role as RoleDef['id'],
+      wallet: candidate.wallet,
+      partyId: partyId as string | null,
+    }
+  }
+  return null
+}
+
 function loadSession(): DemoSession | null {
   const stored = readStorage(SESSION_KEY)
   if (stored === null) return null
-  const candidate = stored as Partial<DemoSession>
-  if (findRole(candidate?.role) && typeof candidate.email === 'string') {
-    return { role: candidate.role as DemoSession['role'], email: candidate.email }
-  }
-  writeStorage(SESSION_KEY, null)
-  return null
+  const parsed = parseSession(stored)
+  if (!parsed) writeStorage(SESSION_KEY, null)
+  return parsed
 }
 
 export const session = ref<DemoSession | null>(loadSession())
 export const records = ref<RecordTable>(loadRecords())
 
-export function signIn(role: DemoSession['role'], email: string): void {
-  session.value = { role, email }
+/** Start a session for a wallet whose signature and on-chain party were already verified. */
+export function signInWithWallet(result: {
+  role: RoleDef['id']
+  wallet: string
+  partyId: string | null
+}): void {
+  session.value = { mode: 'wallet', ...result }
+  writeStorage(SESSION_KEY, session.value)
+}
+
+/** Read-only browsing without a wallet. */
+export function signInAsVisitor(): void {
+  session.value = { mode: 'visitor', role: 'viewer' }
   writeStorage(SESSION_KEY, session.value)
 }
 
