@@ -1,9 +1,33 @@
 import { flushPromises, mount } from '@vue/test-utils'
-import { beforeEach, describe, expect, it } from 'vitest'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import WorkspacePage from '../../src/pages/WorkspacePage.vue'
-import { listRecords, reloadWorkspace, signIn } from '../../src/demo/workspace'
+import type { LoginOutcome } from '../../src/auth/walletLogin'
+import {
+  listRecords,
+  reloadWorkspace,
+  session,
+  signInAsVisitor,
+  signInWithWallet,
+} from '../../src/demo/workspace'
 import { setLocale } from '../../src/i18n'
+
+const chain = vi.hoisted(() => ({ outcome: null as LoginOutcome | null }))
+
+vi.mock('../../src/auth/walletLogin', () => ({
+  recheckWalletRole: async () => {
+    if (!chain.outcome) throw new Error('RPC unavailable')
+    return chain.outcome
+  },
+}))
+
+const WALLET = 'Vote111111111111111111111111111111111111111'
+const PARTY = '07'.repeat(32)
+
+function signInAs(role: 'producer' | 'merchant') {
+  signInWithWallet({ role, wallet: WALLET, partyId: PARTY })
+  chain.outcome = { kind: 'signed-in', session: { role, wallet: WALLET, partyId: PARTY } }
+}
 
 async function mountWorkspace() {
   const router = createRouter({
@@ -27,6 +51,7 @@ describe('demo workspace page', () => {
     setLocale('pt')
     window.localStorage.clear()
     reloadWorkspace()
+    chain.outcome = null
   })
 
   /**
@@ -36,7 +61,7 @@ describe('demo workspace page', () => {
    * FAILURE MEANS: the producer cannot manage its records from the screen.
    */
   it('lets the producer create, edit and delete its records', async () => {
-    signIn('producer', 'produtor@lastro.demo')
+    signInAs('producer')
     const { wrapper } = await mountWorkspace()
 
     expect(wrapper.get('h1').text()).toBe('Produtor')
@@ -80,7 +105,7 @@ describe('demo workspace page', () => {
    * FAILURE MEANS: the common user can change records or cannot see the chain.
    */
   it('shows the whole chain to the common user without any change action', async () => {
-    signIn('viewer', 'consumidor@lastro.demo')
+    signInAsVisitor()
     const { wrapper } = await mountWorkspace()
 
     expect(wrapper.findAll('[data-participant]').map((tab) => tab.text())).toEqual([
@@ -103,13 +128,52 @@ describe('demo workspace page', () => {
   })
 
   /**
+   * ARRANGE: a stored producer wallet session whose registration was revoked on Solana since.
+   * ACTION: open the workspace (it re-checks the role on the chain).
+   * ASSERT: the session is dropped and the visitor is sent back to the login.
+   * FAILURE MEANS: a stale browser session keeps a revoked company inside its workspace.
+   */
+  it('drops a stored wallet session whose party was revoked on Solana', async () => {
+    signInAs('producer')
+    chain.outcome = { kind: 'blocked', status: 'revoked' }
+    const { wrapper, router } = await mountWorkspace()
+    await flushPromises()
+
+    expect(session.value).toBeNull()
+    expect(router.currentRoute.value.name).toBe('login')
+    wrapper.unmount()
+  })
+
+  /**
+   * ARRANGE: a stored merchant wallet session whose on-chain role is now carrier.
+   * ACTION: open the workspace.
+   * ASSERT: the workspace follows the chain role and says the role was verified on Solana.
+   * FAILURE MEANS: an edited browser session could keep a role the chain does not grant.
+   */
+  it('follows the on-chain role over the stored one', async () => {
+    signInAs('merchant')
+    chain.outcome = {
+      kind: 'signed-in',
+      session: { role: 'carrier', wallet: WALLET, partyId: PARTY },
+    }
+    const { wrapper } = await mountWorkspace()
+    await flushPromises()
+
+    expect(session.value).toMatchObject({ role: 'carrier' })
+    expect(wrapper.get('h1').text()).toBe('Transportador')
+    expect(wrapper.get('[data-role-check]').text()).toContain('verificado na Solana')
+    expect(wrapper.get('[data-identity]').text()).toBe('Vote…1111')
+    wrapper.unmount()
+  })
+
+  /**
    * ARRANGE: sign in as the merchant and open the workspace.
    * ACTION: sign out.
    * ASSERT: the visitor is sent back to the login.
    * FAILURE MEANS: the workspace stays open after leaving the profile.
    */
   it('returns to the login after signing out', async () => {
-    signIn('merchant', 'comerciante@lastro.demo')
+    signInAs('merchant')
     const { wrapper, router } = await mountWorkspace()
 
     await wrapper.get('[data-action="sign-out"]').trigger('click')

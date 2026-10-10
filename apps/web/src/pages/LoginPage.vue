@@ -1,60 +1,124 @@
 <script setup lang="ts">
 /**
- * Demo login screen reached from ENTRAR, over the same animated asset backdrop as the home.
- * There are no real accounts yet: the visitor picks an access profile (producer, carrier,
- * slaughterhouse, exporter, merchant or common user) and is taken to that profile's workspace.
+ * Login screen reached from ENTRAR, over the same animated asset backdrop as the home.
+ * A participant signs in with a Solana wallet: the wallet signs a login message (proving control
+ * of the key) and the workspace role is read from the wallet's PartyRecord on Solana. Without a
+ * wallet, a visitor can still browse every participant's records read-only.
  */
-import { ref } from 'vue'
+import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import LanguageSwitch from '../components/LanguageSwitch.vue'
 import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
-import { findRole, roles, type RoleId } from '../demo/roles'
-import { signIn } from '../demo/workspace'
-import { tr, useCopy } from '../i18n'
+import {
+  RECOMMENDED_WALLETS,
+  connectForLogin,
+  loginWallets,
+  onLoginWalletsChange,
+  signLoginMessage,
+  type StandardWallet,
+} from '../auth/loginWallets'
+import { loginWithConnectedWallet } from '../auth/walletLogin'
+import { signInAsVisitor, signInWithWallet } from '../demo/workspace'
+import { useCopy } from '../i18n'
 
 const router = useRouter()
 
-const email = ref('')
-const password = ref('')
-const role = ref<RoleId | ''>('')
+const wallets = shallowRef<StandardWallet[]>([])
+/** Recommended wallets not detected in this browser, offered as install links. */
+const missing = computed(() =>
+  RECOMMENDED_WALLETS.filter((option) => !wallets.value.some((w) => w.name === option.name)),
+)
+const busyWallet = ref('')
 const error = ref('')
 
 const copy = useCopy({
   en: {
     back: 'Back to history',
     title: 'Login',
-    email: 'Email',
-    emailPlaceholder: 'you@company.com',
-    password: 'Password',
-    role: 'Access profile',
-    choose: 'Select your profile…',
-    submit: 'Sign in',
-    notice: 'Demo: pick a profile to open its workspace. No real account is checked yet.',
-    missing: 'Fill in the email, the password and the access profile.',
+    intro: 'Sign in with the Solana wallet registered for your company in the chain.',
+    connect: 'Sign in with',
+    signing: 'Check your wallet…',
+    noWallet: 'No Solana wallet was found in this browser.',
+    install: 'Install',
+    walletHint:
+      'In MetaMask, use the Solana account (not the 0x… Ethereum one). Any Solana network works to sign in.',
+    or: 'or',
+    visitor: 'Explore as a visitor',
+    visitorNote: 'Read-only, no wallet. Records shown are simulated.',
+    notice:
+      'Your wallet signs a login message only: it costs nothing and sends no transaction. Your profile comes from the participant registry on Solana.',
+    rejected: 'The signature was cancelled in the wallet.',
+    failed: 'Could not sign in with this wallet.',
+    suspended: 'This wallet is suspended in the participant registry.',
+    revoked: 'This wallet was revoked in the participant registry.',
+    expired: 'This wallet registration has expired.',
   },
   pt: {
     back: 'Voltar ao histórico',
     title: 'Login',
-    email: 'E-mail',
-    emailPlaceholder: 'voce@empresa.com',
-    password: 'Senha',
-    role: 'Perfil de acesso',
-    choose: 'Selecione seu perfil…',
-    submit: 'Entrar',
+    intro: 'Entre com a carteira Solana cadastrada para a sua empresa na cadeia.',
+    connect: 'Entrar com',
+    signing: 'Confirme na sua carteira…',
+    noWallet: 'Nenhuma carteira Solana foi encontrada neste navegador.',
+    install: 'Instalar',
+    walletHint:
+      'Na MetaMask, use a conta Solana (não a conta Ethereum 0x…). Qualquer rede Solana serve para entrar.',
+    or: 'ou',
+    visitor: 'Explorar como visitante',
+    visitorNote: 'Somente leitura, sem carteira. Os registros exibidos são simulados.',
     notice:
-      'Demonstração: escolha um perfil para abrir o painel dele. Nenhuma conta real é verificada ainda.',
-    missing: 'Preencha o e-mail, a senha e o perfil de acesso.',
+      'Sua carteira assina apenas uma mensagem de login: não custa nada e não envia transação. Seu perfil vem do cadastro de participantes na Solana.',
+    rejected: 'A assinatura foi cancelada na carteira.',
+    failed: 'Não foi possível entrar com esta carteira.',
+    suspended: 'Esta carteira está suspensa no cadastro de participantes.',
+    revoked: 'Esta carteira foi revogada no cadastro de participantes.',
+    expired: 'O cadastro desta carteira expirou.',
   },
 })
 
-async function submit() {
-  const chosen = findRole(role.value)
-  if (!email.value || !password.value || !chosen) {
-    error.value = copy.value.missing
-    return
-  }
+let stopWatchingWallets: (() => void) | null = null
+
+function refreshWallets(): void {
+  wallets.value = loginWallets()
+}
+
+onMounted(() => {
+  refreshWallets()
+  stopWatchingWallets = onLoginWalletsChange(refreshWallets)
+})
+
+onUnmounted(() => stopWatchingWallets?.())
+
+function isUserRejection(cause: unknown): boolean {
+  const text = cause instanceof Error ? `${cause.name} ${cause.message}` : String(cause)
+  return /reject|denied|cancel/i.test(text)
+}
+
+async function signInWith(wallet: StandardWallet): Promise<void> {
+  if (busyWallet.value) return
+  busyWallet.value = wallet.name
   error.value = ''
-  signIn(chosen.id, email.value)
+  try {
+    const account = await connectForLogin(wallet)
+    const outcome = await loginWithConnectedWallet({
+      connectedWallet: () => account.address,
+      signMessage: (message) => signLoginMessage(wallet, account, message),
+    })
+    if (outcome.kind === 'blocked') {
+      error.value = copy.value[outcome.status]
+      return
+    }
+    signInWithWallet(outcome.session)
+    await router.push({ name: 'workspace' })
+  } catch (cause) {
+    error.value = isUserRejection(cause) ? copy.value.rejected : copy.value.failed
+  } finally {
+    busyWallet.value = ''
+  }
+}
+
+async function exploreAsVisitor(): Promise<void> {
+  signInAsVisitor()
   await router.push({ name: 'workspace' })
 }
 </script>
@@ -73,40 +137,51 @@ async function submit() {
 
     <section class="login__card" aria-labelledby="login-title">
       <h1 id="login-title">{{ copy.title }}</h1>
+      <p class="login__intro">{{ copy.intro }}</p>
 
-      <form class="login__form" novalidate @submit.prevent="submit">
-        <label for="login-email">{{ copy.email }}</label>
-        <input
-          id="login-email"
-          v-model.trim="email"
-          type="email"
-          autocomplete="username"
-          :placeholder="copy.emailPlaceholder"
-          required
-        />
-
-        <label for="login-password">{{ copy.password }}</label>
-        <input
-          id="login-password"
-          v-model="password"
-          type="password"
-          autocomplete="current-password"
-          placeholder="••••••••"
-          required
-        />
-
-        <label for="login-role">{{ copy.role }}</label>
-        <select id="login-role" v-model="role" required>
-          <option value="" disabled>{{ copy.choose }}</option>
-          <option v-for="option in roles" :key="option.id" :value="option.id">
-            {{ tr(option.label) }}
-          </option>
-        </select>
+      <div class="login__form">
+        <button
+          v-for="wallet in wallets"
+          :key="wallet.name"
+          type="button"
+          data-action="wallet-login"
+          :data-wallet="wallet.name"
+          :disabled="busyWallet !== ''"
+          @click="signInWith(wallet)"
+        >
+          <img v-if="wallet.icon" :src="wallet.icon" alt="" width="18" height="18" />
+          {{ busyWallet === wallet.name ? copy.signing : `${copy.connect} ${wallet.name}` }}
+        </button>
+        <p v-if="wallets.length === 0" class="login__empty">{{ copy.noWallet }}</p>
+        <a
+          v-for="option in missing"
+          :key="option.name"
+          class="login__install"
+          :data-install="option.name"
+          :href="option.install"
+          target="_blank"
+          rel="noopener noreferrer"
+          >{{ copy.install }} {{ option.name }} ↗</a
+        >
+        <p class="login__hint">{{ copy.walletHint }}</p>
 
         <p v-if="error" class="login__error" role="alert">{{ error }}</p>
 
-        <button type="submit">{{ copy.submit }}</button>
-      </form>
+        <p class="login__or">
+          <span>{{ copy.or }}</span>
+        </p>
+
+        <button
+          type="button"
+          class="login__visitor"
+          data-action="visitor-login"
+          :disabled="busyWallet !== ''"
+          @click="exploreAsVisitor"
+        >
+          {{ copy.visitor }}
+        </button>
+        <p class="login__visitor-note">{{ copy.visitorNote }}</p>
+      </div>
 
       <p class="login__notice">{{ copy.notice }}</p>
     </section>
@@ -214,8 +289,94 @@ async function submit() {
   outline-offset: 1px;
 }
 
+.login__intro {
+  margin: -12px 0 20px;
+  color: var(--muted);
+  font-size: 14px;
+  line-height: 1.5;
+  text-align: center;
+}
+
+.login__empty {
+  margin: 0;
+  color: var(--text);
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+.login__install {
+  display: block;
+  margin-top: 8px;
+  padding: 12px 14px;
+  border: 1px dashed var(--border-strong);
+  border-radius: var(--radius-sm);
+  color: var(--muted);
+  font: 700 12px/1 var(--font-mono);
+  letter-spacing: 0.06em;
+  text-align: center;
+  text-decoration: none;
+  text-transform: uppercase;
+}
+
+.login__install:hover,
+.login__install:focus-visible {
+  border-color: var(--proof);
+  color: var(--proof);
+}
+
+.login__hint {
+  margin: 4px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+}
+
+.login__form button[data-action='wallet-login'] {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 10px;
+}
+
+.login__or {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin: 12px 0 0;
+  color: var(--muted);
+  font: 700 11px/1 var(--font-mono);
+  text-transform: uppercase;
+}
+
+.login__or::before,
+.login__or::after {
+  content: '';
+  flex: 1;
+  height: 1px;
+  background: var(--border);
+}
+
+.login__form .login__visitor {
+  margin-top: 4px;
+  background: var(--canvas);
+  border-color: var(--border-strong);
+}
+
+.login__visitor-note {
+  margin: 0;
+  color: var(--muted);
+  font-size: 12px;
+  line-height: 1.4;
+  text-align: center;
+}
+
+.login__form button:disabled {
+  cursor: progress;
+  opacity: 0.6;
+}
+
 .login__form button {
-  margin-top: 20px;
+  margin-top: 8px;
   padding: 14px 18px;
   border: 1px solid color-mix(in srgb, var(--primary) 78%, var(--border));
   border-radius: var(--radius-sm);
