@@ -7,7 +7,7 @@ import { tr, useCopy } from '../../i18n'
 
 const copy = useCopy({
   en: {
-    kicker: 'STAGE 02 · PROCESSING',
+    kicker: 'STAGE 03 · PROCESSING',
     record: 'From the animal received to the derived cuts.',
     transfer: 'Transfer hash',
     lot: 'Animal lot hash',
@@ -19,7 +19,7 @@ const copy = useCopy({
     pieces: 'Cuts derived from the animal',
   },
   pt: {
-    kicker: 'ETAPA 02 · PROCESSAMENTO',
+    kicker: 'ETAPA 03 · PROCESSAMENTO',
     record: 'Do animal recebido às peças derivadas.',
     transfer: 'Hash de transferência',
     lot: 'Hash do lote dos animais',

@@ -6,8 +6,8 @@ import { tr, useCopy } from '../../i18n'
 
 const copy = useCopy({
   en: {
-    kicker: 'STAGE 04 · POINT OF SALE',
-    record: 'The picanha received at the market.',
+    kicker: 'STAGE 07 · POINT OF SALE',
+    record: 'The picanha received at the market in the destination country.',
     transfer: 'Transfer hash',
     piece: 'Piece hash',
     animal: 'Animal hash',
@@ -15,8 +15,8 @@ const copy = useCopy({
     loss: 'Losses',
   },
   pt: {
-    kicker: 'ETAPA 04 · PONTO DE VENDA',
-    record: 'Recebimento da picanha no mercado.',
+    kicker: 'ETAPA 07 · PONTO DE VENDA',
+    record: 'Recebimento da picanha no mercado do país de destino.',
     transfer: 'Hash de transferência',
     piece: 'Hash da peça do animal',
     animal: 'Hash do animal',

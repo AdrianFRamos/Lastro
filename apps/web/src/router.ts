@@ -35,9 +35,29 @@ export const router = createRouter({
       component: () => import('./pages/chain/SlaughterhousePage.vue'),
     },
     {
-      path: '/chain-history/transportadora',
-      name: 'chain-carrier',
+      path: '/chain-history/transportadora/gado',
+      name: 'chain-carrier-livestock',
       component: () => import('./pages/chain/CarrierPage.vue'),
+      props: { leg: 'livestock' },
+    },
+    {
+      path: '/chain-history/transportadora/carne',
+      name: 'chain-carrier-meat',
+      component: () => import('./pages/chain/CarrierPage.vue'),
+      props: { leg: 'meat' },
+    },
+    {
+      path: '/chain-history/transportadora/entrega',
+      name: 'chain-carrier-delivery',
+      component: () => import('./pages/chain/CarrierPage.vue'),
+      props: { leg: 'delivery' },
+    },
+    // Former single carrier page; kept so links shared before the export leg still resolve.
+    { path: '/chain-history/transportadora', redirect: '/chain-history/transportadora/carne' },
+    {
+      path: '/chain-history/exportador',
+      name: 'chain-exporter',
+      component: () => import('./pages/chain/ExporterPage.vue'),
     },
     {
       path: '/chain-history/mercado',
