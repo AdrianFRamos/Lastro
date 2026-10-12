@@ -26,7 +26,7 @@ def test_a_burst_of_frames_never_wedges_the_serial_parser(tmp_path):
         [
             "cc", "-std=c11", "-Wall", "-Wextra", "-Werror",
             "-I", str(COMPONENT / "include"),
-            str(COMPONENT / "transport.c"), str(HERE / "transport_burst_host.c"),
+            str(COMPONENT / "transport.c"), str(HERE.parent / "host" / "transport_burst_host.c"),
             "-o", str(binary),
         ],
         check=True,

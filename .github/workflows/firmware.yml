@@ -40,7 +40,10 @@ jobs:
               idf.py --version
               cp -a /source/firmware/station /tmp/station
               idf.py -C /tmp/station set-target esp32c5
-              grep -Fx "# CONFIG_LASTRO_STATION_USE_EFUSE_KEY is not set" /tmp/station/sdkconfig
+              # The eFuse option depends on MBEDTLS_HARDWARE_ECDSA_SIGN; when that is off Kconfig
+              # omits the option entirely, so assert only that the development build does not
+              # select the eFuse signer.
+              ! grep -Fxq "CONFIG_LASTRO_STATION_USE_EFUSE_KEY=y" /tmp/station/sdkconfig
               idf.py -C /tmp/station build
 
               rm -rf /tmp/station/build

@@ -2,7 +2,7 @@
  * Host regression for the serial parser (review finding A4): a burst of frames larger than
  * the frame buffer, delivered in 512-byte USB reads, must be fully consumed and every frame
  * exposed in order; the parser must keep accepting input afterwards.
- * Built and run by test_transport_host.py with the system C compiler.
+ * Built and run by firmware/station/pytest/test_transport_host.py with the system C compiler.
  */
 #include <stdio.h>
 #include <string.h>
