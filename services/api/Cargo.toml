@@ -9,6 +9,7 @@ publish = false
 workspace = true
 
 [dependencies]
+aes-gcm.workspace = true
 async-trait.workspace = true
 anyhow.workspace = true
 axum.workspace = true
@@ -28,10 +29,12 @@ sqlx.workspace = true
 thiserror.workspace = true
 time.workspace = true
 tokio.workspace = true
+tower.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
 tracing-subscriber.workspace = true
 uuid.workspace = true
+zeroize.workspace = true
 
 [dev-dependencies]
 http.workspace = true

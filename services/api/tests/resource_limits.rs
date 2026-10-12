@@ -61,8 +61,14 @@ fn test_app() -> axum::Router {
             lastro_program_id: "Vote111111111111111111111111111111111111111".into(),
             cors_allowed_origins: Vec::new(),
             priority_fee_micro_lamports: None,
+            sponsor_keypair_path: None,
+            sponsor_limits: lastro_api::sponsor::SponsorLimits::default(),
+            org_key_encryption_key: None,
+            otp_log_delivery: false,
         }),
         rpc: Arc::new(DependencyMustNotRun),
+        sponsor: None,
+        vault: None,
     })
 }
 

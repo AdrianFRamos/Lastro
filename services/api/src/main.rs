@@ -1,4 +1,7 @@
-use lastro_api::{config::AppConfig, db, routes, solana::rpc::HttpSolanaRpc, state::AppState};
+use lastro_api::{
+    config::AppConfig, db, orgs::LocalKeyVault, routes, solana::rpc::HttpSolanaRpc,
+    sponsor::Sponsor, state::AppState,
+};
 use std::sync::Arc;
 
 #[tokio::main]
@@ -14,10 +17,28 @@ async fn main() -> anyhow::Result<()> {
         config.solana_rpc_url.clone(),
         config.lastro_program_id.clone(),
     ));
+    let sponsor = config
+        .sponsor_keypair_path
+        .as_deref()
+        .map(|path| Sponsor::from_keypair_file(path, config.sponsor_limits))
+        .transpose()?
+        .map(Arc::new);
+    if let Some(sponsor) = &sponsor {
+        tracing::info!(sponsor = %sponsor.pubkey(), "fee sponsorship enabled");
+    }
+    let vault = config
+        .org_key_encryption_key
+        .as_ref()
+        .map(|key| Arc::new(LocalKeyVault::new(key)));
+    if vault.is_some() {
+        tracing::info!("managed organization wallets enabled");
+    }
     let state = AppState {
         db,
         config: config.clone(),
         rpc,
+        sponsor,
+        vault,
     };
     let _reconciliation_worker = lastro_api::reconciliation::spawn(state.clone());
     let listener = tokio::net::TcpListener::bind(config.bind_addr).await?;

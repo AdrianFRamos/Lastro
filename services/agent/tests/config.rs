@@ -157,3 +157,24 @@ fn agent_valid_configuration_preserves_serial_and_retry_values_exactly() {
     // ASSERT: typed fields equal the declared inputs with no hidden defaults or unit changes.
     // FAILURE MEANS: deployed bridge behavior can differ from documented configuration.
 }
+
+#[test]
+fn the_agent_token_travels_over_https_outside_loopback() {
+    // PURPOSE: M7 — the bearer token is sent with every request, so plain http is accepted
+    // only on loopback or when the operator explicitly opts in for a private network.
+    let mut values = valid_values();
+    for url in [
+        "http://127.0.0.1:8080/",
+        "http://localhost:8080/",
+        "http://[::1]:8080/",
+        "https://api.example/",
+    ] {
+        values.insert("LASTRO_AGENT_API_URL", url.into());
+        assert!(parse(&values).is_ok(), "{url} must be accepted");
+    }
+    values.insert("LASTRO_AGENT_API_URL", "http://api.example/".into());
+    assert!(parse(&values).is_err(), "cleartext token to a remote host");
+    values.insert("LASTRO_AGENT_ALLOW_INSECURE_HTTP", "1".into());
+    assert!(parse(&values).is_ok(), "explicit private-network opt-in");
+    // FAILURE MEANS: the Agent token could cross the internet in cleartext.
+}

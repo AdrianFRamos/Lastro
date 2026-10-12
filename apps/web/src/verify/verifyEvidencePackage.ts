@@ -2,8 +2,16 @@
  * Local (offline) verification of a v2 EvidencePackage: every claim is recomputed from the
  * Station-signed 220-byte envelopes; the API's decoded fields are never trusted.
  */
-import type { EvidenceEvent, EvidencePackage } from '../protocol/evidence'
-import { fromBase64, fromHex, rfidHash, stationId, toHex } from '../protocol/hash'
+import type { BatchedObservation, EvidenceEvent, EvidencePackage } from '../protocol/evidence'
+import {
+  equalBytes,
+  fromBase64,
+  fromHex,
+  rfidHash,
+  sha256,
+  stationId,
+  toHex,
+} from '../protocol/hash'
 import { verifyStationSignature } from '../protocol/p256'
 import {
   decodeV2DomainEvent,
@@ -12,7 +20,15 @@ import {
   v2IdentifierPayloadHash,
   type V2DomainEventEnvelope,
 } from '../protocol/v2/domainEvent'
+import { batchLeafHash, sessionEventId, verifyBatchProof } from '../protocol/v2/session'
 import type { VerificationLayerResult, VerificationResult } from './types'
+
+/** One step of the asset's signed history: its version, hash and the active tag after it. */
+interface HistoryHead {
+  stateVersion: bigint
+  eventHash: string
+  rfidAfter: string
+}
 
 const ZERO_HEX = '0'.repeat(64)
 
@@ -30,6 +46,10 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
     'Events form one hash-linked history of this asset ending at its current state',
   )
   const custody = result('CUSTODY', 'Accepted custody transfers end at the current custodian')
+  const origin = result(
+    'FACILITY_ORIGIN',
+    'Every batched observation names a facility whose boundary matches its commitment',
+  )
   const onChain: VerificationLayerResult = {
     layer: 'ON_CHAIN_STATE',
     status: 'NOT_CHECKED',
@@ -45,6 +65,7 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
   let previousHash = ZERO_HEX
   let previousVersion = 0
   let currentRfid = ZERO_HEX
+  const history: HistoryHead[] = []
   for (const [index, evidence] of pkg.events.entries()) {
     const label = `Event ${index + 1}`
     let bytes: Uint8Array
@@ -54,7 +75,7 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
       envelope = decodeV2DomainEvent(bytes)
     } catch (error) {
       const detail = `${label}: ${error instanceof Error ? error.message : 'invalid envelope'}`
-      for (const layer of [rfid, station, identity, custody]) fail(layer, detail)
+      for (const layer of [rfid, station, identity, custody, origin]) fail(layer, detail)
       continue
     }
     const eventHash = await v2EventHashOfBytes(bytes)
@@ -83,7 +104,18 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
     currentRfid = await replayRfid(envelope, evidence.observedRfidHex, currentRfid, (detail) =>
       fail(rfid, `${label} ${detail}`),
     )
+    history.push({ stateVersion: envelope.stateVersion, eventHash, rfidAfter: currentRfid })
   }
+
+  for (const [index, observation] of (pkg.batchedObservations ?? []).entries()) {
+    await verifyBatchedObservation(pkg, history, observation, `Batched observation ${index + 1}`, {
+      rfid: (detail) => fail(rfid, detail),
+      station: (detail) => fail(station, detail),
+      identity: (detail) => fail(identity, detail),
+    })
+  }
+
+  await verifyFacilities(pkg, (detail) => fail(origin, detail))
 
   if (pkg.asset.lastEventHash !== previousHash)
     fail(identity, 'Asset last event hash is not the final event of the package')
@@ -98,11 +130,130 @@ export async function verifyEvidencePackage(pkg: EvidencePackage): Promise<Verif
   if (transfers.length > 0 && transfers.at(-1)!.newCustodian !== pkg.asset.custodian)
     fail(custody, 'The last accepted custody transfer is not the current custodian')
 
-  const layers = [rfid, station, identity, custody, onChain]
+  const layers = [rfid, station, identity, custody, origin, onChain]
   return {
     assetId: pkg.asset.assetId,
     layers,
     valid: layers.every((layer) => layer.status === 'VALID'),
+  }
+}
+
+/**
+ * A session presence proof does not advance the asset's state: it must extend one head of the
+ * signed history (the latest event at or below its state version), observe the tag active at
+ * that head, be the one proof its session allows for this asset, carry a valid Station
+ * signature, and sit in its batch's Merkle tree. The on-chain layer then checks the root.
+ */
+async function verifyBatchedObservation(
+  pkg: EvidencePackage,
+  history: readonly HistoryHead[],
+  observation: BatchedObservation,
+  label: string,
+  fail: {
+    rfid: (detail: string) => void
+    station: (detail: string) => void
+    identity: (detail: string) => void
+  },
+): Promise<void> {
+  let bytes: Uint8Array
+  let envelope: V2DomainEventEnvelope
+  try {
+    bytes = fromBase64(observation.envelopeBytesBase64, 220)
+    envelope = decodeV2DomainEvent(bytes)
+  } catch (error) {
+    const detail = `${label}: ${error instanceof Error ? error.message : 'invalid envelope'}`
+    fail.rfid(detail)
+    fail.station(detail)
+    fail.identity(detail)
+    return
+  }
+  if (
+    envelope.eventType !== V2EventType.ObservationRecorded ||
+    envelope.deploymentId !== pkg.deploymentId ||
+    envelope.subjectId !== pkg.asset.assetId
+  )
+    fail.identity(`${label} is not a presence proof of this asset`)
+  if ((await v2EventHashOfBytes(bytes)) !== observation.eventHash)
+    fail.identity(`${label} event hash differs from its signed envelope`)
+  const expectedEventId = await sessionEventId(
+    fromHex(observation.sessionId, 32),
+    fromHex(pkg.asset.assetId, 32),
+  )
+  if (toHex(expectedEventId) !== envelope.eventId)
+    fail.identity(`${label} is not bound to its handling session`)
+
+  const head = history.filter((step) => step.stateVersion <= envelope.stateVersion).at(-1)
+  if (
+    envelope.stateVersion < 1n ||
+    envelope.stateVersion > BigInt(pkg.asset.stateVersion) ||
+    envelope.expectedPreviousHash !== (head?.eventHash ?? ZERO_HEX)
+  )
+    fail.identity(`${label} does not extend a head of the signed history`)
+
+  const signature = fromHex(observation.stationSignatureHex, 64)
+  const publicKey = fromHex(observation.stationPubkeyHex, 33)
+  try {
+    if (toHex(await stationId(publicKey)) !== envelope.sourceId)
+      fail.station(`${label} sourceId does not match its Station public key`)
+    else if (!verifyStationSignature(bytes, publicKey, signature))
+      fail.station(`${label} P-256 signature is invalid`)
+  } catch (error) {
+    fail.station(`${label}: ${error instanceof Error ? error.message : 'invalid Station key'}`)
+  }
+
+  const observed = toHex(await rfidHash(fromHex(observation.observedRfidHex, 8)))
+  if (observed !== (head?.rfidAfter ?? ZERO_HEX))
+    fail.rfid(`${label} observed a tag that was not the active RFID`)
+  const payload = await v2IdentifierPayloadHash(fromHex(observed, 32), fromHex(observed, 32))
+  if (payload !== envelope.payloadHash)
+    fail.rfid(`${label} observed RFID does not match the signed payload`)
+
+  const included = await verifyBatchProof(
+    await batchLeafHash(bytes, signature),
+    observation.leafIndex,
+    observation.leafCount,
+    observation.merkleProof.map((node) => fromHex(node, 32)),
+    fromHex(observation.merkleRoot, 32),
+  )
+  if (!included || equalBytes(fromHex(observation.merkleRoot, 32), new Uint8Array(32)))
+    fail.identity(`${label} is not in its batch's Merkle root`)
+}
+
+const GEO_DOMAIN = new TextEncoder().encode('LASTRO_V2_GEO\0')
+
+/**
+ * S5: every batched observation names a listed facility; a listed boundary must start with
+ * its CAR code and hash to its commitment; a facility without boundary commits to zero. The
+ * on-chain layer then compares commitments with the FacilityRecords and BatchAnchors.
+ */
+async function verifyFacilities(pkg: EvidencePackage, fail: (detail: string) => void) {
+  const facilities = new Map((pkg.facilities ?? []).map((entry) => [entry.facilityId, entry]))
+  for (const [index, observation] of (pkg.batchedObservations ?? []).entries()) {
+    if (!facilities.has(observation.facilityId))
+      fail(`Batched observation ${index + 1} names a facility the package does not describe`)
+  }
+  for (const facility of facilities.values()) {
+    if (facility.boundaryBase64 === null || facility.carCode === null) {
+      if (facility.geoCommitment !== ZERO_HEX)
+        fail(`Facility ${facility.facilityId} omits the boundary its commitment needs`)
+      continue
+    }
+    let bytes: Uint8Array
+    try {
+      bytes = fromBase64(facility.boundaryBase64)
+    } catch {
+      fail(`Facility ${facility.facilityId} boundary is not canonical base64`)
+      continue
+    }
+    const code = new TextEncoder().encode(facility.carCode)
+    if (
+      bytes.length <= code.length ||
+      !equalBytes(bytes.subarray(0, code.length), code) ||
+      bytes[code.length] !== 0
+    )
+      fail(`Facility ${facility.facilityId} boundary does not start with its CAR code`)
+    else if (toHex(await sha256(GEO_DOMAIN, bytes)) !== facility.geoCommitment)
+      fail(`Facility ${facility.facilityId} boundary does not hash to its commitment`)
   }
 }
 

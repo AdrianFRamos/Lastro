@@ -31,6 +31,21 @@ export const intentPda = (
   intentId: Uint8Array,
 ) => pda(programId, [seed('intent'), deployment, subjectId, intentId])
 
+export const facilityPda = (programId: string, deployment: Uint8Array, facilityId: Uint8Array) =>
+  pda(programId, [seed('facility'), deployment, facilityId])
+export const sessionPda = (programId: string, deployment: Uint8Array, sessionId: Uint8Array) =>
+  pda(programId, [seed('session'), deployment, sessionId])
+export const batchPda = (
+  programId: string,
+  deployment: Uint8Array,
+  sessionId: Uint8Array,
+  batchIndex: number,
+) => {
+  const index = new Uint8Array(4)
+  new DataView(index.buffer).setUint32(0, batchIndex, true)
+  return pda(programId, [seed('batch'), deployment, sessionId, index])
+}
+
 /** Deterministic custody intent id: SHA-256("LASTRO_V2_CUSTODY_INTENT\0" || transfer UUID). */
 export function custodyIntentId(transferId: string): Promise<Uint8Array> {
   return sha256(seed('LASTRO_V2_CUSTODY_INTENT\0'), uuidBytes(transferId))

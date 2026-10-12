@@ -44,7 +44,7 @@ for the context it was given. It does not prove biological identity or the time 
 **API:** coordinates capture and prepares transactions. PostgreSQL is a projection; it is not the
 canonical authority.
 
-**Wallet:** proves the authority required by on-chain state.
+**Wallet:** proves the authority required by on-chain state: a browser wallet, or (v2.1, S2) an organization wallet the API holds sealed and signs with only for purposes the user's role allows. The fee sponsor pays, never authorizes.
 
 **Solana:** decides whether the transition may advance the current state.
 

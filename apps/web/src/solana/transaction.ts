@@ -1,5 +1,6 @@
 import {
   AccountRole,
+  addSignersToTransactionMessage,
   address,
   appendTransactionMessageInstructions,
   compileTransaction,
@@ -8,7 +9,9 @@ import {
   getBase64EncodedWireTransaction,
   getSignatureFromTransaction,
   getTransactionSize,
+  partiallySignTransactionMessageWithSigners,
   pipe,
+  setTransactionMessageFeePayer,
   setTransactionMessageFeePayerSigner,
   setTransactionMessageLifetimeUsingBlockhash,
   signTransactionMessageWithSigners,
@@ -21,8 +24,10 @@ import type {
   CaptureAction,
   Hex32,
   InstructionDto,
+  SponsorPurpose,
   TransactionData,
 } from '../api/types'
+import { sponsorSubmit } from '../api/client'
 import { webConfig } from '../config'
 import { equalBytes, fromBase64, fromHex, sha256, stationId } from '../protocol/hash'
 import { verifyStationSignature } from '../protocol/p256'
@@ -32,6 +37,7 @@ import {
   v2EventHashOfBytes,
   v2IdentifierPayloadHash,
 } from '../protocol/v2/domainEvent'
+import { sessionId as deriveSessionId } from '../protocol/v2/session'
 import { solanaClient } from './client'
 import {
   COMPUTE_BUDGET_PROGRAM_ID,
@@ -43,12 +49,15 @@ import {
 } from './constants'
 import {
   assetPda,
+  batchPda,
   configPda,
+  facilityPda,
   custodyIntentId,
   discriminator,
   eventPda,
   intentPda,
   rfidBindingPda,
+  sessionPda,
   stationPda,
   stationRegistryPda,
 } from './pda'
@@ -98,10 +107,70 @@ export type ExpectedTransaction =
     }
   | { kind: 'CUSTODY_PROPOSE'; assetId: Hex32; transferId: string; recipient: Hex32 }
   | { kind: 'CUSTODY_ACCEPT'; assetId: Hex32; transferId: string; recipient: Hex32 }
+  | {
+      kind: 'SESSION_OPEN'
+      sessionId: Hex32
+      /** Custodian wallet (32-byte hex) that authorizes the session. */
+      custodian: Hex32
+      stationId: Hex32
+      /** Facility the Station is installed at (the program requires it to match). */
+      facilityId: Hex32
+      maxEvents: number
+      validFrom: number
+      expiresAt: number
+    }
+  | {
+      kind: 'SESSION_BATCH'
+      sessionId: Hex32
+      custodian: Hex32
+      /** The session's Station; the program requires it to still be ACTIVE. */
+      stationId: Hex32
+      batchIndex: number
+      /** Root the custodian commits to; every leaf is re-checked by the verifier later. */
+      merkleRoot: Hex32
+      leafCount: number
+      firstObservedAt: number
+      lastObservedAt: number
+      /** Session window: the batch must fall inside it. */
+      validFrom: number
+      expiresAt: number
+    }
+  | { kind: 'SESSION_REVOKE'; sessionId: Hex32; custodian: Hex32 }
 
 interface ValidatedTransaction {
   /** Protocol instructions followed by any validated priority-fee instructions. */
   instructions: readonly Instruction[]
+}
+
+/** Chain reads the validator needs beyond the API's descriptor. */
+export interface ValidationChainReader {
+  /** Rent payer recorded in an open on-chain IntentState, or null when it is not open. */
+  intentRentPayer(intentAddress: string): Promise<string | null>
+}
+
+/** IntentState (v2.1, 204 bytes): rent_payer at 171..203. */
+const INTENT_STATE_LENGTH = 204
+const INTENT_RENT_PAYER_OFFSET = 171
+
+export const rpcChainReader: ValidationChainReader = {
+  async intentRentPayer(intentAddress) {
+    const response = await solanaClient.rpc
+      .getAccountInfo(address(intentAddress), { commitment: 'confirmed', encoding: 'base64' })
+      .send()
+    const account = response.value
+    if (!account) return null
+    if (String(account.owner) !== webConfig.lastroProgramId)
+      throw new Error('Custody intent is not owned by the configured Lastro program')
+    const data = fromBase64(account.data[0])
+    if (
+      data.length !== INTENT_STATE_LENGTH ||
+      !equalBytes(data.subarray(0, 8), await discriminator('account', 'IntentState'))
+    )
+      throw new Error('Custody intent account has an unexpected layout')
+    return getAddressDecoder().decode(
+      data.subarray(INTENT_RENT_PAYER_OFFSET, INTENT_RENT_PAYER_OFFSET + 32),
+    )
+  },
 }
 
 export interface SignedLastroTransaction {
@@ -148,10 +217,20 @@ export function validateWalletSigningContext(
 export async function validateLastroTransactionData(
   transactionData: TransactionData,
   expected: ExpectedTransaction,
+  chain: ValidationChainReader = rpcChainReader,
 ): Promise<ValidatedTransaction> {
   const programId = webConfig.lastroProgramId
   if (transactionData.lastroProgramId !== programId) {
     throw new Error('Lastro program id does not match browser deployment configuration')
+  }
+  // The fee payer pays fee and rent and grants nothing, but it must still be a key the browser
+  // trusts: the signer itself, or the sponsor pinned at build time.
+  const feePayer = transactionData.feePayer
+  if (
+    feePayer !== transactionData.requiredSigner &&
+    (webConfig.lastroSponsor === null || feePayer !== webConfig.lastroSponsor)
+  ) {
+    throw new Error('Fee payer is neither the signing wallet nor the pinned platform sponsor')
   }
   const protocolCount = expected.kind === 'STATION_EVENT' ? 2 : 1
   const trailing = transactionData.instructions.slice(protocolCount)
@@ -179,8 +258,30 @@ export async function validateLastroTransactionData(
   }
 
   const deployment = fromHex(webConfig.lastroDeploymentId, 32)
-  const assetId = fromHex(expected.assetId, 32)
   const [config] = await configPda(programId, deployment)
+  if (
+    expected.kind === 'SESSION_OPEN' ||
+    expected.kind === 'SESSION_BATCH' ||
+    expected.kind === 'SESSION_REVOKE'
+  ) {
+    const lastroData = decodeCanonicalBase64(lastro.dataBase64)
+    const [sessionSigner, sessionAccounts, sessionData] = await sessionContract(
+      expected,
+      programId,
+      deployment,
+      String(config),
+      feePayer,
+    )
+    return finishValidation(
+      transactionData,
+      lastro,
+      lastroData,
+      sessionSigner,
+      sessionAccounts,
+      sessionData,
+    )
+  }
+  const assetId = fromHex(expected.assetId, 32)
   const [asset] = await assetPda(programId, deployment, assetId)
   const data = decodeCanonicalBase64(lastro.dataBase64)
   let signer: string
@@ -242,7 +343,8 @@ export async function validateLastroTransactionData(
       const [stationAccount] = await stationPda(programId, deployment, station)
       const [anchor] = await eventPda(programId, deployment, fromHex(envelope.eventId, 32))
       accounts = [
-        meta(signer, true, spec.hashes > 0),
+        meta(signer, true, false),
+        meta(feePayer, true, true),
         meta(config, false, false),
         meta(registry, false, false),
         meta(stationAccount, false, false),
@@ -273,7 +375,8 @@ export async function validateLastroTransactionData(
         weight,
       )
       accounts = [
-        meta(signer, true, true),
+        meta(signer, true, false),
+        meta(feePayer, true, true),
         meta(config, false, false),
         meta(asset, false, true),
         meta(SYSTEM_PROGRAM_ID, false, false),
@@ -314,7 +417,8 @@ export async function validateLastroTransactionData(
         payloadHash,
       )
       accounts = [
-        meta(signer, true, true),
+        meta(signer, true, false),
+        meta(feePayer, true, true),
         meta(config, false, false),
         meta(asset, false, false),
         meta(intent, false, true),
@@ -332,16 +436,31 @@ export async function validateLastroTransactionData(
       )
       if (data.length !== 16) throw new Error('accept_custody_transfer data has the wrong length')
       wanted = concat(await discriminator('global', 'accept_custody_transfer'), data.slice(8, 16))
+      // Acceptance closes the proposal and refunds whoever funded it, as recorded on-chain.
+      const rentPayer = await chain.intentRentPayer(String(intent))
+      if (rentPayer === null) throw new Error('Custody proposal is not open on-chain')
       accounts = [
         meta(signer, true, false),
         meta(config, false, false),
         meta(asset, false, true),
         meta(intent, false, true),
+        meta(rentPayer, false, true),
       ]
       break
     }
   }
 
+  return finishValidation(transactionData, lastro, data, signer, accounts, wanted)
+}
+
+function finishValidation(
+  transactionData: TransactionData,
+  lastro: InstructionDto,
+  data: Uint8Array,
+  signer: string,
+  accounts: AccountMetaDto[],
+  wanted: Uint8Array,
+): ValidatedTransaction {
   if (transactionData.requiredSigner !== signer) {
     throw new Error('Required signer does not match the authority this transition needs')
   }
@@ -365,6 +484,119 @@ export async function validateLastroTransactionData(
   })
 
   return { instructions: transactionData.instructions.map(toInstruction) }
+}
+
+/** Session limits mirrored from the program (SPEC v2.1, S3). */
+const MAX_SESSION_EVENTS = 2_000
+const MAX_SESSION_SECONDS = 12 * 3_600
+const MAX_BATCH_LEAVES = 1_024
+const SESSION_ACTION_OBSERVE = 1
+
+/** Signer, accounts and exact data of a session instruction, derived without the API. */
+async function sessionContract(
+  expected: Extract<
+    ExpectedTransaction,
+    { kind: 'SESSION_OPEN' | 'SESSION_BATCH' | 'SESSION_REVOKE' }
+  >,
+  programId: string,
+  deployment: Uint8Array,
+  config: string,
+  feePayer: string,
+): Promise<[string, AccountMetaDto[], Uint8Array]> {
+  const signer = custodianAddress(expected.custodian)
+  const sessionId = fromHex(expected.sessionId, 32)
+  const [session] = await sessionPda(programId, deployment, sessionId)
+  switch (expected.kind) {
+    case 'SESSION_OPEN': {
+      if (
+        !Number.isSafeInteger(expected.maxEvents) ||
+        expected.maxEvents < 1 ||
+        expected.maxEvents > MAX_SESSION_EVENTS ||
+        expected.expiresAt <= expected.validFrom ||
+        expected.expiresAt - expected.validFrom > MAX_SESSION_SECONDS
+      )
+        throw new Error('Session terms are outside the protocol limits')
+      const station = fromHex(expected.stationId, 32)
+      const derived = await deriveSessionId(
+        deployment,
+        fromHex(expected.custodian, 32),
+        station,
+        expected.validFrom,
+        expected.expiresAt,
+        expected.maxEvents,
+      )
+      if (!equalBytes(derived, sessionId))
+        throw new Error('Session id is not the one derived from its custodian and terms')
+      const [registry] = await stationRegistryPda(programId, deployment)
+      const [stationAccount] = await stationPda(programId, deployment, station)
+      const [facility] = await facilityPda(programId, deployment, fromHex(expected.facilityId, 32))
+      const terms = new Uint8Array(2 + 4 + 8 + 8)
+      const view = new DataView(terms.buffer)
+      view.setUint16(0, SESSION_ACTION_OBSERVE, true)
+      view.setUint32(2, expected.maxEvents, true)
+      view.setBigInt64(6, BigInt(expected.validFrom), true)
+      view.setBigInt64(14, BigInt(expected.expiresAt), true)
+      return [
+        signer,
+        [
+          meta(signer, true, false),
+          meta(feePayer, true, true),
+          meta(config, false, false),
+          meta(registry, false, false),
+          meta(stationAccount, false, false),
+          meta(facility, false, false),
+          meta(session, false, true),
+          meta(SYSTEM_PROGRAM_ID, false, false),
+        ],
+        concat(await discriminator('global', 'open_session'), sessionId, station, terms),
+      ]
+    }
+    case 'SESSION_BATCH': {
+      if (
+        !Number.isSafeInteger(expected.leafCount) ||
+        expected.leafCount < 1 ||
+        expected.leafCount > MAX_BATCH_LEAVES ||
+        expected.firstObservedAt < expected.validFrom ||
+        expected.lastObservedAt < expected.firstObservedAt ||
+        expected.lastObservedAt > expected.expiresAt
+      )
+        throw new Error('Batch is outside its session terms')
+      const [batch] = await batchPda(programId, deployment, sessionId, expected.batchIndex)
+      const [stationAccount] = await stationPda(
+        programId,
+        deployment,
+        fromHex(expected.stationId, 32),
+      )
+      const terms = new Uint8Array(4 + 8 + 8)
+      const view = new DataView(terms.buffer)
+      view.setUint32(0, expected.leafCount, true)
+      view.setBigInt64(4, BigInt(expected.firstObservedAt), true)
+      view.setBigInt64(12, BigInt(expected.lastObservedAt), true)
+      return [
+        signer,
+        [
+          meta(signer, true, false),
+          meta(feePayer, true, true),
+          meta(config, false, false),
+          meta(session, false, true),
+          meta(stationAccount, false, false),
+          meta(batch, false, true),
+          meta(SYSTEM_PROGRAM_ID, false, false),
+        ],
+        concat(
+          await discriminator('global', 'anchor_observation_batch'),
+          fromHex(expected.merkleRoot, 32),
+          terms,
+        ),
+      ]
+    }
+    case 'SESSION_REVOKE':
+      return [
+        signer,
+        [meta(signer, true, false), meta(config, false, false), meta(session, false, true)],
+        await discriminator('global', 'revoke_session'),
+      ]
+  }
 }
 
 /** Custodian wallet address for 32-byte custodian hex. */
@@ -393,6 +625,17 @@ export async function submitLastroTransaction(
   })
 
   const latest = await solanaClient.rpc.getLatestBlockhash({ commitment: 'finalized' }).send()
+  if (transactionData.feePayer !== transactionData.requiredSigner) {
+    return submitSponsoredTransaction(
+      transactionData,
+      expected,
+      validated,
+      connected.signer,
+      requestedVersion,
+      latest,
+      onSigned,
+    )
+  }
   const message = pipe(
     createTransactionMessage({ version: requestedVersion }),
     (value) => setTransactionMessageFeePayerSigner(connected.signer!, value),
@@ -446,6 +689,95 @@ export async function submitLastroTransaction(
     )
   }
   return signature
+}
+
+type WalletSigner = NonNullable<
+  NonNullable<ReturnType<typeof solanaClient.wallet.getState>['connected']>['signer']
+>
+type LatestBlockhash = Awaited<
+  ReturnType<ReturnType<typeof solanaClient.rpc.getLatestBlockhash>['send']>
+>
+
+/**
+ * Sponsored path: the platform sponsor is the fee payer. The wallet signs only as the
+ * authorizing account; the API checks the bytes are exactly what it prepared, adds the
+ * sponsor signature and broadcasts.
+ */
+async function submitSponsoredTransaction(
+  transactionData: TransactionData,
+  expected: ExpectedTransaction,
+  validated: ValidatedTransaction,
+  walletSigner: WalletSigner,
+  requestedVersion: 'legacy' | 0,
+  latest: LatestBlockhash,
+  onSigned?: SignedLastroTransactionObserver,
+): Promise<string> {
+  const message = pipe(
+    createTransactionMessage({ version: requestedVersion }),
+    (value) => setTransactionMessageFeePayer(address(transactionData.feePayer), value),
+    (value) => setTransactionMessageLifetimeUsingBlockhash(latest.value, value),
+    (value) => appendTransactionMessageInstructions(validated.instructions, value),
+    (value) => addSignersToTransactionMessage([walletSigner], value),
+  )
+  const unsignedTransaction = compileTransaction(message)
+  const unsignedSize = getTransactionSize(unsignedTransaction)
+  if (unsignedSize !== transactionData.measuredSerializedBytes) {
+    throw new Error(
+      `Locally compiled transaction size ${unsignedSize} does not match API measurement ${transactionData.measuredSerializedBytes}`,
+    )
+  }
+  const signedTransaction = await partiallySignTransactionMessageWithSigners(message)
+  if (!equalBytes(unsignedTransaction.messageBytes, signedTransaction.messageBytes)) {
+    throw new Error('Wallet changed the validated Lastro transaction message')
+  }
+  if (!signedTransaction.signatures[walletSigner.address]) {
+    throw new Error('Wallet did not sign the sponsored Lastro transaction')
+  }
+  const sponsored = await sponsorSubmit({
+    purpose: sponsorPurpose(expected),
+    transactionBase64: getBase64EncodedWireTransaction(signedTransaction),
+  })
+  if (sponsored.feePayer !== transactionData.feePayer) {
+    throw new Error('API sponsored the transaction with an unexpected fee payer')
+  }
+  if (onSigned) {
+    onSigned({
+      signature: sponsored.txSignature,
+      wireTransactionBase64: sponsored.signedTransactionBase64 as Base64EncodedWireTransaction,
+      lastValidBlockHeight: latest.value.lastValidBlockHeight,
+    })
+  }
+  return sponsored.txSignature
+}
+
+/** What the API must re-derive to co-sign: the same identifiers the transaction-data call used. */
+export function sponsorPurpose(expected: ExpectedTransaction): SponsorPurpose {
+  switch (expected.kind) {
+    case 'STATION_EVENT':
+      return { kind: 'STATION_EVENT', eventHash: expected.eventHash }
+    case 'REGISTER_ASSET':
+      return {
+        kind: 'REGISTER_ASSET',
+        assetId: expected.assetId,
+        custodian: expected.custodian,
+        assetType: expected.assetType,
+        availableWeightGrams: expected.availableWeightGrams,
+      }
+    case 'CUSTODY_PROPOSE':
+      return { kind: 'CUSTODY_PROPOSE', transferId: expected.transferId }
+    case 'CUSTODY_ACCEPT':
+      return { kind: 'CUSTODY_ACCEPT', transferId: expected.transferId }
+    case 'SESSION_OPEN':
+      return { kind: 'SESSION_OPEN', sessionId: expected.sessionId }
+    case 'SESSION_BATCH':
+      return {
+        kind: 'SESSION_BATCH',
+        sessionId: expected.sessionId,
+        batchIndex: expected.batchIndex,
+      }
+    case 'SESSION_REVOKE':
+      return { kind: 'SESSION_REVOKE', sessionId: expected.sessionId }
+  }
 }
 
 /** Re-submit the exact signed bytes retained before an ambiguous RPC result. */

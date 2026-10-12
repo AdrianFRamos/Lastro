@@ -81,3 +81,38 @@ def test_firmware_ci_compiles_efuse_signer_without_provisioning_commands():
     assert "CONFIG_LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX=0" in workflow
     for forbidden in ('espefuse burn', 'esp_efuse_write_key', 'esp_efuse_set_key_purpose'):
         assert forbidden not in workflow
+
+
+def test_production_station_build_requires_secure_boot_and_flash_encryption():
+    """C3: a production Station cannot be reflashed, read or debugged over USB."""
+    app = (ROOT / 'firmware/station/main/app_main.c').read_text(encoding='utf-8')
+    kconfig = KCONFIG.read_text(encoding='utf-8')
+    overlay = (ROOT / 'firmware/station/sdkconfig.release.defaults').read_text(encoding='utf-8')
+
+    assert 'config LASTRO_STATION_RELEASE' in kconfig
+    assert 'depends on LASTRO_STATION_USE_EFUSE_KEY' in kconfig.split('config LASTRO_STATION_RELEASE', 1)[1]
+    for guard in (
+        '#if CONFIG_LASTRO_STATION_RELEASE',
+        '!CONFIG_SECURE_BOOT_V2_ENABLED',
+        '!CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE',
+        'CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE || CONFIG_SECURE_DISABLE_ROM_DL_MODE',
+        'CONFIG_SECURE_BOOT_ALLOW_JTAG',
+        'esp_secure_boot_enabled()',
+        'esp_flash_encryption_enabled()',
+    ):
+        assert guard in app, f'production guard missing: {guard}'
+    for option in (
+        'CONFIG_SECURE_BOOT_V2_ENABLED=y',
+        'CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y',
+        'CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE=y',
+        'CONFIG_LASTRO_STATION_RELEASE=y',
+    ):
+        assert option in overlay, f'release overlay missing: {option}'
+    assert 'ALLOW_JTAG' not in overlay
+
+
+def test_development_signer_is_deterministic_when_available():
+    """M3: the same envelope always yields the same signature (and the same batch leaf)."""
+    signer = SIGNER.read_text(encoding='utf-8')
+    assert 'PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_256)' in signer
+    assert signer.count('LASTRO_STATION_SIGN_ALG') >= 3

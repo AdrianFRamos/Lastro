@@ -5,11 +5,12 @@ use sha2::{Digest, Sha256};
 
 use crate::{
     constants::{
-        CONFIG_V2_SEED, STATION_REGISTRY_SEED, STATION_STATUS_ACTIVE, STATION_STATUS_EXPIRED,
-        STATION_STATUS_REVOKED, STATION_V2_SEED, is_valid_station_status,
+        CONFIG_V2_SEED, FACILITY_SEED, FACILITY_STATUS_ACTIVE, STATION_REGISTRY_SEED,
+        STATION_STATUS_ACTIVE, STATION_STATUS_EXPIRED, STATION_STATUS_REVOKED, STATION_V2_SEED,
+        is_valid_station_status,
     },
     error::LastroV2Error,
-    state::{ProtocolConfigV2, RegistryRoot, StationRecord},
+    state::{FacilityRecord, ProtocolConfigV2, RegistryRoot, StationRecord},
 };
 
 const STATION_DOMAIN: &[u8] = b"LASTRO_STATION\0";
@@ -49,6 +50,7 @@ pub fn register_handler(
     station.valid_from = valid_from;
     station.valid_until = valid_until;
     station.firmware_hash = firmware_hash;
+    station.facility_id = [0; 32];
     station.bump = ctx.bumps.station;
     Ok(())
 }
@@ -63,8 +65,10 @@ pub fn set_status_handler(ctx: Context<SetStationStatus>, status: u8) -> Result<
         station.status != STATION_STATUS_REVOKED,
         LastroV2Error::InvalidStationStatus
     );
+    // EXPIRED is left only through `extend_station_validity`; a detour through SUSPENDED
+    // must not reactivate an expired key either.
     require!(
-        status != STATION_STATUS_ACTIVE || station.status != STATION_STATUS_EXPIRED,
+        station.status != STATION_STATUS_EXPIRED || status == STATION_STATUS_REVOKED,
         LastroV2Error::InvalidStationStatus
     );
     station.status = status;
@@ -73,7 +77,8 @@ pub fn set_status_handler(ctx: Context<SetStationStatus>, status: u8) -> Result<
 
 /// Extend a Station's validity window. A hardware key (eFuse) cannot be rotated, so without
 /// this the Station would become permanently unusable when `valid_until` passes. Only the
-/// deployment authority may extend, only forward, and never for a revoked Station.
+/// deployment authority may extend, only forward, and never for a revoked Station. This is the
+/// only way out of EXPIRED: an extended Station becomes ACTIVE again.
 pub fn extend_validity_handler(ctx: Context<SetStationStatus>, valid_until: i64) -> Result<()> {
     let station = &mut ctx.accounts.station;
     require!(
@@ -86,6 +91,29 @@ pub fn extend_validity_handler(ctx: Context<SetStationStatus>, valid_until: i64)
         LastroV2Error::InvalidTimeWindow
     );
     station.valid_until = valid_until;
+    if station.status == STATION_STATUS_EXPIRED {
+        station.status = STATION_STATUS_ACTIVE;
+    }
+    Ok(())
+}
+
+/// Installs a Station at an ACTIVE facility (S5). A portable Station may be moved: sessions
+/// and batches snapshot the facility at opening, so earlier evidence keeps its location.
+pub fn set_facility_handler(ctx: Context<SetStationFacility>) -> Result<()> {
+    let facility = &ctx.accounts.facility;
+    let now = Clock::get()?.unix_timestamp;
+    require!(
+        facility.status == FACILITY_STATUS_ACTIVE
+            && now >= facility.valid_from
+            && now <= facility.valid_until,
+        LastroV2Error::InvalidFacilityStatus
+    );
+    let station = &mut ctx.accounts.station;
+    require!(
+        station.status != STATION_STATUS_REVOKED,
+        LastroV2Error::InvalidStationStatus
+    );
+    station.facility_id = facility.facility_id;
     Ok(())
 }
 
@@ -153,4 +181,26 @@ pub struct SetStationStatus<'info> {
         bump = station.bump,
     )]
     pub station: Account<'info, StationRecord>,
+}
+
+#[derive(Accounts)]
+pub struct SetStationFacility<'info> {
+    pub authority: Signer<'info>,
+    #[account(
+        seeds = [CONFIG_V2_SEED, &config.deployment_id],
+        bump = config.bump,
+        has_one = authority,
+    )]
+    pub config: Account<'info, ProtocolConfigV2>,
+    #[account(
+        mut,
+        seeds = [STATION_V2_SEED, &config.deployment_id, &station.station_id],
+        bump = station.bump,
+    )]
+    pub station: Account<'info, StationRecord>,
+    #[account(
+        seeds = [FACILITY_SEED, &config.deployment_id, &facility.facility_id],
+        bump = facility.bump,
+    )]
+    pub facility: Account<'info, FacilityRecord>,
 }

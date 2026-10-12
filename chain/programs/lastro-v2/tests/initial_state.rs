@@ -266,6 +266,7 @@ fn facility_and_party_accounts_are_scoped_to_deployment() {
             credential_hash: [0xc3; 32],
             valid_from: 1,
             valid_until: 86_400,
+            geo_commitment: [0x9e; 32],
         }
         .data(),
     };
@@ -365,11 +366,14 @@ fn intent_is_bound_to_actor_and_can_be_consumed_only_once() {
         intent_id,
         payload_hash,
     ));
+    // Consuming changes no asset state, so the intent stays as a CONSUMED tombstone (M7).
+    let consumed: IntentState = account(&h.svm, &address);
     assert_eq!(
-        account::<IntentState>(&h.svm, &address).status,
+        consumed.status,
         lastro_v2::constants::INTENT_STATUS_CONSUMED
     );
 
+    // Neither a second consumption nor recreating the same intent is possible.
     h.svm.expire_blockhash();
     assert_failure(send_consume_intent(
         &mut h.svm,
@@ -379,8 +383,14 @@ fn intent_is_bound_to_actor_and_can_be_consumed_only_once() {
         intent_id,
         payload_hash,
     ));
-    assert_eq!(
-        account::<IntentState>(&h.svm, &address).status,
-        lastro_v2::constants::INTENT_STATUS_CONSUMED
-    );
+    h.svm.expire_blockhash();
+    assert_failure(send_create_intent(
+        &mut h.svm,
+        &h.authority,
+        h.deployment_id,
+        subject_id,
+        intent_id,
+        60,
+        payload_hash,
+    ));
 }

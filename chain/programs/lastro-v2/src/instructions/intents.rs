@@ -4,6 +4,10 @@
 //! `state_version`. Any state change makes every open intent for that asset stale.
 //! A CUSTODY_TRANSFER intent is the proposal half of a two-phase custody transfer: the
 //! receiving wallet accepts it by signing `accept_custody_transfer`.
+//! Cancelled, expired and accepted intents are closed and refund the rent to the payer recorded
+//! at creation; an accepted custody transfer cannot be replayed because custody moved and the
+//! asset's `state_version` changed. A consumed intent of any other type changes no asset state,
+//! so it stays on-chain as a CONSUMED tombstone: its PDA can never be created again.
 
 use anchor_lang::prelude::*;
 use lastro_protocol::v2::custody_transfer_payload_hash;
@@ -62,6 +66,7 @@ pub fn handler(
     intent.expires_at = expires_at;
     intent.consumed_at = 0;
     intent.payload_hash = payload_hash;
+    intent.rent_payer = ctx.accounts.payer.key();
     intent.bump = ctx.bumps.intent;
     Ok(())
 }
@@ -210,8 +215,11 @@ fn require_nonzero(value: &[u8; 32]) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(intent_id: [u8; 32], subject_id: [u8; 32])]
 pub struct CreateIntent<'info> {
-    #[account(mut)]
     pub actor: Signer<'info>,
+    /// Funds the intent's rent and receives it back when the intent closes. It may be the
+    /// actor itself or a separate fee sponsor; it never grants any authority.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         seeds = [CONFIG_V2_SEED, &config.deployment_id],
         bump = config.bump,
@@ -224,7 +232,7 @@ pub struct CreateIntent<'info> {
     pub asset: Account<'info, AssetState>,
     #[account(
         init,
-        payer = actor,
+        payer = payer,
         space = IntentState::SPACE,
         seeds = [INTENT_SEED, &config.deployment_id, &subject_id, &intent_id],
         bump
@@ -243,10 +251,14 @@ pub struct CancelIntent<'info> {
     pub config: Account<'info, ProtocolConfigV2>,
     #[account(
         mut,
+        close = rent_payer,
         seeds = [INTENT_SEED, &config.deployment_id, &intent.subject_id, &intent.intent_id],
         bump = intent.bump,
     )]
     pub intent: Account<'info, IntentState>,
+    /// CHECK: only receives the closed intent's rent; pinned to the payer recorded at creation.
+    #[account(mut, address = intent.rent_payer @ LastroV2Error::InvalidRentPayer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -259,10 +271,14 @@ pub struct ExpireIntent<'info> {
     pub config: Account<'info, ProtocolConfigV2>,
     #[account(
         mut,
+        close = rent_payer,
         seeds = [INTENT_SEED, &config.deployment_id, &intent.subject_id, &intent.intent_id],
         bump = intent.bump,
     )]
     pub intent: Account<'info, IntentState>,
+    /// CHECK: only receives the closed intent's rent; pinned to the payer recorded at creation.
+    #[account(mut, address = intent.rent_payer @ LastroV2Error::InvalidRentPayer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -278,12 +294,16 @@ pub struct ConsumeIntent<'info> {
         bump = asset.bump,
     )]
     pub asset: Account<'info, AssetState>,
+    /// Kept as a CONSUMED tombstone (not closed) so the same intent cannot be recreated.
     #[account(
         mut,
         seeds = [INTENT_SEED, &config.deployment_id, &intent.subject_id, &intent.intent_id],
         bump = intent.bump,
     )]
     pub intent: Account<'info, IntentState>,
+    /// CHECK: unchanged account list for clients; pinned to the payer recorded at creation.
+    #[account(address = intent.rent_payer @ LastroV2Error::InvalidRentPayer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }
 
 #[derive(Accounts)]
@@ -302,8 +322,12 @@ pub struct AcceptCustodyTransfer<'info> {
     pub asset: Account<'info, AssetState>,
     #[account(
         mut,
+        close = rent_payer,
         seeds = [INTENT_SEED, &config.deployment_id, &intent.subject_id, &intent.intent_id],
         bump = intent.bump,
     )]
     pub intent: Account<'info, IntentState>,
+    /// CHECK: only receives the closed intent's rent; pinned to the payer recorded at creation.
+    #[account(mut, address = intent.rent_payer @ LastroV2Error::InvalidRentPayer)]
+    pub rent_payer: UncheckedAccount<'info>,
 }

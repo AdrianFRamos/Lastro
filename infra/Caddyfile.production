@@ -1,9 +1,32 @@
+# Public edge. The site is a wallet-signing app: the page builds the transaction the wallet
+# signs, so script injection and framing are blocked outright.
+(security_headers) {
+    header {
+        Strict-Transport-Security "max-age=31536000; includeSubDomains"
+        X-Content-Type-Options "nosniff"
+        Referrer-Policy "no-referrer"
+        Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=(), usb=()"
+        Cross-Origin-Opener-Policy "same-origin"
+        -Server
+    }
+}
+
 {$SITE_DOMAIN} {
+    import security_headers
+    # connect-src: the API and the Solana RPC the verifier reads (the only network peers).
+    header Content-Security-Policy "default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self'; connect-src 'self' https://{$API_DOMAIN} {$CSP_RPC_ORIGINS}; frame-ancestors 'none'; base-uri 'none'; form-action 'self'; object-src 'none'"
+    header X-Frame-Options "DENY"
     encode zstd gzip
     reverse_proxy web:80
 }
 
 {$API_DOMAIN} {
+    import security_headers
+    header Content-Security-Policy "default-src 'none'; frame-ancestors 'none'"
+    # The API accepts bounded JSON bodies only (largest: facility boundary, 512 KiB).
+    request_body {
+        max_size 1MB
+    }
     encode zstd gzip
     reverse_proxy api:8080
 }

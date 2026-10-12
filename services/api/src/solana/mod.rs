@@ -7,4 +7,6 @@
 pub mod rpc;
 pub mod secp256r1;
 pub mod v2_custody;
+pub mod v2_registry;
+pub mod v2_session;
 pub mod v2_transaction_builder;

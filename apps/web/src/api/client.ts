@@ -19,6 +19,8 @@ import type {
   RecallProjection,
   RfidLookup,
   ShipmentProjection,
+  SponsoredTransaction,
+  SponsorPurpose,
   TransactionData,
   TransformationProjection,
 } from './types'
@@ -368,6 +370,7 @@ function parseTransactionData(value: unknown): TransactionData {
     )
   return {
     requiredSigner: requireString(record.requiredSigner, 'requiredSigner'),
+    feePayer: requireSolanaAddress(record.feePayer, 'feePayer'),
     lastroProgramId: requireString(record.lastroProgramId, 'lastroProgramId'),
     instructions: [
       parseInstruction(record.instructions[0]),
@@ -379,6 +382,31 @@ function parseTransactionData(value: unknown): TransactionData {
     ),
     transactionVersion: record.transactionVersion,
   }
+}
+
+function parseSponsoredTransaction(value: unknown): SponsoredTransaction {
+  const record = requireRecord(value, 'SponsoredTransaction')
+  return {
+    txSignature: requireSolanaSignature(record.txSignature, 'txSignature'),
+    feePayer: requireSolanaAddress(record.feePayer, 'feePayer'),
+    reservedLamports: requireSafeInteger(record.reservedLamports, 'reservedLamports'),
+    signedTransactionBase64: requireCanonicalBase64(
+      record.signedTransactionBase64,
+      'signedTransactionBase64',
+      1232,
+    ),
+  }
+}
+
+/** The platform sponsor co-signs and broadcasts a wallet-signed transaction it prepared. */
+export function sponsorSubmit(body: {
+  purpose: SponsorPurpose
+  transactionBase64: string
+}): Promise<SponsoredTransaction> {
+  return request('/api/v2/sponsor/submit', parseSponsoredTransaction, {
+    method: 'POST',
+    body: JSON.stringify(body),
+  })
 }
 
 function parseTransformation(value: unknown): TransformationProjection {

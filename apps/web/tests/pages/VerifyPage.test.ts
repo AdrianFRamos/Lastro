@@ -89,7 +89,7 @@ describe('pages/VerifyPage independent verification UX', () => {
   it('initial verification layers are NOT_CHECKED rather than optimistic VALID', () => {
     const wrapper = mountPage()
     const layerItems = wrapper.findAll('[aria-label="Verification result"] li')
-    expect(layerItems).toHaveLength(5)
+    expect(layerItems).toHaveLength(6)
     for (const item of layerItems) expect(item.text()).toContain('NOT_CHECKED')
     expect(layerItems.some((item) => /— VALID\b/.test(item.text()))).toBe(false)
     expect(wrapper.text()).toContain('Overall: NOT_CHECKED')
@@ -146,8 +146,8 @@ describe('pages/VerifyPage independent verification UX', () => {
 
     const layerItems = wrapper.findAll('[aria-label="Verification result"] li')
     expect(layerItems.slice(0, 4).every((item) => item.text().includes('VALID'))).toBe(true)
-    expect(layerItems[4]!.text()).toContain('NOT_CHECKED')
-    expect(layerItems[4]!.text()).toContain('Solana RPC unavailable')
+    expect(layerItems[5]!.text()).toContain('NOT_CHECKED')
+    expect(layerItems[5]!.text()).toContain('Solana RPC unavailable')
     expect(wrapper.text()).toContain('Overall: NOT_CHECKED')
     expect(wrapper.text()).not.toContain('Evidence and canonical Solana state agree.')
     wrapper.unmount()

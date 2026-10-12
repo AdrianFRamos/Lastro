@@ -11,6 +11,7 @@ use crate::{
     state::{FacilityRecord, ProtocolConfigV2, RegistryRoot},
 };
 
+#[allow(clippy::too_many_arguments)]
 pub fn register_handler(
     ctx: Context<RegisterFacility>,
     facility_id: [u8; 32],
@@ -19,6 +20,7 @@ pub fn register_handler(
     credential_hash: [u8; 32],
     valid_from: i64,
     valid_until: i64,
+    geo_commitment: [u8; 32],
 ) -> Result<()> {
     require_nonzero(&facility_id)?;
     require!(owner != Pubkey::default(), LastroV2Error::InvalidIdentifier);
@@ -43,6 +45,7 @@ pub fn register_handler(
     facility.credential_hash = credential_hash;
     facility.valid_from = valid_from;
     facility.valid_until = valid_until;
+    facility.geo_commitment = geo_commitment;
     facility.bump = ctx.bumps.facility;
     Ok(())
 }

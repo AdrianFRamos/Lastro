@@ -6,6 +6,8 @@ chain/.anchor/
 chain/target/
 chain/test-ledger/
 **/*-keypair.json
+# Station Secure Boot v2 signing key (firmware/station/sdkconfig.release.defaults): keep offline.
+**/secure_boot_signing_key.pem
 
 # Node / Vite / Playwright
 node_modules/

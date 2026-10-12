@@ -10,6 +10,7 @@ pub mod intents;
 pub mod outputs;
 pub mod parties;
 pub mod reservations;
+pub mod sessions;
 pub mod stations;
 pub mod transformations;
 
@@ -23,7 +24,8 @@ pub use intents::{AcceptCustodyTransfer, CancelIntent, ConsumeIntent, CreateInte
 pub use outputs::CreateTransformationOutput;
 pub use parties::{RegisterParty, SetPartyStatus};
 pub use reservations::{ReleaseTransformationInput, ReserveTransformationInput};
-pub use stations::{RegisterStation, SetStationStatus};
+pub use sessions::{AnchorObservationBatch, CloseSession, OpenSession, RevokeSession};
+pub use stations::{RegisterStation, SetStationFacility, SetStationStatus};
 pub use transformations::{
     AbortTransformation, BeginTransformation, ExpireTransformation, FinalizeTransformation,
 };

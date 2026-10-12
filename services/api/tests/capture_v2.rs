@@ -205,15 +205,10 @@ async fn bind_identifier_capture_reaches_finalized_evidence_package() {
     rpc.set_anchor(CanonicalV2EventAnchor {
         event_id: envelope.event_id,
         deployment_id: DEPLOYMENT_ID,
-        subject_id: ASSET,
-        source_id: envelope.source_id,
-        event_type: envelope.event_type,
-        state_version: 1,
-        observed_at: envelope.observed_at,
-        expires_at: envelope.expires_at,
-        expected_previous_hash: [0; 32],
-        payload_hash: envelope.payload_hash,
         event_hash,
+        subject_id: ASSET,
+        state_version: 1,
+        event_type: envelope.event_type,
     });
     let (status, finalized) = call(
         &app,

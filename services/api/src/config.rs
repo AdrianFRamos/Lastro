@@ -15,17 +15,27 @@
 //!   (max 1_000_000); unset keeps the exact two-instruction envelope;
 //! - LASTRO_CORS_ALLOWED_ORIGINS, comma-separated `scheme://host[:port]` origins. Unset keeps
 //!   the permissive development policy; public deployments must set it.
+//! - LASTRO_SPONSOR_KEYPAIR_PATH, Solana keypair JSON of the platform fee sponsor (secret,
+//!   kept outside the repository). Unset keeps every transaction paid by its own signer.
+//!   With it: LASTRO_SPONSOR_MAX_LAMPORTS_PER_TX, LASTRO_SPONSOR_DAILY_LAMPORTS_PER_SIGNER and
+//!   LASTRO_SPONSOR_DAILY_LAMPORTS_TOTAL bound what the sponsor may spend.
+//! - LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE (preferred) or LASTRO_ORG_KEY_ENCRYPTION_KEY_HEX, the
+//!   32-byte master key sealing organization wallets (S2; secret, held outside the database,
+//!   the file holding 64 lowercase hex characters). Unset disables managed organization wallets.
+//! - LASTRO_OTP_DELIVERY=log writes one-time login codes to the service log. Development only:
+//!   it is refused whenever LASTRO_CORS_ALLOWED_ORIGINS is set (a public deployment). Unset
+//!   disables one-time-code login until an e-mail or SMS provider is wired.
 //!
 //! No default may silently point execution at the wrong deployment.
 
-use std::{env, net::SocketAddr, str::FromStr};
+use std::{env, net::SocketAddr, path::PathBuf, str::FromStr};
 
 use axum::http::HeaderValue;
 
 use lastro_protocol::{crypto::derive_station_id, ids::DeploymentId};
 use solana_pubkey::Pubkey;
 
-use crate::error::ApiError;
+use crate::{error::ApiError, sponsor::SponsorLimits};
 
 #[derive(Clone)]
 pub struct AppConfig {
@@ -40,6 +50,13 @@ pub struct AppConfig {
     /// Empty means any origin (development only).
     pub cors_allowed_origins: Vec<HeaderValue>,
     pub priority_fee_micro_lamports: Option<u64>,
+    /// Fee sponsor keypair file; `None` keeps the deployment self-paid.
+    pub sponsor_keypair_path: Option<PathBuf>,
+    pub sponsor_limits: SponsorLimits,
+    /// Master key of the organization key vault; `None` disables managed wallets.
+    pub org_key_encryption_key: Option<[u8; 32]>,
+    /// One-time login codes are written to the log (development delivery).
+    pub otp_log_delivery: bool,
 }
 
 impl AppConfig {
@@ -154,6 +171,85 @@ impl AppConfig {
             })
             .transpose()?;
 
+        let sponsor_keypair_path = lookup("LASTRO_SPONSOR_KEYPAIR_PATH")
+            .filter(|value| !value.trim().is_empty())
+            .map(PathBuf::from);
+        let mut lamports = |name: &'static str, default: u64| -> Result<u64, ApiError> {
+            lookup(name)
+                .filter(|value| !value.trim().is_empty())
+                .map(|value| {
+                    value
+                        .parse::<u64>()
+                        .ok()
+                        .filter(|amount| *amount > 0)
+                        .ok_or_else(|| {
+                            ApiError::Config(format!("{name} must be a positive integer"))
+                        })
+                })
+                .transpose()
+                .map(|value| value.unwrap_or(default))
+        };
+        let sponsor_limits = SponsorLimits {
+            max_lamports_per_transaction: lamports(
+                "LASTRO_SPONSOR_MAX_LAMPORTS_PER_TX",
+                SponsorLimits::DEFAULT_MAX_LAMPORTS_PER_TRANSACTION,
+            )?,
+            daily_lamports_per_signer: lamports(
+                "LASTRO_SPONSOR_DAILY_LAMPORTS_PER_SIGNER",
+                SponsorLimits::DEFAULT_DAILY_LAMPORTS_PER_SIGNER,
+            )?,
+            daily_lamports_total: lamports(
+                "LASTRO_SPONSOR_DAILY_LAMPORTS_TOTAL",
+                SponsorLimits::DEFAULT_DAILY_LAMPORTS_TOTAL,
+            )?,
+        };
+
+        let key_hex = lookup("LASTRO_ORG_KEY_ENCRYPTION_KEY_HEX").filter(|v| !v.trim().is_empty());
+        let key_file =
+            lookup("LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE").filter(|v| !v.trim().is_empty());
+        let org_key_encryption_key = match (key_hex, key_file) {
+            (Some(_), Some(_)) => {
+                return Err(ApiError::Config(
+                    "set only one of LASTRO_ORG_KEY_ENCRYPTION_KEY_HEX and LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE"
+                        .into(),
+                ));
+            }
+            (Some(hex), None) => Some(hex_array::<32>("LASTRO_ORG_KEY_ENCRYPTION_KEY_HEX", &hex)?),
+            (None, Some(path)) => {
+                let text = std::fs::read_to_string(&path).map_err(|_| {
+                    ApiError::Config("LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE cannot be read".into())
+                })?;
+                Some(hex_array::<32>(
+                    "LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE",
+                    text.trim(),
+                )?)
+            }
+            (None, None) => None,
+        };
+        if org_key_encryption_key.is_some_and(|key| key.iter().all(|byte| *byte == key[0])) {
+            return Err(ApiError::Config(
+                "the organization master key must be 32 random bytes".into(),
+            ));
+        }
+        let otp_log_delivery = match lookup("LASTRO_OTP_DELIVERY")
+            .filter(|value| !value.trim().is_empty())
+            .as_deref()
+        {
+            None => false,
+            Some("log") if !cors_allowed_origins.is_empty() => {
+                return Err(ApiError::Config(
+                    "LASTRO_OTP_DELIVERY=log is development-only and refused when LASTRO_CORS_ALLOWED_ORIGINS is set"
+                        .into(),
+                ));
+            }
+            Some("log") => true,
+            Some(_) => {
+                return Err(ApiError::Config(
+                    "LASTRO_OTP_DELIVERY must be unset or `log`".into(),
+                ));
+            }
+        };
+
         Ok(Self {
             bind_addr,
             database_url,
@@ -165,6 +261,10 @@ impl AppConfig {
             lastro_program_id,
             cors_allowed_origins,
             priority_fee_micro_lamports,
+            sponsor_keypair_path,
+            sponsor_limits,
+            org_key_encryption_key,
+            otp_log_delivery,
         })
     }
 }

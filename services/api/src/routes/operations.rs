@@ -26,9 +26,10 @@ use crate::{
     routes::{agent::authorize, validate_transaction_signature},
     solana::{
         rpc::CanonicalV2AssetState,
-        v2_custody::CustodyTransferPlan,
+        v2_custody::{CustodyTransferPlan, custody_intent_id},
         v2_transaction_builder::{parse_program_id, with_priority_fee},
     },
+    sponsor,
     state::AppState,
 };
 use solana_pubkey::Pubkey;
@@ -275,8 +276,21 @@ pub async fn custody_transfer_transaction_data(
     Path(transfer_id): Path<Uuid>,
     Query(query): Query<CustodyTransferTransactionQuery>,
 ) -> Result<Json<TransactionDataResponse>, ApiError> {
-    let (plan, canonical) = custody_plan(&state, transfer_id).await?;
-    let data = match query.phase {
+    Ok(Json(
+        prepare_custody_transaction(&state, transfer_id, query.phase, None).await?,
+    ))
+}
+
+/// The wallet transaction for one custody phase, priority fee included. `proposal_expiry`
+/// replays the expiry of an already prepared proposal (bounded to the allowed window).
+pub(crate) async fn prepare_custody_transaction(
+    state: &AppState,
+    transfer_id: Uuid,
+    phase: CustodyTransferPhase,
+    proposal_expiry: Option<i64>,
+) -> Result<TransactionDataResponse, ApiError> {
+    let (plan, canonical, _) = custody_plan(state, transfer_id).await?;
+    let data = match phase {
         CustodyTransferPhase::Propose => {
             let config = state
                 .rpc
@@ -289,15 +303,56 @@ pub async fn custody_transfer_transaction_data(
                 .max_event_age_seconds
                 .min(CUSTODY_PROPOSAL_TTL_SECONDS);
             let window = i64::try_from(window).map_err(|_| ApiError::Internal)?;
-            let expires_at = OffsetDateTime::now_utc().unix_timestamp() + window;
-            plan.propose(canonical.custodian, expires_at)?
+            let now = OffsetDateTime::now_utc().unix_timestamp();
+            let expires_at = match proposal_expiry {
+                Some(expiry) if expiry > now && expiry <= now + window => expiry,
+                Some(_) => {
+                    return Err(ApiError::Conflict(
+                        "custody proposal expiry is outside the allowed window".into(),
+                    ));
+                }
+                None => now + window,
+            };
+            let paying = crate::routes::sponsor::sponsor_for(
+                state,
+                canonical.custodian,
+                Some(config.authority),
+            )
+            .await?;
+            plan.propose(
+                canonical.custodian,
+                sponsor::payer_for(paying, canonical.custodian),
+                expires_at,
+            )?
         }
-        CustodyTransferPhase::Accept => plan.accept(),
+        CustodyTransferPhase::Accept => {
+            // The proposal records who funded it; acceptance must refund exactly that account.
+            let intent = state
+                .rpc
+                .v2_intent(
+                    state.config.deployment_id,
+                    plan.asset_id,
+                    custody_intent_id(transfer_id),
+                )
+                .await?
+                .ok_or_else(|| {
+                    ApiError::Conflict("the on-chain custody proposal is not open".into())
+                })?;
+            operations::record_intent_rent_payer(
+                &state.db,
+                state.config.deployment_id,
+                transfer_id,
+                intent.rent_payer.to_bytes(),
+            )
+            .await?;
+            let paying = crate::routes::sponsor::sponsor_for(state, plan.recipient, None).await?;
+            plan.accept(
+                sponsor::payer_for(paying, plan.recipient),
+                intent.rent_payer,
+            )?
+        }
     };
-    Ok(Json(with_priority_fee(
-        data,
-        state.config.priority_fee_micro_lamports,
-    )?))
+    with_priority_fee(data, state.config.priority_fee_micro_lamports)
 }
 
 /// Marks a transfer ACCEPTED only after the recipient-signed `accept_custody_transfer`
@@ -308,18 +363,31 @@ pub async fn accept_custody_transfer(
     Json(body): Json<AcceptCustodyTransferRequest>,
 ) -> Result<Json<CustodyTransferResponse>, ApiError> {
     validate_transaction_signature(&body.tx_signature)?;
-    let (mut plan, canonical) = custody_plan(&state, transfer_id).await?;
+    let (mut plan, canonical, transfer) = custody_plan(&state, transfer_id).await?;
     if canonical.custodian != plan.recipient || canonical.state_version == 0 {
         return Err(ApiError::Conflict(
             "finalized Solana state does not show the recipient as custodian".into(),
         ));
     }
     plan.expected_state_version = canonical.state_version - 1;
-    if !state
-        .rpc
-        .transaction_matches(&body.tx_signature, &plan.accept())
-        .await?
-    {
+    let rent_payer = transfer.intent_rent_payer.ok_or_else(|| {
+        ApiError::Conflict(
+            "acceptance was not prepared by this API; request its transaction-data first".into(),
+        )
+    })?;
+    let mut accepted = false;
+    for fee_payer in sponsor::payer_candidates(state.sponsor(), plan.recipient) {
+        let expected = plan.accept(fee_payer, Pubkey::new_from_array(rent_payer))?;
+        if state
+            .rpc
+            .transaction_matches(&body.tx_signature, &expected)
+            .await?
+        {
+            accepted = true;
+            break;
+        }
+    }
+    if !accepted {
         return Err(ApiError::Conflict(
             "transaction is not the finalized recipient acceptance of this transfer".into(),
         ));
@@ -356,7 +424,14 @@ const CUSTODY_PROPOSAL_TTL_SECONDS: u64 = 3_600;
 async fn custody_plan(
     state: &AppState,
     transfer_id: Uuid,
-) -> Result<(CustodyTransferPlan, CanonicalV2AssetState), ApiError> {
+) -> Result<
+    (
+        CustodyTransferPlan,
+        CanonicalV2AssetState,
+        CustodyTransferRecord,
+    ),
+    ApiError,
+> {
     let deployment_id = state.config.deployment_id;
     let transfer = operations::find_transfer(&state.db, deployment_id, transfer_id)
         .await?
@@ -381,7 +456,7 @@ async fn custody_plan(
         recipient: Pubkey::new_from_array(recipient.wallet),
         expected_state_version: canonical.state_version,
     };
-    Ok((plan, canonical))
+    Ok((plan, canonical, transfer))
 }
 
 pub async fn create_authority_grant(
@@ -555,7 +630,7 @@ pub async fn list_audit_entries(
     Ok(Json(entries.into_iter().map(audit_response).collect()))
 }
 
-fn authorize_operator(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
+pub(crate) fn authorize_operator(state: &AppState, headers: &HeaderMap) -> Result<(), ApiError> {
     let token =
         state.config.operator_token.as_deref().ok_or_else(|| {
             ApiError::Unavailable("operational API token is not configured".into())
@@ -701,8 +776,8 @@ fn audit_response(record: operations::AuditRecord) -> AuditEntryResponse {
     }
 }
 
-fn db_unavailable(_: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres transaction failed".into())
+fn db_unavailable(error: sqlx::Error) -> ApiError {
+    crate::repository::db_error(error)
 }
 
 #[cfg(test)]

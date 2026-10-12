@@ -20,6 +20,7 @@ use crate::{
     },
     routes::{agent::authorize, validate_transaction_signature},
     solana::v2_transaction_builder::{self, IdentityArgs},
+    sponsor,
     state::AppState,
 };
 use lastro_protocol::rfid::hash_canonical_rfid;
@@ -29,12 +30,14 @@ const EVENT_TYPE_OBSERVATION: u16 = 2;
 const EVENT_TYPE_IDENTIFIER_BOUND: u16 = 18;
 const EVENT_TYPE_IDENTIFIER_REPLACED: u16 = 19;
 
-/// The exact transaction a v2 event must be anchored with: captures are signed by the custodian
-/// the capture named; capture-less observations are relayed by the deployment authority.
-async fn expected_transaction(
+/// Every exact transaction a v2 event may be anchored with: captures are signed by the
+/// custodian the capture named; capture-less observations are relayed by the deployment
+/// authority. The first candidate is the one to prepare (sponsored when a sponsor is
+/// configured); the self-paid form stays acceptable for confirmation.
+async fn expected_transactions(
     state: &AppState,
     record: &DomainAnchorRecord,
-) -> Result<TransactionDataResponse, ApiError> {
+) -> Result<Vec<TransactionDataResponse>, ApiError> {
     let config = state
         .rpc
         .v2_protocol_config(state.config.deployment_id)
@@ -82,13 +85,56 @@ async fn expected_transaction(
             ));
         }
     };
-    v2_transaction_builder::build_transaction_data(
-        &state.config.lastro_program_id,
-        record,
-        signer,
-        config.station_registry,
-        identity,
-    )
+    let paying = crate::routes::sponsor::sponsor_for(state, signer, Some(config.authority)).await?;
+    sponsor::payer_candidates(paying, signer)
+        .into_iter()
+        .map(|payer| {
+            v2_transaction_builder::build_transaction_data(
+                &state.config.lastro_program_id,
+                record,
+                signer,
+                payer,
+                config.station_registry,
+                identity,
+            )
+        })
+        .collect()
+}
+
+/// The transaction to prepare for a v2 event (the first candidate).
+pub(crate) async fn expected_transaction(
+    state: &AppState,
+    record: &DomainAnchorRecord,
+) -> Result<TransactionDataResponse, ApiError> {
+    expected_transactions(state, record)
+        .await?
+        .into_iter()
+        .next()
+        .ok_or(ApiError::Internal)
+}
+
+/// Whether `signature` is one of the exact candidate transactions, at confirmed or finalized
+/// commitment.
+async fn matches_any(
+    state: &AppState,
+    signature: &str,
+    candidates: &[TransactionDataResponse],
+    finalized: bool,
+) -> Result<bool, ApiError> {
+    for expected in candidates {
+        let matched = if finalized {
+            state.rpc.transaction_matches(signature, expected).await?
+        } else {
+            state
+                .rpc
+                .transaction_matches_confirmed(signature, expected)
+                .await?
+        };
+        if matched {
+            return Ok(true);
+        }
+    }
+    Ok(false)
 }
 
 pub async fn ingest_observation(
@@ -133,19 +179,27 @@ pub async fn transaction_data(
     Path(event_hash): Path<String>,
 ) -> Result<Json<TransactionDataResponse>, ApiError> {
     let event_hash = parse_hex32("eventHash", &event_hash)?;
+    Ok(Json(prepare_event_transaction(&state, event_hash).await?))
+}
+
+/// The wallet transaction for an accepted event, priority fee included.
+pub(crate) async fn prepare_event_transaction(
+    state: &AppState,
+    event_hash: [u8; 32],
+) -> Result<TransactionDataResponse, ApiError> {
     let record = domain_v2::find_by_event_hash(&state.db, event_hash)
         .await?
         .ok_or_else(|| ApiError::NotFound("v2 event not found".into()))?;
-    ensure_deployment(&state, &record)?;
+    ensure_deployment(state, &record)?;
     if !matches!(record.status.as_str(), "EVIDENCE_ACCEPTED" | "SUBMITTED") {
         return Err(ApiError::Conflict(
             "v2 event is not eligible for transaction preparation".into(),
         ));
     }
-    Ok(Json(v2_transaction_builder::with_priority_fee(
-        expected_transaction(&state, &record).await?,
+    v2_transaction_builder::with_priority_fee(
+        expected_transaction(state, &record).await?,
         state.config.priority_fee_micro_lamports,
-    )?))
+    )
 }
 
 pub async fn submit(
@@ -168,12 +222,8 @@ pub async fn submit(
             "v2 event is not eligible for transaction submission".into(),
         ));
     }
-    let expected = expected_transaction(&state, &record).await?;
-    if !state
-        .rpc
-        .transaction_matches_confirmed(&body.tx_signature, &expected)
-        .await?
-    {
+    let candidates = expected_transactions(&state, &record).await?;
+    if !matches_any(&state, &body.tx_signature, &candidates, false).await? {
         return Err(ApiError::Conflict(
             "transaction is not the confirmed exact transaction for this v2 event".into(),
         ));
@@ -216,12 +266,8 @@ pub(crate) async fn reconcile_finalized_event(
         ));
     }
     require_same_transaction(&record, tx_signature)?;
-    let expected = expected_transaction(state, &record).await?;
-    if !state
-        .rpc
-        .transaction_matches(tx_signature, &expected)
-        .await?
-    {
+    let candidates = expected_transactions(state, &record).await?;
+    if !matches_any(state, tx_signature, &candidates, true).await? {
         return Err(ApiError::Conflict(
             "transaction is not the finalized exact transaction for this v2 event".into(),
         ));
@@ -305,8 +351,8 @@ pub(crate) async fn recover_unreported_event(
         .ok_or_else(|| {
             ApiError::Unavailable("EventAnchor creation transaction is not indexed yet".into())
         })?;
-    let expected = expected_transaction(state, &record).await?;
-    if !state.rpc.transaction_matches(&signature, &expected).await? {
+    let candidates = expected_transactions(state, &record).await?;
+    if !matches_any(state, &signature, &candidates, true).await? {
         return Err(ApiError::Conflict(
             "the transaction that created this EventAnchor is not the expected Lastro transaction"
                 .into(),
@@ -357,16 +403,13 @@ fn verify_anchor(
     record: &DomainAnchorRecord,
     anchor: &crate::solana::rpc::CanonicalV2EventAnchor,
 ) -> Result<(), ApiError> {
+    // `event_hash` commits to every envelope field, so matching it (plus the seed-bound
+    // ids) proves the anchor is this exact evidence.
     if anchor.event_id != record.envelope.event_id
         || anchor.deployment_id != record.envelope.deployment_id
         || anchor.subject_id != record.envelope.subject_id
-        || anchor.source_id != record.envelope.source_id
         || anchor.event_type != record.envelope.event_type
         || anchor.state_version != record.envelope.state_version
-        || anchor.observed_at != record.envelope.observed_at
-        || anchor.expires_at != record.envelope.expires_at
-        || anchor.expected_previous_hash != record.envelope.expected_previous_hash
-        || anchor.payload_hash != record.envelope.payload_hash
         || anchor.event_hash != record.event_hash
     {
         return Err(ApiError::Conflict(

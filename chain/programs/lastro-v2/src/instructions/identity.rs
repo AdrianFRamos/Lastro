@@ -145,8 +145,11 @@ pub fn replace_handler(
 #[derive(Accounts)]
 #[instruction(subject_id: [u8; 32], event_id: [u8; 32], station_id: [u8; 32], event: [u8; V2_ENVELOPE_LEN], new_rfid_hash: [u8; 32])]
 pub struct BindIdentifier<'info> {
-    #[account(mut)]
     pub custodian: Signer<'info>,
+    /// Funds the rent of the accounts this instruction creates. It may be the authorizing
+    /// signer itself or a separate fee sponsor; it never grants any authority.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         seeds = [CONFIG_V2_SEED, &config.deployment_id],
         bump = config.bump,
@@ -171,7 +174,7 @@ pub struct BindIdentifier<'info> {
     pub asset: Box<Account<'info, AssetState>>,
     #[account(
         init,
-        payer = custodian,
+        payer = payer,
         space = EventAnchor::SPACE,
         seeds = [EVENT_SEED, &config.deployment_id, &event_id],
         bump,
@@ -179,7 +182,7 @@ pub struct BindIdentifier<'info> {
     pub event_anchor: Box<Account<'info, EventAnchor>>,
     #[account(
         init,
-        payer = custodian,
+        payer = payer,
         space = RfidBinding::SPACE,
         seeds = [RFID_BINDING_SEED, &config.deployment_id, &new_rfid_hash],
         bump,
@@ -194,8 +197,11 @@ pub struct BindIdentifier<'info> {
 #[derive(Accounts)]
 #[instruction(subject_id: [u8; 32], event_id: [u8; 32], station_id: [u8; 32], event: [u8; V2_ENVELOPE_LEN], old_rfid_hash: [u8; 32], new_rfid_hash: [u8; 32])]
 pub struct ReplaceIdentifier<'info> {
-    #[account(mut)]
     pub custodian: Signer<'info>,
+    /// Funds the rent of the accounts this instruction creates. It may be the authorizing
+    /// signer itself or a separate fee sponsor; it never grants any authority.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         seeds = [CONFIG_V2_SEED, &config.deployment_id],
         bump = config.bump,
@@ -220,7 +226,7 @@ pub struct ReplaceIdentifier<'info> {
     pub asset: Box<Account<'info, AssetState>>,
     #[account(
         init,
-        payer = custodian,
+        payer = payer,
         space = EventAnchor::SPACE,
         seeds = [EVENT_SEED, &config.deployment_id, &event_id],
         bump,
@@ -234,7 +240,7 @@ pub struct ReplaceIdentifier<'info> {
     pub old_rfid_binding: Box<Account<'info, RfidBinding>>,
     #[account(
         init,
-        payer = custodian,
+        payer = payer,
         space = RfidBinding::SPACE,
         seeds = [RFID_BINDING_SEED, &config.deployment_id, &new_rfid_hash],
         bump,

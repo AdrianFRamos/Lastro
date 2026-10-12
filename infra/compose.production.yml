@@ -1,7 +1,14 @@
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "5"
+
 services:
   postgres:
     image: postgres:18.6@sha256:86c951e05bf56c93d95d397747fb8820ac76cc3bedb78f43abd83eedbe3666ae
     restart: unless-stopped
+    logging: *logging
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-lastro}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD}
@@ -33,7 +40,22 @@ services:
       LASTRO_OPERATOR_TOKEN: ${LASTRO_OPERATOR_TOKEN:?set LASTRO_OPERATOR_TOKEN}
       LASTRO_CORS_ALLOWED_ORIGINS: ${LASTRO_CORS_ALLOWED_ORIGINS:?set LASTRO_CORS_ALLOWED_ORIGINS}
       LASTRO_PRIORITY_FEE_MICRO_LAMPORTS: ${LASTRO_PRIORITY_FEE_MICRO_LAMPORTS:-}
+      # Fee sponsor (S1) and organization key vault (S2). Secrets are files under
+      # /opt/lastro/secrets (mode 0700, files 0400), mounted read-only; empty disables each.
+      LASTRO_SPONSOR_KEYPAIR_PATH: ${LASTRO_SPONSOR_KEYPAIR_PATH:-}
+      LASTRO_SPONSOR_MAX_LAMPORTS_PER_TX: ${LASTRO_SPONSOR_MAX_LAMPORTS_PER_TX:-}
+      LASTRO_SPONSOR_DAILY_LAMPORTS_PER_SIGNER: ${LASTRO_SPONSOR_DAILY_LAMPORTS_PER_SIGNER:-}
+      LASTRO_SPONSOR_DAILY_LAMPORTS_TOTAL: ${LASTRO_SPONSOR_DAILY_LAMPORTS_TOTAL:-}
+      LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE: ${LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE:-}
       RUST_LOG: ${RUST_LOG:-info,lastro_api=info}
+    volumes:
+      - ./secrets:/run/secrets/lastro:ro
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
     expose:
       - "8080"
     depends_on:
@@ -51,7 +73,12 @@ services:
         VITE_LASTRO_PROGRAM_ID: ${VITE_LASTRO_PROGRAM_ID:?set VITE_LASTRO_PROGRAM_ID}
         VITE_LASTRO_DEPLOYMENT_ID_HEX: ${VITE_LASTRO_DEPLOYMENT_ID_HEX:?set VITE_LASTRO_DEPLOYMENT_ID_HEX}
         VITE_LASTRO_AUTHORITY: ${VITE_LASTRO_AUTHORITY:?set VITE_LASTRO_AUTHORITY}
+        VITE_LASTRO_SPONSOR: ${VITE_LASTRO_SPONSOR:-}
     restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
     expose:
       - "80"
     depends_on:
@@ -61,9 +88,15 @@ services:
   proxy:
     image: caddy:2.10.2-alpine@sha256:4c6e91c6ed0e2fa03efd5b44747b625fec79bc9cd06ac5235a779726618e530d
     restart: unless-stopped
+    cap_drop: [ALL]
+    cap_add: [NET_BIND_SERVICE]
+    security_opt: [no-new-privileges:true]
+    logging: *logging
     environment:
       SITE_DOMAIN: ${SITE_DOMAIN:?set SITE_DOMAIN}
       API_DOMAIN: ${API_DOMAIN:?set API_DOMAIN}
+      # Solana RPC origins the browser verifier may reach (Content-Security-Policy connect-src).
+      CSP_RPC_ORIGINS: ${CSP_RPC_ORIGINS:-https://api.devnet.solana.com wss://api.devnet.solana.com}
     ports:
       - "80:80"
       - "443:443"

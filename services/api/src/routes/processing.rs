@@ -425,6 +425,6 @@ fn recall_response(
 fn format_time(value: Option<OffsetDateTime>) -> Option<String> {
     value.and_then(|value| value.format(&Rfc3339).ok())
 }
-fn db_unavailable(_: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres transaction failed".into())
+fn db_unavailable(error: sqlx::Error) -> ApiError {
+    crate::repository::db_error(error)
 }

@@ -26,17 +26,52 @@ permissions:
 
 jobs:
   build:
+    # `branches: [main]` on workflow_run matches the head branch *name*, which a fork pull
+    # request can also be called. Only a successful push to this repository's main deploys,
+    # and manual runs are accepted only from main.
     if: >-
-      (github.event_name == 'workflow_run' && github.event.workflow_run.conclusion == 'success')
-      || (github.event_name == 'workflow_dispatch' && inputs.tag == '')
+      (github.event_name == 'workflow_run'
+        && github.event.workflow_run.conclusion == 'success'
+        && github.event.workflow_run.event == 'push'
+        && github.event.workflow_run.head_branch == 'main'
+        && github.event.workflow_run.head_repository.full_name == github.repository)
+      || (github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.tag == '')
     runs-on: ubuntu-latest
     timeout-minutes: 60
     permissions:
       contents: read
       packages: write
+      actions: read
     outputs:
       tag: ${{ steps.meta.outputs.tag }}
     steps:
+      # `ci` triggered this run; the chain, end-to-end, firmware and maintenance gates are separate
+      # workflows.
+      # None of them may have failed on this commit, and running ones are awaited.
+      - name: Every gate workflow passed on this commit
+        env:
+          GH_TOKEN: ${{ github.token }}
+          SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        run: |
+          set -euo pipefail
+          for workflow in chain.yml e2e.yml firmware.yml maintenance-sync.yml; do
+            for attempt in $(seq 1 60); do
+              run="$(gh api "repos/$GITHUB_REPOSITORY/actions/workflows/$workflow/runs?head_sha=$SHA&per_page=1" \
+                --jq '.workflow_runs[0] | if . == null then "none none" else "\(.status) \(.conclusion // "pending")" end')"
+              read -r status conclusion <<<"$run"
+              if [[ "$status" == none ]]; then
+                echo "$workflow did not run for $SHA (path filters); not a gate for this commit"
+                break
+              fi
+              if [[ "$status" == completed ]]; then
+                [[ "$conclusion" == success ]] || { echo "$workflow concluded $conclusion for $SHA" >&2; exit 1; }
+                echo "$workflow passed"
+                break
+              fi
+              [[ "$attempt" -lt 60 ]] || { echo "$workflow still $status after 30 min" >&2; exit 1; }
+              sleep 30
+            done
+          done
       - name: Reset self-hosted workspace
         shell: bash
         run: |
@@ -68,6 +103,7 @@ jobs:
           VITE_LASTRO_PROGRAM_ID: ${{ vars.VITE_LASTRO_PROGRAM_ID }}
           VITE_LASTRO_DEPLOYMENT_ID_HEX: ${{ vars.VITE_LASTRO_DEPLOYMENT_ID_HEX }}
           VITE_LASTRO_AUTHORITY: ${{ vars.VITE_LASTRO_AUTHORITY }}
+          VITE_LASTRO_SPONSOR: ${{ vars.VITE_LASTRO_SPONSOR }}
         run: |
           set -euo pipefail
           echo "$GHCR_TOKEN" | docker login ghcr.io -u "$GITHUB_ACTOR" --password-stdin
@@ -75,7 +111,8 @@ jobs:
           docker build -f infra/Dockerfile.web -t "$REGISTRY/lastro-web:$TAG" \
             --build-arg VITE_API_BASE_URL --build-arg VITE_SOLANA_RPC_URL \
             --build-arg VITE_SOLANA_CHAIN --build-arg VITE_LASTRO_PROGRAM_ID \
-            --build-arg VITE_LASTRO_DEPLOYMENT_ID_HEX --build-arg VITE_LASTRO_AUTHORITY .
+            --build-arg VITE_LASTRO_DEPLOYMENT_ID_HEX --build-arg VITE_LASTRO_AUTHORITY \
+            --build-arg VITE_LASTRO_SPONSOR .
           docker build -f infra/Dockerfile.deploy -t "$REGISTRY/lastro-deploy:$TAG" .
           for image in lastro-api lastro-web lastro-deploy; do
             docker push "$REGISTRY/$image:$TAG"
@@ -86,7 +123,10 @@ jobs:
     if: >-
       always()
       && (needs.build.result == 'success'
-          || (needs.build.result == 'skipped' && github.event_name == 'workflow_dispatch' && inputs.tag != ''))
+          || (needs.build.result == 'skipped'
+              && github.event_name == 'workflow_dispatch'
+              && github.ref == 'refs/heads/main'
+              && inputs.tag != ''))
     runs-on: ubuntu-latest
     timeout-minutes: 30
     environment: production

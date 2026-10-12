@@ -10,6 +10,18 @@ config LASTRO_STATION_USE_EFUSE_KEY
         already have ECDSA_KEY_P256 purpose and read protection or the Station fails
         closed. Keep this disabled during development-key validation.
 
+config LASTRO_STATION_RELEASE
+    bool "Production Station build (requires Secure Boot v2 and release flash encryption)"
+    default n
+    depends on LASTRO_STATION_USE_EFUSE_KEY
+    help
+        A production Station must not be reflashable or debuggable over USB: otherwise unsigned
+        firmware could drive the hardware ECDSA unit with the provisioned key and sign any
+        envelope. With this option the build fails unless Secure Boot v2, release-mode flash
+        encryption and secure download mode are configured and JTAG is not re-enabled, and
+        the firmware refuses to start when the chip does not report both protections active.
+        Use sdkconfig.release.defaults on top of sdkconfig.efuse.defaults.
+
 config LASTRO_STATION_EFUSE_KEY_BLOCK_INDEX
     int "eFuse ECDSA key block index (KEY0=0 through KEY5=5)"
     default 0

@@ -9,8 +9,8 @@ use lastro_protocol::v2::{LineageLeaf, LineageRole, TransformationManifest, veri
 use crate::{
     constants::{
         CONFIG_V2_SEED, FACILITY_REGISTRY_SEED, FACILITY_SEED, FACILITY_STATUS_ACTIVE,
-        FACILITY_TYPE_PROCESSING_FACILITY, FACILITY_TYPE_SLAUGHTERHOUSE, TRANSFORMATION_SEED,
-        TRANSFORMATION_STATUS_ABORTED, TRANSFORMATION_STATUS_EXPIRED,
+        FACILITY_STATUS_REVOKED, FACILITY_TYPE_PROCESSING_FACILITY, FACILITY_TYPE_SLAUGHTERHOUSE,
+        TRANSFORMATION_SEED, TRANSFORMATION_STATUS_ABORTED, TRANSFORMATION_STATUS_EXPIRED,
         TRANSFORMATION_STATUS_FINALIZED, TRANSFORMATION_STATUS_FINALIZING,
         TRANSFORMATION_STATUS_OPEN,
     },
@@ -119,11 +119,10 @@ pub fn abort_handler(ctx: Context<AbortTransformation>) -> Result<()> {
         ctx.accounts.facility.owner == ctx.accounts.operator.key(),
         LastroV2Error::UnauthorizedFacility
     );
+    // Only before anything was consumed: aborting later would destroy inputs (A2).
     require!(
-        matches!(
-            ctx.accounts.transformation.status,
-            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
-        ),
+        ctx.accounts.transformation.status == TRANSFORMATION_STATUS_OPEN
+            && ctx.accounts.transformation.consumed_input_count == 0,
         LastroV2Error::TransformationNotAbortable
     );
     ctx.accounts.transformation.status = TRANSFORMATION_STATUS_ABORTED;
@@ -136,11 +135,10 @@ pub fn expire_handler(ctx: Context<ExpireTransformation>) -> Result<()> {
         now > ctx.accounts.transformation.expires_at,
         LastroV2Error::TransformationNotExpired
     );
+    // A transformation whose consumption started never expires: it can only be finished.
     require!(
-        matches!(
-            ctx.accounts.transformation.status,
-            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
-        ),
+        ctx.accounts.transformation.status == TRANSFORMATION_STATUS_OPEN
+            && ctx.accounts.transformation.consumed_input_count == 0,
         LastroV2Error::TransformationNotAbortable
     );
     ctx.accounts.transformation.status = TRANSFORMATION_STATUS_EXPIRED;
@@ -149,17 +147,15 @@ pub fn expire_handler(ctx: Context<ExpireTransformation>) -> Result<()> {
 
 pub fn finalize_handler(ctx: Context<FinalizeTransformation>) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    require_operating_facility(&ctx.accounts.facility, ctx.accounts.operator.key(), now)?;
+    require_facility_for_step(
+        &ctx.accounts.facility,
+        ctx.accounts.transformation.status,
+        ctx.accounts.operator.key(),
+        now,
+    )?;
     require!(
-        matches!(
-            ctx.accounts.transformation.status,
-            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
-        ),
+        ctx.accounts.transformation.status == TRANSFORMATION_STATUS_FINALIZING,
         LastroV2Error::TransformationNotFinalizable
-    );
-    require!(
-        now <= ctx.accounts.transformation.expires_at,
-        LastroV2Error::TransformationExpired
     );
     require!(
         ctx.accounts.transformation.reserved_input_count == 0
@@ -183,6 +179,30 @@ pub fn finalize_handler(ctx: Context<FinalizeTransformation>) -> Result<()> {
         .checked_add(1)
         .ok_or_else(|| error!(LastroV2Error::InvalidStateVersion))?;
     Ok(())
+}
+
+/// Once consumption has started the inputs are gone, so the owner may finish the committed
+/// manifest even if the facility's window passed or it was suspended; only a REVOKED facility
+/// is stopped. Before that (OPEN) every step needs an operating facility.
+pub fn require_facility_for_step(
+    facility: &FacilityRecord,
+    transformation_status: u8,
+    operator: Pubkey,
+    now: i64,
+) -> Result<()> {
+    if transformation_status == TRANSFORMATION_STATUS_FINALIZING {
+        require!(
+            facility.owner == operator,
+            LastroV2Error::UnauthorizedFacility
+        );
+        require!(
+            facility.status != FACILITY_STATUS_REVOKED,
+            LastroV2Error::InvalidFacilityStatus
+        );
+        Ok(())
+    } else {
+        require_operating_facility(facility, operator, now)
+    }
 }
 
 /// The signer must own an ACTIVE facility inside its validity window.

@@ -41,8 +41,40 @@
 The public `VITE_LASTRO_AUTHORITY` value must come from the operator's independently verified
 deployment manifest, never from the EvidencePackage or an API response. The verifier compares it
 with the authority stored in the finalized ProtocolConfigV2 account and returns NOT_CHECKED when
-it is missing. Initializing an arbitrary deployment remains permissionless, but an impostor
-deployment cannot satisfy a separately pinned authority and deployment identifier.
+it is missing. Initializing a deployment requires the program's upgrade authority
+(`initialize.rs`); an impostor deployment of another program cannot satisfy a separately pinned
+authority and deployment identifier either.
+
+## Production Station build
+
+A Station that can be reflashed over USB is not a root of trust: unsigned firmware could drive
+the hardware ECDSA unit with the provisioned key and sign any envelope. Production Stations are
+built with `sdkconfig.defaults;sdkconfig.efuse.defaults;sdkconfig.release.defaults`, which sets
+`CONFIG_LASTRO_STATION_RELEASE` together with Secure Boot v2, release-mode flash encryption and
+secure download mode. The build fails (`#error` in `main/app_main.c`) if any of those is missing
+or if JTAG or plaintext UART flash access is re-enabled, and the firmware refuses to start when
+the chip does not report Secure Boot and flash encryption active. The Secure Boot signing key
+stays offline (`secure_boot_signing_key.pem`, ignored by git). Development builds log a warning
+at boot and must never be deployed; the software development key is signed deterministically
+(RFC 6979) so one envelope always yields one signature.
+
+## Keys the platform holds (v2.1)
+
+Since S1/S2 the API holds two kinds of private keys. An API compromise is therefore a custody
+compromise for every managed organization, and these keys are handled as such:
+
+- **Fee sponsor** (`LASTRO_SPONSOR_KEYPAIR_PATH`): pays fees and rent, never authorizes. It
+  co-signs only a byte-identical transaction it prepared, only for the deployment authority, an
+  ACTIVE party or an organization wallet, within per-transaction and rolling 24 h budgets.
+- **Organization wallets** (S2): Ed25519 secrets sealed with AES-256-GCM under a master key
+  read from `LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE`, outside the database and its backups, bound to
+  organization and wallet. A key signs only a transaction the API re-derived for a purpose the
+  user's role allows. Export needs a fresh one-time code, happens once, and ends managed
+  signing for that organization.
+- Both key files live in `/opt/lastro/secrets` (0700, files 0400), mounted read-only, never in
+  `.env.production` and never in backups. Moving the master key to a KMS is decision D1.
+- One-time codes are never logged in a public deployment: `LASTRO_OTP_DELIVERY=log` is refused
+  when CORS origins are configured.
 
 
 ## Development-only RustSec exceptions

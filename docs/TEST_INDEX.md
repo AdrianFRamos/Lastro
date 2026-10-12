@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 398
-**Files containing test cases:** 78
+**Declared cases:** 433
+**Files containing test cases:** 83
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -69,13 +69,14 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/config.test.ts`
 
-- L32: `rejects every missing required VITE deployment variable independently`
-- L42: `fails closed for canonical verification when no independent authority anchor is supplied`
-- L54: `rejects malformed or unsupported API and RPC URL schemes`
-- L79: `requires an explicit Wallet Standard solana chain identifier`
-- L97: `requires a canonical lowercase 32-byte deployment id`
-- L112: `normalizes only API trailing slash and preserves deployment identity values`
-- L129: `contains only public deployment values and never exposes server or private-key secrets`
+- L33: `rejects every missing required VITE deployment variable independently`
+- L49: `keeps wallets self-paid when no fee sponsor is pinned`
+- L55: `fails closed for canonical verification when no independent authority anchor is supplied`
+- L67: `rejects malformed or unsupported API and RPC URL schemes`
+- L92: `requires an explicit Wallet Standard solana chain identifier`
+- L110: `requires a canonical lowercase 32-byte deployment id`
+- L125: `normalizes only API trailing slash and preserves deployment identity values`
+- L143: `contains only public deployment values and never exposes server or private-key secrets`
 
 ## `apps/web/tests/demo/pendingOperation.test.ts`
 
@@ -187,14 +188,16 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/solana/transaction.test.ts`
 
-- L129: `accepts the exact Station-event transaction the API builds`
-- L140: `rejects transaction data targeting a program id different from configured Lastro`
-- L152: `rejects an internally valid transaction that differs from the expected capture`
-- L170: `binds the RFID argument, Station signature and precompile offsets to the envelope`
-- L188: `derives every account independently`
-- L205: `validates wallet-only registration and custody acceptance instructions`
-- L295: `requires connected wallet to equal the transition authority`
-- L322: `bounds the priority fee a wallet is asked to sign`
+- L137: `accepts the exact Station-event transaction the API builds`
+- L148: `rejects transaction data targeting a program id different from configured Lastro`
+- L160: `rejects an internally valid transaction that differs from the expected capture`
+- L178: `binds the RFID argument, Station signature and precompile offsets to the envelope`
+- L196: `derives every account independently`
+- L213: `validates wallet-only registration and custody acceptance instructions`
+- L320: `accepts only the pinned sponsor as a separate fee payer`
+- L347: `validates session opening and batch anchoring against the displayed terms`
+- L501: `requires connected wallet to equal the transition authority`
+- L528: `bounds the priority fee a wallet is asked to sign`
 
 ## `apps/web/tests/solana/wallet.test.ts`
 
@@ -207,38 +210,48 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/verify/chain.test.ts`
 
-- L243: `accepts a package that matches finalized accounts and exact transactions`
-- L254: `refuses an unpinned deployment authority and rejects an authority substituted on-chain`
-- L272: `rejects a package whose terminal state differs from canonical AssetState`
-- L288: `requires the replaced RFID binding to be RETIRED`
-- L313: `binds every txSignature to the exact finalized Lastro transaction`
-- L335: `accepts presence proofs anchored by the custodian`
-- L351: `represents RPC unavailability as NOT_CHECKED`
+- L259: `accepts a package that matches finalized accounts and exact transactions`
+- L270: `refuses an unpinned deployment authority and rejects an authority substituted on-chain`
+- L288: `rejects a package whose terminal state differs from canonical AssetState`
+- L304: `requires the replaced RFID binding to be RETIRED`
+- L329: `binds every txSignature to the exact finalized Lastro transaction`
+- L351: `accepts presence proofs anchored by the custodian`
+- L369: `accepts history whose fee and rent were paid by a sponsor`
+- L399: `binds batched presence proofs to their finalized BatchAnchor`
+- L482: `represents RPC unavailability as NOT_CHECKED`
 
 ## `apps/web/tests/verify/package.test.ts`
 
-- L28: `valid frozen package passes every local verification layer before RPC`
-- L47: `one changed signed envelope byte makes the package invalid`
-- L60: `changed observed RFID breaks the event-to-physical-evidence binding`
-- L72: `omitting a middle event is detected`
-- L85: `reordering individually valid signed events invalidates the history`
-- L97: `rejects a current RFID that the history does not end with`
-- L109: `requires custody transfers to end at the current custodian`
+- L29: `valid frozen package passes every local verification layer before RPC`
+- L49: `one changed signed envelope byte makes the package invalid`
+- L62: `changed observed RFID breaks the event-to-physical-evidence binding`
+- L74: `omitting a middle event is detected`
+- L87: `reordering individually valid signed events invalidates the history`
+- L99: `rejects a current RFID that the history does not end with`
+- L113: `verifies batched presence proofs leaf by leaf`
+- L161: `checks every batched observation against its facility boundary`
+- L193: `requires custody transfers to end at the current custodian`
 
 ## `chain/programs/lastro-v2/tests/custody_lineage.rs`
 
-- L56: `custody_transfer_requires_the_named_receiver_to_sign_and_is_one_shot`
-- L128: `stale_custody_proposal_is_rejected_after_state_changes`
-- L170: `config_authority_rotation_needs_both_signatures`
-- L418: `facility_owner_runs_a_proven_transformation_end_to_end`
-- L506: `inputs_outside_the_operator_custody_cannot_be_reserved`
+- L81: `a_sponsored_custody_proposal_refunds_its_rent_to_the_sponsor_only`
+- L165: `custody_transfer_requires_the_named_receiver_to_sign_and_is_one_shot`
+- L237: `stale_custody_proposal_is_rejected_after_state_changes`
+- L279: `config_authority_rotation_needs_both_signatures`
+- L527: `facility_owner_runs_a_proven_transformation_end_to_end`
+- L615: `inputs_outside_the_operator_custody_cannot_be_reserved`
+- L713: `a_transformation_follows_the_chain_order_inputs_then_outputs`
+- L786: `a_transformation_can_be_abandoned_only_before_anything_is_consumed`
 
 ## `chain/programs/lastro-v2/tests/identity.rs`
 
-- L198: `tag_changes_but_the_asset_identity_does_not`
-- L235: `an_rfid_can_never_identify_a_second_asset`
-- L284: `only_the_custodian_with_a_station_signed_payload_can_change_identity`
-- L389: `presence_proofs_are_signed_by_the_custodian_or_the_authority_only`
+- L234: `tag_changes_but_the_asset_identity_does_not`
+- L271: `an_rfid_can_never_identify_a_second_asset`
+- L320: `only_the_custodian_with_a_station_signed_payload_can_change_identity`
+- L446: `presence_proofs_are_signed_by_the_custodian_or_the_authority_only`
+- L483: `a_custodian_with_zero_lamports_completes_identity_and_presence_when_sponsored`
+- L545: `paying_for_a_transition_grants_no_authority_over_it`
+- L578: `a_reserved_input_accepts_no_station_event`
 
 ## `chain/programs/lastro-v2/tests/initial_state.rs`
 
@@ -250,15 +263,29 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L157: `station_registration_requires_valid_p256_key_and_derived_identity`
 - L193: `station_validity_can_only_be_extended_forward_by_the_authority`
 - L240: `facility_and_party_accounts_are_scoped_to_deployment`
-- L303: `intent_is_bound_to_actor_and_can_be_consumed_only_once`
+- L304: `intent_is_bound_to_actor_and_can_be_consumed_only_once`
 
 ## `chain/programs/lastro-v2/tests/layout.rs`
 
 - L24: `account_space_constants_match_serialized_layouts`
-- L199: `asset_state_space_matches_api_decoder_layout`
-- L229: `enum_ranges_are_closed_and_stable`
-- L245: `exporter_is_its_own_stable_party_role`
-- L264: `asset_closed_is_terminal_for_closed_and_retired_statuses`
+- L195: `asset_state_space_matches_api_decoder_layout`
+- L204: `event_anchor_and_intent_offsets_match_the_api_decoders`
+- L252: `session_and_batch_offsets_match_the_off_chain_decoders`
+- L346: `enum_ranges_are_closed_and_stable`
+- L362: `exporter_is_its_own_stable_party_role`
+- L381: `asset_closed_is_terminal_for_closed_and_retired_statuses`
+
+## `chain/programs/lastro-v2/tests/sessions.rs`
+
+- L212: `one_signature_opens_a_session_and_batches_anchor_hundreds_of_observations`
+- L249: `session_terms_are_bounded_at_opening`
+- L269: `batches_must_fit_the_session_window_capacity_and_relayer`
+- L292: `offline_observations_anchor_within_seven_days_and_never_after_revocation`
+- L325: `only_the_custodian_closes_early_and_the_rent_returns_to_its_payer`
+- L360: `a_session_requires_a_station_installed_at_an_active_facility`
+- L424: `a_session_id_cannot_be_squatted_by_another_wallet`
+- L490: `a_suspended_station_anchors_nothing_more`
+- L539: `an_expired_station_returns_only_through_a_validity_extension`
 
 ## `crates/lastro-protocol/tests/envelope_v2.rs`
 
@@ -394,6 +421,7 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L107: `agent_rejects_short_token_without_leaking_it`
 - L122: `agent_requires_explicit_positive_station_response_timeout`
 - L142: `agent_valid_configuration_preserves_serial_and_retry_values_exactly`
+- L162: `the_agent_token_travels_over_https_outside_loopback`
 
 ## `services/agent/tests/domain_v2.rs`
 
@@ -437,30 +465,31 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `services/agent/tests/worker.rs`
 
-- L263: `worker_times_out_a_station_that_never_responds`
-- L308: `worker_sends_one_command_per_station_capture`
-- L346: `worker_does_not_ack_before_sqlite_persist`
-- L375: `worker_rejects_capture_id_mismatch`
-- L415: `worker_rejects_station_pubkey_change`
-- L454: `worker_never_modifies_event_bytes`
-- L493: `worker_replays_ack_for_durable_local_evidence_after_restart`
-- L541: `worker_replays_ack_for_server_evidence_after_restart`
-- L595: `transient_command_poll_failure_does_not_terminate_worker`
-- L637: `terminal_api_rejection_quarantines_durable_evidence_without_stopping_retry_processing`
-- L698: `worker_refuses_to_ack_durable_evidence_from_an_unexpected_station_key`
+- L299: `worker_times_out_a_station_that_never_responds`
+- L344: `worker_sends_one_command_per_station_capture`
+- L382: `worker_does_not_ack_before_sqlite_persist`
+- L411: `worker_rejects_capture_id_mismatch`
+- L451: `worker_rejects_station_pubkey_change`
+- L490: `worker_never_modifies_event_bytes`
+- L529: `worker_replays_ack_for_durable_local_evidence_after_restart`
+- L577: `worker_replays_ack_for_server_evidence_after_restart`
+- L631: `transient_command_poll_failure_does_not_terminate_worker`
+- L673: `terminal_api_rejection_quarantines_durable_evidence_without_stopping_retry_processing`
+- L734: `worker_refuses_to_ack_durable_evidence_from_an_unexpected_station_key`
+- L771: `one_capture_breaking_the_contract_does_not_stop_the_agent`
 
 ## `services/api/tests/authorization_boundaries.rs`
 
-- L110: `agent_endpoints_require_the_exact_bearer_token`
-- L133: `public_evidence_package_endpoint_does_not_require_agent_authentication`
-- L155: `wallet_private_key_fields_are_rejected_by_request_schemas`
+- L116: `agent_endpoints_require_the_exact_bearer_token`
+- L139: `public_evidence_package_endpoint_does_not_require_agent_authentication`
+- L161: `wallet_private_key_fields_are_rejected_by_request_schemas`
 
 ## `services/api/tests/capture_v2.rs`
 
 - L129: `bind_identifier_capture_reaches_finalized_evidence_package`
-- L251: `only_the_canonical_custodian_can_authorize_an_identity_capture`
-- L270: `capture_rules_follow_the_canonical_rfid_state`
-- L295: `tampered_or_foreign_evidence_is_rejected`
+- L246: `only_the_canonical_custodian_can_authorize_an_identity_capture`
+- L265: `capture_rules_follow_the_canonical_rfid_state`
+- L290: `tampered_or_foreign_evidence_is_rejected`
 
 ## `services/api/tests/config.rs`
 
@@ -471,6 +500,8 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L155: `priority_fee_is_optional_and_bounded`
 - L176: `startup_rejects_short_demo_agent_token_without_leaking_it`
 - L191: `startup_accepts_one_complete_valid_environment_without_rewriting_values`
+- L212: `one_time_codes_never_go_to_the_log_of_a_public_deployment`
+- L228: `the_organization_master_key_comes_from_exactly_one_source`
 
 ## `services/api/tests/errors.rs`
 
@@ -479,20 +510,39 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L48: `unavailable_dependencies_are_503_without_internal_details`
 - L62: `internal_and_configuration_errors_do_not_leak_secrets`
 
+## `services/api/tests/geo_v2.rs`
+
+- L82: `a_boundary_is_immutable_and_its_commitment_is_what_the_authority_signs`
+
 ## `services/api/tests/health.rs`
 
 - L33: `health_ok_requires_database_and_rpc`
 - L49: `health_degraded_when_rpc_unavailable`
 - L65: `health_degraded_when_database_unavailable`
 
+## `services/api/tests/orgs_v2.rs`
+
+- L219: `an_organization_runs_a_session_without_a_wallet_and_roles_bound_its_key`
+- L514: `one_time_codes_are_bounded_and_do_not_reveal_accounts`
+- L592: `the_sponsor_only_recognizes_wallets_the_platform_knows`
+
 ## `services/api/tests/resource_limits.rs`
 
-- L90: `oversized_body_is_rejected_before_json_or_dependencies`
-- L107: `only_operational_v2_routes_accept_bodies_above_one_kib`
-- L133: `oversized_base64_evidence_is_rejected_by_the_body_limit`
-- L159: `field_bounds_and_malformed_encodings_fail_before_dependencies`
-- L212: `malformed_json_wrong_content_type_and_unexpected_fields_are_rejected`
-- L250: `repeated_oversized_requests_remain_bounded`
+- L96: `oversized_body_is_rejected_before_json_or_dependencies`
+- L113: `only_operational_v2_routes_accept_bodies_above_one_kib`
+- L139: `oversized_base64_evidence_is_rejected_by_the_body_limit`
+- L165: `field_bounds_and_malformed_encodings_fail_before_dependencies`
+- L218: `malformed_json_wrong_content_type_and_unexpected_fields_are_rejected`
+- L256: `repeated_oversized_requests_remain_bounded`
+
+## `services/api/tests/sessions_v2.rs`
+
+- L241: `a_session_admits_offline_proofs_and_anchors_them_as_one_provable_batch`
+
+## `services/api/tests/sponsor_v2.rs`
+
+- L251: `the_sponsor_pays_only_for_prepared_signed_transactions_within_budget`
+- L366: `sponsorship_is_refused_when_the_sponsor_is_the_deployment_authority`
 
 ## `tests/repository/test_config_syntax.py`
 
@@ -506,12 +556,13 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `tests/repository/test_contract_schemas.py`
 
-- L14: `test_openapi_contains_exact_v2_surface_and_no_v1_or_compliance_endpoint`
-- L48: `test_openapi_transaction_contract_freezes_instruction_count_and_1232_byte_limit`
-- L58: `test_openapi_submission_lifecycle_is_explicit`
-- L69: `test_openapi_agent_command_cannot_supply_observed_rfid`
-- L76: `test_openapi_capture_actions_are_the_three_physical_v2_operations`
-- L83: `test_openapi_freezes_http_and_protocol_resource_bounds`
+- L15: `test_openapi_contains_exact_v2_surface_and_no_v1_or_compliance_endpoint`
+- L71: `test_openapi_transaction_contract_freezes_instruction_count_and_1232_byte_limit`
+- L81: `test_openapi_submission_lifecycle_is_explicit`
+- L92: `test_openapi_agent_command_cannot_supply_observed_rfid`
+- L99: `test_openapi_capture_actions_are_the_three_physical_v2_operations`
+- L106: `test_openapi_freezes_http_and_protocol_resource_bounds`
+- L153: `test_openapi_and_the_router_describe_the_same_routes`
 
 ## `tests/repository/test_demo_preflight_contract.py`
 
@@ -523,6 +574,8 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L24: `test_efuse_signer_is_explicit_and_fail_closed`
 - L47: `test_board_entrypoint_wires_agent_transport_while_reader_protocol_stays_isolated`
 - L75: `test_firmware_ci_compiles_efuse_signer_without_provisioning_commands`
+- L86: `test_production_station_build_requires_secure_boot_and_flash_encryption`
+- L114: `test_development_signer_is_deterministic_when_available`
 
 ## `tests/repository/test_initialize_funding.py`
 
@@ -573,43 +626,40 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L131: `test_firmware_build_does_not_run_the_checkout_inside_a_root_job_container`
 - L139: `test_self_hosted_solana_jobs_use_checksum_pinned_anchor_and_solana_binaries`
 - L149: `test_firmware_workflow_activates_esp_idf_environment_before_using_idf_py`
-- L158: `test_maintenance_sync_stages_only_existing_repository_paths`
-- L167: `test_maintenance_sync_covers_every_push_for_manifest_consistency`
-- L173: `test_maintenance_sync_executes_repository_generators_on_every_push`
-- L179: `test_chain_resolver_lockfile_is_committed`
-- L183: `test_postgres_18_compose_persists_the_real_data_root_and_binds_dev_port_to_loopback`
-- L190: `test_browser_deployment_id_is_propagated_across_build_and_local_environments`
-- L198: `test_local_development_requires_the_same_solana_patch_as_anchor_ci`
-- L205: `test_agent_main_reconnects_after_serial_transport_failures`
-- L213: `test_web_ci_program_id_matches_transaction_validation_fixture`
-- L220: `test_browser_records_signed_solana_identity_before_rpc_broadcast`
-- L230: `test_ci_uses_committed_resolver_lockfiles_without_fallback_resolution`
-- L245: `test_dependency_bootstrap_refreshes_manifest_after_resolver_outputs`
-- L253: `test_github_actions_are_pinned_to_immutable_commits`
-- L264: `test_protocol_initialize_transaction_requests_explicit_compute_budget`
-- L284: `test_litesvm_test_harness_boxes_large_failure_metadata`
-- L290: `test_chain_tests_import_signer_trait_explicitly`
-- L297: `test_secp256r1_verifier_binds_descriptor_offsets_and_sysvar_api`
-- L307: `test_anchor_program_reexports_generated_account_helpers_at_crate_root`
-- L320: `test_chain_sources_follow_anchor_1_2_program_api_contract`
-- L333: `test_maintenance_sync_regenerates_both_rust_lockfiles`
-- L338: `test_chain_rustsec_exceptions_are_narrow_and_documented`
-- L356: `test_container_builds_use_committed_dependency_locks`
-- L365: `test_devnet_smoke_requires_committed_program_identity`
-- L371: `test_pinned_rust_action_selects_exact_toolchain_explicitly`
-- L378: `test_python_ci_uses_exact_patch_without_mutable_pip_upgrade`
-- L385: `test_root_node_toolchain_pins_typescript_used_by_hoisted_vue_tsc`
-- L394: `test_web_typecheck_keeps_strict_source_checks_but_skips_third_party_declarations`
-- L407: `test_vite_config_includes_vitest_types_for_inline_test_configuration`
-- L414: `test_vue_tsc_uses_typescript_version_known_to_be_supported`
-- L422: `test_maintenance_sync_regenerates_node_lock_before_locked_install`
-- L427: `test_node_and_npm_resolvers_are_exactly_pinned`
-- L439: `test_devnet_workflow_keeps_secrets_out_of_artifacts`
-- L447: `test_local_rust_commands_use_locked_dependency_graphs`
-- L461: `test_web_ci_uses_only_locked_local_npm_executables`
-- L475: `test_production_container_bases_are_immutable_and_runtime_has_no_package_resolution`
-- L491: `test_ci_runs_repository_and_harness_tests_without_external_gate_flags`
-- L503: `test_solana_cli_checks_require_exact_4_2_0_patch`
+- L158: `test_maintenance_sync_only_verifies_and_never_writes_to_the_repository`
+- L171: `test_maintenance_sync_fails_when_generated_outputs_are_stale`
+- L182: `test_chain_resolver_lockfile_is_committed`
+- L186: `test_postgres_18_compose_persists_the_real_data_root_and_binds_dev_port_to_loopback`
+- L193: `test_browser_deployment_id_is_propagated_across_build_and_local_environments`
+- L201: `test_local_development_requires_the_same_solana_patch_as_anchor_ci`
+- L208: `test_agent_main_reconnects_after_serial_transport_failures`
+- L216: `test_web_ci_program_id_matches_transaction_validation_fixture`
+- L223: `test_browser_records_signed_solana_identity_before_rpc_broadcast`
+- L233: `test_ci_uses_committed_resolver_lockfiles_without_fallback_resolution`
+- L248: `test_dependency_bootstrap_refreshes_manifest_after_resolver_outputs`
+- L256: `test_github_actions_are_pinned_to_immutable_commits`
+- L267: `test_protocol_initialize_transaction_requests_explicit_compute_budget`
+- L287: `test_litesvm_test_harness_boxes_large_failure_metadata`
+- L293: `test_chain_tests_import_signer_trait_explicitly`
+- L300: `test_secp256r1_verifier_binds_descriptor_offsets_and_sysvar_api`
+- L310: `test_anchor_program_reexports_generated_account_helpers_at_crate_root`
+- L323: `test_chain_sources_follow_anchor_1_2_program_api_contract`
+- L336: `test_chain_rustsec_exceptions_are_narrow_and_documented`
+- L354: `test_container_builds_use_committed_dependency_locks`
+- L363: `test_devnet_smoke_requires_committed_program_identity`
+- L369: `test_pinned_rust_action_selects_exact_toolchain_explicitly`
+- L376: `test_python_ci_uses_exact_patch_without_mutable_pip_upgrade`
+- L383: `test_root_node_toolchain_pins_typescript_used_by_hoisted_vue_tsc`
+- L392: `test_web_typecheck_keeps_strict_source_checks_but_skips_third_party_declarations`
+- L405: `test_vite_config_includes_vitest_types_for_inline_test_configuration`
+- L412: `test_vue_tsc_uses_typescript_version_known_to_be_supported`
+- L420: `test_node_and_npm_resolvers_are_exactly_pinned`
+- L432: `test_devnet_workflow_keeps_secrets_out_of_artifacts`
+- L440: `test_local_rust_commands_use_locked_dependency_graphs`
+- L454: `test_web_ci_uses_only_locked_local_npm_executables`
+- L468: `test_production_container_bases_are_immutable_and_runtime_has_no_package_resolution`
+- L484: `test_ci_runs_repository_and_harness_tests_without_external_gate_flags`
+- L496: `test_solana_cli_checks_require_exact_4_2_0_patch`
 
 ## `tests/repository/test_test_contract_quality.py`
 

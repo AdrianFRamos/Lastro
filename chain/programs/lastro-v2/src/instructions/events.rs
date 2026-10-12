@@ -86,6 +86,12 @@ pub fn admit_station_event(
         now,
     )?;
     require!(!ctx.asset.is_terminal(), LastroV2Error::InvalidAssetStatus);
+    // A reserved input is committed to a transformation: a Station event would bump its
+    // state_version and silently break the reservation (L5).
+    require!(
+        ctx.asset.reserved_by == [0; 32],
+        LastroV2Error::InvalidReservation
+    );
     // The protocol caps event windows at 24 h; each deployment may tighten that bound.
     require!(
         (envelope.expires_at - envelope.observed_at) as u64 <= ctx.config.max_event_age_seconds,
@@ -109,17 +115,10 @@ pub fn apply_station_event(
     asset.state_version = envelope.state_version;
     asset.last_event_hash = event_hash;
 
-    anchor.event_id = envelope.event_id;
-    anchor.deployment_id = envelope.deployment_id;
-    anchor.subject_id = envelope.subject_id;
-    anchor.source_id = envelope.source_id;
-    anchor.event_type = envelope.event_type;
-    anchor.state_version = envelope.state_version;
-    anchor.observed_at = envelope.observed_at;
-    anchor.expires_at = envelope.expires_at;
-    anchor.expected_previous_hash = envelope.expected_previous_hash;
-    anchor.payload_hash = envelope.payload_hash;
     anchor.event_hash = event_hash;
+    anchor.subject_id = envelope.subject_id;
+    anchor.state_version = envelope.state_version;
+    anchor.event_type = envelope.event_type;
     anchor.bump = anchor_bump;
 }
 
@@ -128,8 +127,11 @@ pub fn apply_station_event(
 pub struct RecordObservation<'info> {
     /// The deployment authority or the asset's current custodian. Letting the custodian anchor
     /// presence proofs keeps the deployment authority key out of day-to-day operation.
-    #[account(mut)]
     pub authority: Signer<'info>,
+    /// Funds the rent of the accounts this instruction creates. It may be the authorizing
+    /// signer itself or a separate fee sponsor; it never grants any authority.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         seeds = [CONFIG_V2_SEED, &config.deployment_id],
         bump = config.bump,
@@ -156,7 +158,7 @@ pub struct RecordObservation<'info> {
     pub asset: Account<'info, AssetState>,
     #[account(
         init,
-        payer = authority,
+        payer = payer,
         space = EventAnchor::SPACE,
         seeds = [EVENT_SEED, &config.deployment_id, &event_id],
         bump,

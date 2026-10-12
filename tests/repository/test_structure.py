@@ -155,25 +155,28 @@ def test_firmware_workflow_activates_esp_idf_environment_before_using_idf_py():
     assert 'idf.py -C /tmp/station -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.efuse.defaults" build' in text
 
 
-def test_maintenance_sync_stages_only_existing_repository_paths():
+def test_maintenance_sync_only_verifies_and_never_writes_to_the_repository():
+    # A workflow holding a write token must never resolve fresh dependencies or push
+    # unreviewed commits (supply-chain review, C1).
     workflow = (ROOT / '.github/workflows/maintenance-sync.yml').read_text(encoding='utf-8')
-    command = (
-        'git add Cargo.lock chain/Cargo.lock package-lock.json crates services '
-        'chain/programs apps/web docs/TEST_INDEX.md MANIFEST.sha256'
-    )
-    assert command in workflow
-    assert ' services agents ' not in workflow
+    assert 'contents: write' not in workflow
+    assert 'git push' not in workflow
+    assert 'git commit' not in workflow
+    assert 'generate-lockfile' not in workflow
+    assert 'package-lock-only' not in workflow
+    assert 'persist-credentials: false' in workflow
+    assert 'npm ci --ignore-scripts' in workflow
 
-def test_maintenance_sync_covers_every_push_for_manifest_consistency():
-    workflow = (ROOT / '.github/workflows/maintenance-sync.yml').read_text(encoding='utf-8')
-    push_block = workflow.split('  push:', 1)[1].split('\n\nconcurrency:', 1)[0]
-    assert 'paths:' not in push_block
-    assert 'cancel-in-progress: true' in workflow
 
-def test_maintenance_sync_executes_repository_generators_on_every_push():
+def test_maintenance_sync_fails_when_generated_outputs_are_stale():
     workflow = (ROOT / '.github/workflows/maintenance-sync.yml').read_text(encoding='utf-8')
+    assert 'cargo metadata --locked --format-version 1 >/dev/null' in workflow
+    assert 'cargo metadata --locked --format-version 1 --manifest-path chain/Cargo.toml >/dev/null' in workflow
+    assert 'cargo fmt --all --check' in workflow
+    assert 'prettier --check .' in workflow
     assert 'python scripts/generate_test_index.py' in workflow
     assert 'python scripts/generate_manifest.py' in workflow
+    assert 'git diff --exit-code -- docs/TEST_INDEX.md MANIFEST.sha256' in workflow
     assert 'cancel-in-progress: true' in workflow
 
 def test_chain_resolver_lockfile_is_committed():
@@ -330,11 +333,6 @@ def test_chain_sources_follow_anchor_1_2_program_api_contract():
     assert 'solana-instructions-sysvar = "=3.0.1"' in cargo
 
 
-def test_maintenance_sync_regenerates_both_rust_lockfiles():
-    workflow = (ROOT / '.github/workflows/maintenance-sync.yml').read_text(encoding='utf-8')
-    assert 'cargo generate-lockfile' in workflow
-    assert 'cargo generate-lockfile --manifest-path chain/Cargo.toml' in workflow
-
 def test_chain_rustsec_exceptions_are_narrow_and_documented():
     ci = (ROOT / '.github/workflows/ci.yml').read_text(encoding='utf-8')
     security = (ROOT / 'docs/SECURITY.md').read_text(encoding='utf-8')
@@ -418,11 +416,6 @@ def test_vue_tsc_uses_typescript_version_known_to_be_supported():
     assert dev['vue-tsc'] == '3.3.11'
     assert dev['typescript'] == '6.0.2'
 
-
-def test_maintenance_sync_regenerates_node_lock_before_locked_install():
-    workflow = (ROOT / '.github/workflows/maintenance-sync.yml').read_text(encoding='utf-8')
-    assert 'npm install --package-lock-only --ignore-scripts' in workflow
-    assert workflow.index('npm install --package-lock-only --ignore-scripts') < workflow.index('npm ci')
 
 def test_node_and_npm_resolvers_are_exactly_pinned():
     import json

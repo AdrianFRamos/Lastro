@@ -11,10 +11,10 @@ use lastro_protocol::v2::LineageRole;
 use crate::{
     constants::{
         ASSET_SEED, ASSET_STATUS_ACTIVE, CONFIG_V2_SEED, FACILITY_SEED, TRANSFORMATION_SEED,
-        TRANSFORMATION_STATUS_FINALIZING, TRANSFORMATION_STATUS_OPEN, is_valid_asset_type,
+        TRANSFORMATION_STATUS_FINALIZING, is_valid_asset_type,
     },
     error::LastroV2Error,
-    instructions::transformations::{require_lineage_leaf, require_operating_facility},
+    instructions::transformations::{require_facility_for_step, require_lineage_leaf},
     state::{AssetState, FacilityRecord, ProtocolConfigV2, TransformationAnchor},
 };
 
@@ -33,17 +33,21 @@ pub fn create_handler(
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
     let operator = ctx.accounts.operator.key();
-    require_operating_facility(&ctx.accounts.facility, operator, now)?;
+    require_facility_for_step(
+        &ctx.accounts.facility,
+        ctx.accounts.transformation.status,
+        operator,
+        now,
+    )?;
+    // Chain order (A2): an output exists only once every committed input is consumed, so no
+    // asset can appear from inputs that were never spent. From then on the manifest is the
+    // only possible continuation, so the window no longer applies.
+    let transformation = &ctx.accounts.transformation;
     require!(
-        matches!(
-            ctx.accounts.transformation.status,
-            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
-        ),
-        LastroV2Error::TransformationNotOpen
-    );
-    require!(
-        now <= ctx.accounts.transformation.expires_at,
-        LastroV2Error::TransformationExpired
+        transformation.status == TRANSFORMATION_STATUS_FINALIZING
+            && transformation.consumed_input_count == transformation.input_count
+            && transformation.consumed_input_weight_grams == transformation.input_weight_grams,
+        LastroV2Error::TransformationOutOfOrder
     );
     require_nonzero(&output_id)?;
     require!(

@@ -66,24 +66,95 @@ pub struct CanonicalV2Station {
     pub status: u8,
     pub valid_from: i64,
     pub valid_until: i64,
+    /// Facility the Station is installed at; all zero when unbound (S5).
+    pub facility_id: [u8; 32],
 }
+
+pub const STATION_RECORD_LEN: usize = 187;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2Facility {
+    pub facility_id: [u8; 32],
+    pub owner: Pubkey,
+    pub facility_type: u8,
+    pub status: u8,
+    pub valid_from: i64,
+    pub valid_until: i64,
+    pub geo_commitment: [u8; 32],
+}
+
+pub const FACILITY_RECORD_LEN: usize = 155;
+pub const FACILITY_STATUS_ACTIVE: u8 = 1;
 
 pub const STATION_STATUS_ACTIVE: u8 = 1;
 
+/// EventAnchor (v2.1, 83 bytes). The PDA seeds bind `deployment_id` and `event_id`; the
+/// account stores only what the seeds do not: `event_hash` (which commits to every envelope
+/// field), subject, state version and event type.
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalV2EventAnchor {
+    /// Seed inputs the account was derived from (not stored on-chain).
     pub event_id: [u8; 32],
     pub deployment_id: [u8; 32],
-    pub subject_id: [u8; 32],
-    pub source_id: [u8; 32],
-    pub event_type: u16,
-    pub state_version: u64,
-    pub observed_at: i64,
-    pub expires_at: i64,
-    pub expected_previous_hash: [u8; 32],
-    pub payload_hash: [u8; 32],
     pub event_hash: [u8; 32],
+    pub subject_id: [u8; 32],
+    pub state_version: u64,
+    pub event_type: u16,
 }
+
+pub const EVENT_ANCHOR_LEN: usize = 83;
+
+/// IntentState (v2.1, 204 bytes): exists only while OPEN.
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2Intent {
+    pub intent_id: [u8; 32],
+    pub subject_id: [u8; 32],
+    pub intent_type: u16,
+    pub expected_state_version: u64,
+    pub actor: Pubkey,
+    pub rent_payer: Pubkey,
+}
+
+pub const INTENT_STATE_LEN: usize = 204;
+
+/// SessionGrant (v2.1, 176 bytes).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2Session {
+    pub session_id: [u8; 32],
+    pub custodian: Pubkey,
+    pub station_id: [u8; 32],
+    pub allowed_actions: u16,
+    pub max_events: u32,
+    pub events_used: u32,
+    pub batch_count: u32,
+    pub valid_from: i64,
+    pub expires_at: i64,
+    pub revoked_at: i64,
+    pub status: u8,
+    pub rent_payer: Pubkey,
+    pub facility_id: [u8; 32],
+}
+
+pub const SESSION_GRANT_LEN: usize = 208;
+pub const SESSION_STATUS_OPEN: u8 = 1;
+pub const SESSION_STATUS_REVOKED: u8 = 2;
+
+/// BatchAnchor (v2.1, 169 bytes).
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct CanonicalV2Batch {
+    pub session_id: [u8; 32],
+    pub batch_index: u32,
+    pub custodian: Pubkey,
+    pub station_id: [u8; 32],
+    pub merkle_root: [u8; 32],
+    pub leaf_count: u32,
+    pub first_observed_at: i64,
+    pub last_observed_at: i64,
+    pub anchored_at: i64,
+    pub facility_id: [u8; 32],
+}
+
+pub const BATCH_ANCHOR_LEN: usize = 201;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct CanonicalV2AssetState {
@@ -134,6 +205,67 @@ pub trait SolanaRpc: Send + Sync {
         let _ = (deployment_id, asset_id);
         Err(ApiError::Unavailable(
             "v2 AssetState RPC is not implemented by this client".into(),
+        ))
+    }
+
+    async fn v2_intent(
+        &self,
+        deployment_id: [u8; 32],
+        subject_id: [u8; 32],
+        intent_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2Intent>, ApiError> {
+        let _ = (deployment_id, subject_id, intent_id);
+        Err(ApiError::Unavailable(
+            "v2 IntentState RPC is not implemented by this client".into(),
+        ))
+    }
+
+    async fn v2_facility(
+        &self,
+        deployment_id: [u8; 32],
+        facility_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2Facility>, ApiError> {
+        let _ = (deployment_id, facility_id);
+        Err(ApiError::Unavailable(
+            "v2 FacilityRecord RPC is not implemented by this client".into(),
+        ))
+    }
+
+    async fn v2_session(
+        &self,
+        deployment_id: [u8; 32],
+        session_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2Session>, ApiError> {
+        let _ = (deployment_id, session_id);
+        Err(ApiError::Unavailable(
+            "v2 SessionGrant RPC is not implemented by this client".into(),
+        ))
+    }
+
+    async fn v2_batch(
+        &self,
+        deployment_id: [u8; 32],
+        session_id: [u8; 32],
+        batch_index: u32,
+    ) -> Result<Option<CanonicalV2Batch>, ApiError> {
+        let _ = (deployment_id, session_id, batch_index);
+        Err(ApiError::Unavailable(
+            "v2 BatchAnchor RPC is not implemented by this client".into(),
+        ))
+    }
+
+    /// A finalized recent blockhash for transactions the API compiles itself.
+    async fn latest_blockhash(&self) -> Result<[u8; 32], ApiError> {
+        Err(ApiError::Unavailable(
+            "getLatestBlockhash is not implemented by this client".into(),
+        ))
+    }
+
+    /// Broadcasts a fully signed legacy transaction and returns its signature.
+    async fn send_transaction(&self, wire: &[u8]) -> Result<String, ApiError> {
+        let _ = wire;
+        Err(ApiError::Unavailable(
+            "sendTransaction is not implemented by this client".into(),
         ))
     }
 
@@ -387,6 +519,130 @@ impl SolanaRpc for HttpSolanaRpc {
         decode_v2_asset_state(&data, deployment_id, asset_id, expected_bump).map(Some)
     }
 
+    async fn v2_intent(
+        &self,
+        deployment_id: [u8; 32],
+        subject_id: [u8; 32],
+        intent_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2Intent>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) = crate::solana::v2_custody::v2_intent_address(
+            &program_id,
+            &deployment_id,
+            &subject_id,
+            &intent_id,
+        );
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_intent(&data, subject_id, intent_id, expected_bump).map(Some)
+    }
+
+    async fn v2_facility(
+        &self,
+        deployment_id: [u8; 32],
+        facility_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2Facility>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) = crate::solana::v2_transaction_builder::v2_facility_address(
+            &program_id,
+            &deployment_id,
+            &facility_id,
+        );
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_facility(&data, facility_id, expected_bump).map(Some)
+    }
+
+    async fn v2_session(
+        &self,
+        deployment_id: [u8; 32],
+        session_id: [u8; 32],
+    ) -> Result<Option<CanonicalV2Session>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) =
+            crate::solana::v2_session::v2_session_address(&program_id, &deployment_id, &session_id);
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_session(&data, session_id, expected_bump).map(Some)
+    }
+
+    async fn v2_batch(
+        &self,
+        deployment_id: [u8; 32],
+        session_id: [u8; 32],
+        batch_index: u32,
+    ) -> Result<Option<CanonicalV2Batch>, ApiError> {
+        let program_id = parse_program_id(&self.lastro_program_id)?;
+        let (address, expected_bump) = crate::solana::v2_session::v2_batch_address(
+            &program_id,
+            &deployment_id,
+            &session_id,
+            batch_index,
+        );
+        let Some(data) = self.account_data(&address).await? else {
+            return Ok(None);
+        };
+        decode_v2_batch(&data, session_id, batch_index, expected_bump).map(Some)
+    }
+
+    async fn latest_blockhash(&self) -> Result<[u8; 32], ApiError> {
+        let result = self
+            .call("getLatestBlockhash", json!([{"commitment":"finalized"}]))
+            .await?;
+        let hash = result
+            .get("value")
+            .and_then(|value| value.get("blockhash"))
+            .and_then(Value::as_str)
+            .ok_or_else(|| ApiError::Unavailable("getLatestBlockhash returned no hash".into()))?;
+        bs58::decode(hash)
+            .into_vec()
+            .ok()
+            .and_then(|bytes| bytes.try_into().ok())
+            .ok_or_else(|| {
+                ApiError::Unavailable("getLatestBlockhash returned an invalid hash".into())
+            })
+    }
+
+    /// A JSON-RPC error here is a definite preflight rejection (`Conflict`): the transaction
+    /// was not forwarded. Transport failures stay `Unavailable`, because the transaction may
+    /// still have been accepted.
+    async fn send_transaction(&self, wire: &[u8]) -> Result<String, ApiError> {
+        let response = self
+            .client
+            .post(&self.url)
+            .timeout(SOLANA_RPC_REQUEST_TIMEOUT)
+            .json(
+                &json!({"jsonrpc":"2.0","id":1,"method":"sendTransaction","params":[
+                    BASE64_STANDARD.encode(wire),
+                    {"encoding":"base64","preflightCommitment":"finalized"}
+                ]}),
+            )
+            .send()
+            .await
+            .map_err(|_| ApiError::Unavailable("Solana RPC request failed".into()))?;
+        if !response.status().is_success() {
+            return Err(ApiError::Unavailable(
+                "Solana RPC returned an HTTP error".into(),
+            ));
+        }
+        let body: Value = response
+            .json()
+            .await
+            .map_err(|_| ApiError::Unavailable("Solana RPC returned invalid JSON".into()))?;
+        if body.get("error").is_some() {
+            return Err(ApiError::Conflict(
+                "Solana rejected the transaction in preflight".into(),
+            ));
+        }
+        body.get("result")
+            .and_then(Value::as_str)
+            .map(str::to_owned)
+            .ok_or_else(|| ApiError::Unavailable("sendTransaction returned no signature".into()))
+    }
+
     async fn v2_rfid_binding(
         &self,
         deployment_id: [u8; 32],
@@ -521,9 +777,9 @@ fn decode_v2_station(
     station_id: [u8; 32],
     expected_bump: u8,
 ) -> Result<CanonicalV2Station, ApiError> {
-    let data = expect_layout(data, "StationRecord", 155)?;
+    let data = expect_layout(data, "StationRecord", STATION_RECORD_LEN)?;
     let stored: [u8; 32] = data[8..40].try_into().map_err(|_| ApiError::Internal)?;
-    if stored != station_id || data[154] != expected_bump {
+    if stored != station_id || data[186] != expected_bump {
         return Err(ApiError::Conflict(
             "canonical v2 StationRecord does not match its PDA seeds".into(),
         ));
@@ -534,6 +790,31 @@ fn decode_v2_station(
         status: data[105],
         valid_from: i64::from_le_bytes(data[106..114].try_into().map_err(|_| ApiError::Internal)?),
         valid_until: i64::from_le_bytes(data[114..122].try_into().map_err(|_| ApiError::Internal)?),
+        facility_id: data[154..186].try_into().map_err(|_| ApiError::Internal)?,
+    })
+}
+
+/// FacilityRecord (v2.1, 155 bytes): facility_id 8..40, owner 40..72, type 72, status 73,
+/// credential_hash 74..106, valid_from 106, valid_until 114, geo_commitment 122..154, bump 154.
+fn decode_v2_facility(
+    data: &[u8],
+    facility_id: [u8; 32],
+    expected_bump: u8,
+) -> Result<CanonicalV2Facility, ApiError> {
+    let data = expect_layout(data, "FacilityRecord", FACILITY_RECORD_LEN)?;
+    if data[8..40] != facility_id || data[154] != expected_bump {
+        return Err(ApiError::Conflict(
+            "canonical v2 FacilityRecord does not match its PDA seeds".into(),
+        ));
+    }
+    Ok(CanonicalV2Facility {
+        facility_id,
+        owner: read_key(data, 40)?,
+        facility_type: data[72],
+        status: data[73],
+        valid_from: read_i64(data, 106)?,
+        valid_until: read_i64(data, 114)?,
+        geo_commitment: data[122..154].try_into().map_err(|_| ApiError::Internal)?,
     })
 }
 
@@ -543,31 +824,137 @@ fn decode_v2_event_anchor(
     event_id: [u8; 32],
     expected_bump: u8,
 ) -> Result<CanonicalV2EventAnchor, ApiError> {
-    let data = expect_layout(data, "EventAnchor", 259)?;
-    let stored_event_id: [u8; 32] = data[8..40].try_into().map_err(|_| ApiError::Internal)?;
-    let stored_deployment: [u8; 32] = data[40..72].try_into().map_err(|_| ApiError::Internal)?;
-    if stored_event_id != event_id
-        || stored_deployment != deployment_id
-        || data[258] != expected_bump
-    {
+    // 83 bytes: discriminator, event_hash (8..40), subject_id (40..72), state_version
+    // (72..80), event_type (80..82), bump (82). The caller derived the address from
+    // `deployment_id` and `event_id`, so a matching bump binds those seeds.
+    let data = expect_layout(data, "EventAnchor", EVENT_ANCHOR_LEN)?;
+    if data[82] != expected_bump {
         return Err(ApiError::Conflict(
             "canonical v2 EventAnchor does not match its PDA seeds".into(),
         ));
     }
     Ok(CanonicalV2EventAnchor {
-        event_id: stored_event_id,
-        deployment_id: stored_deployment,
-        subject_id: data[72..104].try_into().map_err(|_| ApiError::Internal)?,
-        source_id: data[104..136].try_into().map_err(|_| ApiError::Internal)?,
-        event_type: u16::from_le_bytes(data[136..138].try_into().map_err(|_| ApiError::Internal)?),
-        state_version: u64::from_le_bytes(
-            data[138..146].try_into().map_err(|_| ApiError::Internal)?,
+        event_id,
+        deployment_id,
+        event_hash: data[8..40].try_into().map_err(|_| ApiError::Internal)?,
+        subject_id: data[40..72].try_into().map_err(|_| ApiError::Internal)?,
+        state_version: u64::from_le_bytes(data[72..80].try_into().map_err(|_| ApiError::Internal)?),
+        event_type: u16::from_le_bytes(data[80..82].try_into().map_err(|_| ApiError::Internal)?),
+    })
+}
+
+/// IntentState: discriminator, intent_id (8..40), subject_id (40..72), intent_type (72..74),
+/// expected_state_version (74..82), nonce (82..90), actor (90..122), status (122), expires_at
+/// (123..131), consumed_at (131..139), payload_hash (139..171), rent_payer (171..203), bump.
+fn decode_v2_intent(
+    data: &[u8],
+    subject_id: [u8; 32],
+    intent_id: [u8; 32],
+    expected_bump: u8,
+) -> Result<CanonicalV2Intent, ApiError> {
+    let data = expect_layout(data, "IntentState", INTENT_STATE_LEN)?;
+    if data[8..40] != intent_id || data[40..72] != subject_id || data[203] != expected_bump {
+        return Err(ApiError::Conflict(
+            "canonical v2 IntentState does not match its PDA seeds".into(),
+        ));
+    }
+    let key = |range: std::ops::Range<usize>| -> Result<Pubkey, ApiError> {
+        let bytes: [u8; 32] = data[range].try_into().map_err(|_| ApiError::Internal)?;
+        Ok(Pubkey::new_from_array(bytes))
+    };
+    Ok(CanonicalV2Intent {
+        intent_id,
+        subject_id,
+        intent_type: u16::from_le_bytes(data[72..74].try_into().map_err(|_| ApiError::Internal)?),
+        expected_state_version: u64::from_le_bytes(
+            data[74..82].try_into().map_err(|_| ApiError::Internal)?,
         ),
-        observed_at: i64::from_le_bytes(data[146..154].try_into().map_err(|_| ApiError::Internal)?),
-        expires_at: i64::from_le_bytes(data[154..162].try_into().map_err(|_| ApiError::Internal)?),
-        expected_previous_hash: data[162..194].try_into().map_err(|_| ApiError::Internal)?,
-        payload_hash: data[194..226].try_into().map_err(|_| ApiError::Internal)?,
-        event_hash: data[226..258].try_into().map_err(|_| ApiError::Internal)?,
+        actor: key(90..122)?,
+        rent_payer: key(171..203)?,
+    })
+}
+
+fn read_u32(data: &[u8], at: usize) -> Result<u32, ApiError> {
+    Ok(u32::from_le_bytes(
+        data[at..at + 4]
+            .try_into()
+            .map_err(|_| ApiError::Internal)?,
+    ))
+}
+
+fn read_i64(data: &[u8], at: usize) -> Result<i64, ApiError> {
+    Ok(i64::from_le_bytes(
+        data[at..at + 8]
+            .try_into()
+            .map_err(|_| ApiError::Internal)?,
+    ))
+}
+
+fn read_key(data: &[u8], at: usize) -> Result<Pubkey, ApiError> {
+    let bytes: [u8; 32] = data[at..at + 32]
+        .try_into()
+        .map_err(|_| ApiError::Internal)?;
+    Ok(Pubkey::new_from_array(bytes))
+}
+
+/// SessionGrant: session_id 8..40, custodian 40..72, station_id 72..104, allowed_actions,
+/// max_events, events_used, batch_count, valid_from 118, expires_at 126, revoked_at 134,
+/// status 142, rent_payer 143..175, facility_id 175..207, bump 207.
+fn decode_v2_session(
+    data: &[u8],
+    session_id: [u8; 32],
+    expected_bump: u8,
+) -> Result<CanonicalV2Session, ApiError> {
+    let data = expect_layout(data, "SessionGrant", SESSION_GRANT_LEN)?;
+    if data[8..40] != session_id || data[207] != expected_bump {
+        return Err(ApiError::Conflict(
+            "canonical v2 SessionGrant does not match its PDA seeds".into(),
+        ));
+    }
+    Ok(CanonicalV2Session {
+        session_id,
+        custodian: read_key(data, 40)?,
+        station_id: data[72..104].try_into().map_err(|_| ApiError::Internal)?,
+        allowed_actions: u16::from_le_bytes([data[104], data[105]]),
+        max_events: read_u32(data, 106)?,
+        events_used: read_u32(data, 110)?,
+        batch_count: read_u32(data, 114)?,
+        valid_from: read_i64(data, 118)?,
+        expires_at: read_i64(data, 126)?,
+        revoked_at: read_i64(data, 134)?,
+        status: data[142],
+        rent_payer: read_key(data, 143)?,
+        facility_id: data[175..207].try_into().map_err(|_| ApiError::Internal)?,
+    })
+}
+
+/// BatchAnchor: session_id 8..40, batch_index 40..44, custodian 44..76, station_id 76..108,
+/// merkle_root 108..140, leaf_count 140..144, first 144, last 152, anchored_at 160,
+/// facility_id 168..200, bump 200.
+fn decode_v2_batch(
+    data: &[u8],
+    session_id: [u8; 32],
+    batch_index: u32,
+    expected_bump: u8,
+) -> Result<CanonicalV2Batch, ApiError> {
+    let data = expect_layout(data, "BatchAnchor", BATCH_ANCHOR_LEN)?;
+    if data[8..40] != session_id || read_u32(data, 40)? != batch_index || data[200] != expected_bump
+    {
+        return Err(ApiError::Conflict(
+            "canonical v2 BatchAnchor does not match its PDA seeds".into(),
+        ));
+    }
+    Ok(CanonicalV2Batch {
+        session_id,
+        batch_index,
+        custodian: read_key(data, 44)?,
+        station_id: data[76..108].try_into().map_err(|_| ApiError::Internal)?,
+        merkle_root: data[108..140].try_into().map_err(|_| ApiError::Internal)?,
+        leaf_count: read_u32(data, 140)?,
+        first_observed_at: read_i64(data, 144)?,
+        last_observed_at: read_i64(data, 152)?,
+        anchored_at: read_i64(data, 160)?,
+        facility_id: data[168..200].try_into().map_err(|_| ApiError::Internal)?,
     })
 }
 
@@ -640,7 +1027,10 @@ fn decode_v2_transformation(
     })
 }
 
-fn transaction_matches_json(
+/// Whether `result` (the `getTransaction` JSON shape) is exactly `expected`: same signers,
+/// fee payer first, same account roles, same protocol instructions and data. Up to two
+/// ComputeBudget instructions may follow; their values change no Lastro state.
+pub(crate) fn transaction_matches_json(
     result: &Value,
     requested_signature: &str,
     expected: &TransactionDataResponse,
@@ -706,9 +1096,16 @@ fn transaction_matches_json(
     }
     let readonly_signed = usize_field(header.get("numReadonlySignedAccounts"))?;
     let readonly_unsigned = usize_field(header.get("numReadonlyUnsignedAccounts"))?;
-    if required_signatures != 1
+    // One signature for a self-paid transaction, two when a sponsor pays the fee; the fee
+    // payer is always the first account key.
+    let expected_signatures = if expected.fee_payer == expected.required_signer {
+        1
+    } else {
+        2
+    };
+    if required_signatures != expected_signatures
         || readonly_signed > required_signatures
-        || account_keys.first().copied() != Some(expected.required_signer.as_str())
+        || account_keys.first().copied() != Some(expected.fee_payer.as_str())
     {
         return Ok(false);
     }
@@ -736,7 +1133,10 @@ fn transaction_matches_json(
     }
 
     let mut expected_roles: HashMap<&str, (bool, bool)> = HashMap::new();
-    expected_roles.insert(expected.required_signer.as_str(), (true, true));
+    expected_roles.insert(expected.fee_payer.as_str(), (true, true));
+    expected_roles
+        .entry(expected.required_signer.as_str())
+        .or_insert((true, false));
     if trailing > 0 {
         expected_roles.insert(COMPUTE_BUDGET_PROGRAM_ID, (false, false));
     }
@@ -848,6 +1248,7 @@ mod tests {
         body.extend_from_slice(&10i64.to_le_bytes());
         body.extend_from_slice(&20i64.to_le_bytes());
         body.extend_from_slice(&[0; 32]); // firmware hash
+        body.extend_from_slice(&[0xfa; 32]); // facility_id
         body.push(250); // bump
         let data = with_discriminator("StationRecord", body);
         let station = decode_v2_station(&data, [7; 32], 250).unwrap();
@@ -908,9 +1309,55 @@ mod tests {
         );
     }
 
+    #[test]
+    fn event_anchor_and_intent_decoders_follow_the_v2_1_layouts() {
+        // PURPOSE: S4b/S1 — the API reads the reduced 83-byte EventAnchor and the 204-byte
+        // IntentState (with rent_payer) at the exact offsets the program writes.
+        // FAILURE MEANS: confirmation would misread anchors or refund the wrong rent payer.
+        let mut anchor = [0x11u8; 32].to_vec(); // event_hash
+        anchor.extend_from_slice(&[0x22; 32]); // subject_id
+        anchor.extend_from_slice(&5u64.to_le_bytes());
+        anchor.extend_from_slice(&18u16.to_le_bytes());
+        anchor.push(7);
+        let anchor = with_discriminator("EventAnchor", anchor);
+        assert_eq!(anchor.len(), EVENT_ANCHOR_LEN);
+        let decoded = decode_v2_event_anchor(&anchor, [1; 32], [2; 32], 7).unwrap();
+        assert_eq!(decoded.event_hash, [0x11; 32]);
+        assert_eq!(decoded.subject_id, [0x22; 32]);
+        assert_eq!(decoded.state_version, 5);
+        assert_eq!(decoded.event_type, 18);
+        assert_eq!(
+            (decoded.deployment_id, decoded.event_id),
+            ([1; 32], [2; 32])
+        );
+        assert!(decode_v2_event_anchor(&anchor, [1; 32], [2; 32], 6).is_err());
+        assert!(decode_v2_event_anchor(&anchor[..82], [1; 32], [2; 32], 7).is_err());
+
+        let mut intent = [0x31u8; 32].to_vec(); // intent_id
+        intent.extend_from_slice(&[0x32; 32]); // subject_id
+        intent.extend_from_slice(&2u16.to_le_bytes());
+        intent.extend_from_slice(&9u64.to_le_bytes());
+        intent.extend_from_slice(&3u64.to_le_bytes()); // nonce
+        intent.extend_from_slice(&[0x41; 32]); // actor
+        intent.push(1); // status OPEN
+        intent.extend_from_slice(&100i64.to_le_bytes());
+        intent.extend_from_slice(&0i64.to_le_bytes());
+        intent.extend_from_slice(&[0x51; 32]); // payload_hash
+        intent.extend_from_slice(&[0x61; 32]); // rent_payer
+        intent.push(4);
+        let intent = with_discriminator("IntentState", intent);
+        assert_eq!(intent.len(), INTENT_STATE_LEN);
+        let decoded = decode_v2_intent(&intent, [0x32; 32], [0x31; 32], 4).unwrap();
+        assert_eq!(decoded.actor, Pubkey::new_from_array([0x41; 32]));
+        assert_eq!(decoded.rent_payer, Pubkey::new_from_array([0x61; 32]));
+        assert_eq!(decoded.expected_state_version, 9);
+        assert!(decode_v2_intent(&intent, [0x33; 32], [0x31; 32], 4).is_err());
+    }
+
     fn expected_transaction() -> TransactionDataResponse {
         TransactionDataResponse {
             required_signer: "Signer111111111111111111111111111111111".into(),
+            fee_payer: "Signer111111111111111111111111111111111".into(),
             lastro_program_id: "Lastro111111111111111111111111111111111".into(),
             instructions: vec![
                 crate::model::InstructionDto {
@@ -1084,6 +1531,52 @@ mod tests {
         expected.instructions[1].accounts[0].is_writable = false;
         let valid = finalized_transaction_json(signature);
         assert!(transaction_matches_json(&valid, signature, &expected).unwrap());
+    }
+
+    #[test]
+    fn a_sponsored_transaction_matches_only_with_the_sponsor_as_fee_payer() {
+        // PURPOSE: S1 — a sponsor-paid transaction has two signers: the sponsor (fee payer,
+        // first key) and the read-only authorizing wallet.
+        // ASSERT: that exact shape matches; the same transaction expected as self-paid, or a
+        // sponsored one whose authorizing wallet is writable, does not.
+        // FAILURE MEANS: sponsored events could never finalize, or payer roles could be swapped.
+        let signature = "fixture-signature";
+        let mut expected = expected_transaction();
+        expected.fee_payer = "Sponsor11111111111111111111111111111111".into();
+        expected.instructions[1].accounts[0].is_writable = false;
+        let mut sponsored = finalized_transaction_json(signature);
+        sponsored["transaction"]["signatures"] = json!([signature, "user-signature"]);
+        sponsored["transaction"]["message"]["header"] = json!({
+            "numRequiredSignatures": 2,
+            "numReadonlySignedAccounts": 1,
+            "numReadonlyUnsignedAccounts": 3
+        });
+        let keys = sponsored["transaction"]["message"]["accountKeys"]
+            .as_array_mut()
+            .unwrap();
+        keys.insert(0, json!("Sponsor11111111111111111111111111111111"));
+        for instruction in sponsored["transaction"]["message"]["instructions"]
+            .as_array_mut()
+            .unwrap()
+        {
+            let index = instruction["programIdIndex"].as_u64().unwrap();
+            instruction["programIdIndex"] = json!(index + 1);
+            let accounts: Vec<u64> = instruction["accounts"]
+                .as_array()
+                .unwrap()
+                .iter()
+                .map(|value| value.as_u64().unwrap() + 1)
+                .collect();
+            instruction["accounts"] = json!(accounts);
+        }
+        assert!(transaction_matches_json(&sponsored, signature, &expected).unwrap());
+
+        let self_paid = expected_transaction();
+        assert!(!transaction_matches_json(&sponsored, signature, &self_paid).unwrap());
+
+        let mut writable_user = sponsored.clone();
+        writable_user["transaction"]["message"]["header"]["numReadonlySignedAccounts"] = json!(0);
+        assert!(!transaction_matches_json(&writable_user, signature, &expected).unwrap());
     }
 
     #[test]

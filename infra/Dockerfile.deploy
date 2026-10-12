@@ -6,3 +6,4 @@ COPY infra/compose.deploy.yml /deploy/compose.deploy.yml
 COPY infra/Caddyfile.production /deploy/Caddyfile.production
 COPY scripts/deploy_production.sh /deploy/deploy_production.sh
 COPY scripts/backup_production.sh /deploy/backup_production.sh
+COPY scripts/restore_production.sh /deploy/restore_production.sh

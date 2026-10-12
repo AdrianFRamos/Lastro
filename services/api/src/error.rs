@@ -20,6 +20,9 @@ pub enum ApiError {
     Validation(String),
     #[error("unauthorized")]
     Unauthorized,
+    /// Authenticated, but the role or organization does not allow this action.
+    #[error("forbidden")]
+    Forbidden,
     #[error("not found: {0}")]
     NotFound(String),
     #[error("state conflict: {0}")]
@@ -51,6 +54,7 @@ impl IntoResponse for ApiError {
                 (StatusCode::BAD_REQUEST, "INVALID_REQUEST", message.as_str())
             }
             ApiError::Unauthorized => (StatusCode::UNAUTHORIZED, "UNAUTHORIZED", "unauthorized"),
+            ApiError::Forbidden => (StatusCode::FORBIDDEN, "FORBIDDEN", "forbidden"),
             ApiError::NotFound(message) => (StatusCode::NOT_FOUND, "NOT_FOUND", message.as_str()),
             ApiError::Conflict(message) => (StatusCode::CONFLICT, "CONFLICT", message.as_str()),
             ApiError::RateLimited(message) => (

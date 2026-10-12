@@ -46,9 +46,10 @@ SYSTEM_PROGRAM_ID = "11111111111111111111111111111111"
 BPF_LOADER_UPGRADEABLE_ID = "BPFLoaderUpgradeab1e11111111111111111111111"
 COMPUTE_BUDGET_PROGRAM_ID = "ComputeBudget111111111111111111111111111111"
 INITIALIZE_COMPUTE_UNIT_LIMIT = 1400000
-SCHEMA_VERSION = 1
+# Account-layout schema of the deployment (chain/programs/lastro-v2/src/constants.rs).
+SCHEMA_VERSION = 2
 CONFIG_LENGTH = 221
-STATION_LENGTH = 155
+STATION_LENGTH = 187
 REGISTRIES = (b"station-registry", b"facility-registry", b"party-registry", b"document-registry")
 
 
@@ -216,7 +217,7 @@ def validate(rpc, program: str, program_id: bytes, deployment_id: bytes, pubkey:
     station_id = station_id_of(pubkey)
     station_address, station_bump = find_program_address([b"station-v2", deployment_id, station_id], program_id)
     station = decode_account_data(rpc.account(b58encode(station_address)), program, STATION_LENGTH)
-    if station[:8] != anchor_discriminator("StationRecord") or station[72:105] != pubkey or station[154] != station_bump:
+    if station[:8] != anchor_discriminator("StationRecord") or station[72:105] != pubkey or station[186] != station_bump:
         raise SystemContractError("StationRecord does not match the configured Station public key")
     return {
         "config": b58encode(config_address),

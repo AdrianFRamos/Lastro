@@ -168,7 +168,10 @@ pub fn verify_capture_evidence(
     ))
 }
 
-fn decode_hex_array<const N: usize>(name: &str, value: &str) -> Result<[u8; N], ApiError> {
+pub(crate) fn decode_hex_array<const N: usize>(
+    name: &str,
+    value: &str,
+) -> Result<[u8; N], ApiError> {
     if value.len() != N * 2 || value != value.to_ascii_lowercase() {
         return Err(ApiError::Validation(format!(
             "{name} must be exactly {N} bytes of lowercase hex"
@@ -181,7 +184,10 @@ fn decode_hex_array<const N: usize>(name: &str, value: &str) -> Result<[u8; N], 
         .map_err(|_| ApiError::Validation(format!("{name} has invalid length")))
 }
 
-fn decode_base64_array<const N: usize>(name: &str, value: &str) -> Result<[u8; N], ApiError> {
+pub(crate) fn decode_base64_array<const N: usize>(
+    name: &str,
+    value: &str,
+) -> Result<[u8; N], ApiError> {
     let encoded_len = N.div_ceil(3) * 4;
     if value.len() != encoded_len {
         return Err(ApiError::Validation(format!(

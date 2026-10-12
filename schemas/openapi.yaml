@@ -303,6 +303,705 @@ paths:
           $ref: '#/components/responses/BadRequest'
         '404':
           $ref: '#/components/responses/NotFound'
+  /api/v2/sessions:
+    post:
+      operationId: createV2Session
+      description: 'SPEC v2.1 S3. Prepares open_session for the custodian wallet (one signature authorizes the configured Station for presence proofs only, at most 12 h and 2000 events). Requires the operator token (custodian must be an ACTIVE party or an organization wallet) or a user token of the custodian''s organization with ORG_ADMIN or OPERADOR_CURRAL; at most 16 live sessions per custodian (429).'
+      security:
+      - OperatorToken: []
+      - UserToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - custodian
+              - maxEvents
+              - durationSeconds
+              properties:
+                custodian:
+                  $ref: '#/components/schemas/Hex32'
+                maxEvents:
+                  type: integer
+                  minimum: 1
+                  maximum: 2000
+                durationSeconds:
+                  type: integer
+                  minimum: 1
+                  maximum: 43200
+      responses:
+        '201':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}:
+    get:
+      operationId: getV2Session
+      description: Session projection.
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/confirm:
+    post:
+      operationId: confirmV2Session
+      description: Admits the finalized open_session and freezes the manifest (each tagged asset of the custodian at its projected head).
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - txSignature
+              properties:
+                txSignature:
+                  $ref: '#/components/schemas/SolanaSignature'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/manifest:
+    get:
+      operationId: getV2SessionManifest
+      description: Agent only. The frozen manifest the Agent needs to build every presence proof offline.
+      security:
+      - AgentToken: []
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/observations:
+    post:
+      operationId: ingestV2SessionObservation
+      description: Agent only. Admits one Station-signed OBSERVATION_RECORDED envelope whose capture id derives from (session, asset); idempotent per asset. Accepted up to 7 days after the observation (offline queues).
+      security:
+      - AgentToken: []
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - envelopeBase64
+              - observedRfidHex
+              - stationPubkeyHex
+              - stationSignatureHex
+              properties:
+                envelopeBase64:
+                  type: string
+                  contentEncoding: base64
+                observedRfidHex:
+                  type: string
+                  pattern: '^[0-9a-f]{16}$'
+                stationPubkeyHex:
+                  type: string
+                  pattern: '^[0-9a-f]{66}$'
+                stationSignatureHex:
+                  type: string
+                  pattern: '^[0-9a-f]{128}$'
+      responses:
+        '201':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/batches:
+    post:
+      operationId: prepareV2SessionBatch
+      description: Prepares anchor_observation_batch for up to 1024 pending proofs (Merkle root); repeating returns the same prepared batch. Agent, operator or the custodian's organization only.
+      security:
+      - AgentToken: []
+      - OperatorToken: []
+      - UserToken: []
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/batches/{batchIndex}/confirm:
+    post:
+      operationId: confirmV2SessionBatch
+      description: Admits the finalized batch after comparing the BatchAnchor with the prepared root, count and window.
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      - name: batchIndex
+        in: path
+        required: true
+        schema:
+          type: integer
+          minimum: 0
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - txSignature
+              properties:
+                txSignature:
+                  $ref: '#/components/schemas/SolanaSignature'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/revoke:
+    post:
+      operationId: revokeV2Session
+      description: Prepares revoke_session for the custodian; no observation after it is admitted. Operator or the custodian's organization only.
+      security:
+      - OperatorToken: []
+      - UserToken: []
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/sessions/{sessionId}/sync:
+    post:
+      operationId: syncV2Session
+      description: Mirrors the canonical SessionGrant (e.g. a revocation) into the projection.
+      parameters:
+      - name: sessionId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (handling sessions).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/facilities/{facilityId}/boundary:
+    post:
+      operationId: setV2FacilityBoundary
+      description: SPEC v2.1 S5. Stores the CAR code and polygon once (immutable) and returns the geoCommitment = SHA-256("LASTRO_V2_GEO\0" || canonical bytes) the on-chain FacilityRecord will hold.
+      security:
+      - OperatorToken: []
+      parameters:
+      - name: facilityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - carCode
+              - rings
+              properties:
+                carCode:
+                  type: string
+                  minLength: 1
+                  maxLength: 100
+                rings:
+                  type: array
+                  minItems: 1
+                  maxItems: 64
+                  description: Rings of [longitude, latitude] WGS84 degrees; ring 0 is the outer boundary, every ring closed; at most 10 000 points in total.
+                  items:
+                    type: array
+                    minItems: 4
+                    items:
+                      type: array
+                      minItems: 2
+                      maxItems: 2
+                      items:
+                        type: number
+      responses:
+        '201':
+          description: See docs/API.md (facility boundaries).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/facilities/{facilityId}/transaction-data:
+    post:
+      operationId: getV2RegisterFacilityTransactionData
+      description: Prepares register_facility for the deployment authority, carrying the stored geoCommitment (zero without boundary).
+      security:
+      - OperatorToken: []
+      parameters:
+      - name: facilityId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (facility boundaries).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/stations/{stationId}/facility/transaction-data:
+    post:
+      operationId: getV2SetStationFacilityTransactionData
+      description: Prepares set_station_facility for the deployment authority; the facility must be ACTIVE on-chain. Sessions require an installed Station.
+      security:
+      - OperatorToken: []
+      parameters:
+      - name: stationId
+        in: path
+        required: true
+        schema:
+          $ref: '#/components/schemas/Hex32'
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - facilityId
+              properties:
+                facilityId:
+                  $ref: '#/components/schemas/Hex32'
+      responses:
+        '200':
+          description: See docs/API.md (facility boundaries).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '404':
+          $ref: '#/components/responses/NotFound'
+        '409':
+          $ref: '#/components/responses/Conflict'
+  /api/v2/organizations:
+    post:
+      operationId: createV2Organization
+      description: SPEC v2.1 S2. Creates an organization, its custodian wallet (secret sealed with AES-256-GCM under the deployment master key, never stored in clear) and its first ORG_ADMIN. 503 when managed wallets are not configured.
+      security:
+      - OperatorToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - name
+              - adminEmail
+              properties:
+                name:
+                  type: string
+                  minLength: 2
+                  maxLength: 200
+                adminEmail:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '201':
+          description: orgId, name, wallet (base58) and adminUserId. See docs/API.md (organization accounts).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/organizations/{orgId}/users:
+    post:
+      operationId: addV2OrganizationUser
+      description: ORG_ADMIN of this organization only (user bearer token). Roles are ORG_ADMIN, OPERADOR_CURRAL, AUDITOR and LEITURA.
+      security:
+      - UserToken: []
+      parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - email
+              - role
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                role:
+                  type: string
+                  enum:
+                  - ORG_ADMIN
+                  - OPERADOR_CURRAL
+                  - AUDITOR
+                  - LEITURA
+      responses:
+        '201':
+          description: The new user. See docs/API.md (organization accounts).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/organizations/{orgId}/users/{userId}/disable:
+    post:
+      operationId: disableV2OrganizationUser
+      description: ORG_ADMIN of this organization; disables the user and revokes every token of that user. Audited.
+      security:
+      - UserToken: []
+      parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      - name: userId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      responses:
+        '204':
+          description: Disabled.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '403':
+          $ref: '#/components/responses/Forbidden'
+        '404':
+          $ref: '#/components/responses/NotFound'
+  /api/v2/auth/logout:
+    post:
+      operationId: logoutV2User
+      description: Revokes the caller's bearer token.
+      security:
+      - UserToken: []
+      responses:
+        '204':
+          description: Revoked.
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v2/organizations/{orgId}/export:
+    post:
+      operationId: exportV2OrganizationKey
+      description: ORG_ADMIN only, with a fresh one-time code (request one with /api/v2/auth/otp/request). Returns the organization keypair (Solana CLI 64-byte format) once so the organization can leave managed custody; confirmWallet must repeat the wallet. Afterwards the platform no longer signs for the organization (409). Recorded in the audit log; Cache-Control no-store.
+      security:
+      - UserToken: []
+      parameters:
+      - name: orgId
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - confirmWallet
+              - code
+              properties:
+                confirmWallet:
+                  $ref: '#/components/schemas/Base58Address'
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+      responses:
+        '200':
+          description: wallet and keypair (64 integers). See docs/API.md (organization accounts).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/auth/otp/request:
+    post:
+      operationId: requestV2LoginCode
+      description: Issues a six-digit one-time code (10 min, 5 attempts, at most 5 per user per 15 min). Always 202 for a well-formed e-mail so accounts cannot be enumerated.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - email
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '202':
+          description: Accepted; a code is delivered if the account exists.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/auth/otp/verify:
+    post:
+      operationId: verifyV2LoginCode
+      description: Exchanges a live code for a 12 h bearer token (only its hash is stored).
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - email
+              - code
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+                code:
+                  type: string
+                  pattern: ^[0-9]{6}$
+      responses:
+        '200':
+          description: token, expiresAt and user. See docs/API.md (organization accounts).
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/me:
+    get:
+      operationId: getV2CurrentUser
+      description: The signed-in user, organization, role and organization wallet.
+      security:
+      - UserToken: []
+      responses:
+        '200':
+          description: See docs/API.md (organization accounts).
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+  /api/v2/org/sign:
+    post:
+      operationId: signV2WithOrganizationWallet
+      description: 'The organization wallet signs the transaction the API prepares for `purpose` (same purposes as /api/v2/sponsor/submit) and the API broadcasts it, sponsored when the platform pays. Only purposes the user''s role allows (OPERADOR_CURRAL: SESSION_*; ORG_ADMIN: all) and only when the organization wallet is the required signer. The caller never supplies transaction bytes.'
+      security:
+      - UserToken: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - purpose
+              properties:
+                purpose:
+                  type: object
+                  required:
+                  - kind
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                      - STATION_EVENT
+                      - REGISTER_ASSET
+                      - CUSTODY_PROPOSE
+                      - CUSTODY_ACCEPT
+                      - SESSION_OPEN
+                      - SESSION_BATCH
+                      - SESSION_REVOKE
+      responses:
+        '200':
+          description: txSignature, feePayer and signer. Confirm through the purpose's own confirm route.
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '401':
+          $ref: '#/components/responses/Unauthorized'
+        '409':
+          $ref: '#/components/responses/Conflict'
+        '503':
+          $ref: '#/components/responses/Unavailable'
+  /api/v2/sponsor/submit:
+    post:
+      operationId: submitSponsoredTransaction
+      description: SPEC v2.1 S1. The API re-derives the exact transaction named by `purpose`
+        (same code as the transaction-data routes), requires the submitted legacy transaction to
+        be byte-identical with the sponsor as unsigned fee payer and every other signer already
+        signed, enforces the per-transaction and rolling 24 h budgets, adds the sponsor signature
+        and broadcasts. 409 when sponsorship is disabled, the bytes differ, a budget is exhausted
+        or the sponsor would also be the deployment authority.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required:
+              - purpose
+              - transactionBase64
+              additionalProperties: false
+              properties:
+                purpose:
+                  type: object
+                  required:
+                  - kind
+                  properties:
+                    kind:
+                      type: string
+                      enum:
+                      - STATION_EVENT
+                      - REGISTER_ASSET
+                      - CUSTODY_PROPOSE
+                      - CUSTODY_ACCEPT
+                      - SESSION_OPEN
+                      - SESSION_BATCH
+                      - SESSION_REVOKE
+                transactionBase64:
+                  type: string
+                  contentEncoding: base64
+                  maxLength: 1644
+      responses:
+        '200':
+          description: Co-signed by the sponsor and broadcast.
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required:
+                - txSignature
+                - feePayer
+                - reservedLamports
+                - signedTransactionBase64
+                properties:
+                  txSignature:
+                    $ref: '#/components/schemas/SolanaSignature'
+                  feePayer:
+                    $ref: '#/components/schemas/Base58Address'
+                  reservedLamports:
+                    type: integer
+                    minimum: 1
+                  signedTransactionBase64:
+                    type: string
+                    contentEncoding: base64
+        '400':
+          $ref: '#/components/responses/BadRequest'
+        '409':
+          $ref: '#/components/responses/Conflict'
   /api/v2/custody-transfers/{transferId}/accept:
     post:
       operationId: acceptV2CustodyTransfer
@@ -560,6 +1259,10 @@ components:
     OperatorToken:
       type: http
       scheme: bearer
+    UserToken:
+      type: http
+      scheme: bearer
+      description: Organization user session from /api/v2/auth/otp/verify (64 hex characters).
   parameters:
     EventHash:
       in: path
@@ -1036,6 +1739,7 @@ components:
       additionalProperties: false
       required:
       - requiredSigner
+      - feePayer
       - lastroProgramId
       - instructions
       - measuredSerializedBytes
@@ -1043,6 +1747,11 @@ components:
       properties:
         requiredSigner:
           $ref: '#/components/schemas/Base58Address'
+        feePayer:
+          $ref: '#/components/schemas/Base58Address'
+          description: Pays the network fee and the rent of created accounts. Equal to
+            requiredSigner when self-paid; otherwise the platform fee sponsor, which co-signs
+            through /api/v2/sponsor/submit and never authorizes anything.
         lastroProgramId:
           $ref: '#/components/schemas/Base58Address'
         instructions:
@@ -1230,6 +1939,12 @@ components:
             $ref: '#/components/schemas/ErrorResponse'
     Unauthorized:
       description: Agent bearer token missing or invalid.
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/ErrorResponse'
+    Forbidden:
+      description: Authenticated, but the role or organization does not allow this action.
       content:
         application/json:
           schema:

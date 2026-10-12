@@ -64,8 +64,11 @@ fn require_nonzero(value: &[u8; 32]) -> Result<()> {
 #[derive(Accounts)]
 #[instruction(asset_id: [u8; 32])]
 pub struct RegisterAsset<'info> {
-    #[account(mut)]
     pub authority: Signer<'info>,
+    /// Funds the rent of the accounts this instruction creates. It may be the authorizing
+    /// signer itself or a separate fee sponsor; it never grants any authority.
+    #[account(mut)]
+    pub payer: Signer<'info>,
     #[account(
         seeds = [CONFIG_V2_SEED, &config.deployment_id],
         bump = config.bump,
@@ -74,7 +77,7 @@ pub struct RegisterAsset<'info> {
     pub config: Account<'info, ProtocolConfigV2>,
     #[account(
         init,
-        payer = authority,
+        payer = payer,
         space = AssetState::SPACE,
         seeds = [ASSET_SEED, &config.deployment_id, &asset_id],
         bump

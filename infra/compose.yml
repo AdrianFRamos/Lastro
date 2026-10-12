@@ -67,6 +67,8 @@ services:
       dockerfile: hardware-simulator/Dockerfile.agent-bridge
     environment:
       LASTRO_AGENT_API_URL: http://api:8080
+      # Private compose network only; outside loopback the Agent otherwise requires https.
+      LASTRO_AGENT_ALLOW_INSECURE_HTTP: "1"
       LASTRO_AGENT_TOKEN: ${LASTRO_AGENT_TOKEN:?set LASTRO_AGENT_TOKEN}
       LASTRO_AGENT_SERIAL_PORT: /tmp/lastro-station
       LASTRO_AGENT_SERIAL_BAUD: "115200"

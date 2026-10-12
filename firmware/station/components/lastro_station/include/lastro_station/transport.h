@@ -85,6 +85,14 @@ void lastro_transport_reset(void);
 /** Incrementally feed arbitrary serial chunks; corrupted frames are never exposed. */
 bool lastro_transport_feed(const uint8_t *bytes, size_t len);
 
+/*
+ * Consumes bytes until one frame is ready (or all bytes are consumed) and returns how many it
+ * took. It never refuses input because of a waiting frame: it simply takes nothing until that
+ * frame is taken. Callers alternate feed_some and take until the chunk is consumed, so a burst
+ * of frames in one USB read can never wedge the parser.
+ */
+size_t lastro_transport_feed_some(const uint8_t *bytes, size_t len);
+
 /** Return the next decoded frame once. The payload pointer remains valid until the next feed/take. */
 bool lastro_transport_take(lastro_frame_view_t *out);
 

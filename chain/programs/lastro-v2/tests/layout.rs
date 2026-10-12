@@ -2,9 +2,9 @@ use anchor_lang::{AnchorSerialize, prelude::Pubkey};
 use lastro_v2::{
     constants::{is_valid_asset_type, is_valid_facility_type, is_valid_party_role},
     state::{
-        AssetState, EventAnchor, FacilityRecord, IntentState, LineageAnchor, PartyRecord,
-        ProtocolConfigV2, RegistryRoot, RfidBinding, StationRecord, TransformationAnchor,
-        TransformationReservation,
+        AssetState, BatchAnchor, EventAnchor, FacilityRecord, IntentState, LineageAnchor,
+        PartyRecord, ProtocolConfigV2, RegistryRoot, RfidBinding, SessionGrant, StationRecord,
+        TransformationAnchor, TransformationReservation,
     },
 };
 
@@ -61,6 +61,7 @@ fn account_space_constants_match_serialized_layouts() {
             valid_from: 0,
             valid_until: 0,
             firmware_hash: [0; 32],
+            facility_id: [0; 32],
             bump: 0,
         },
         StationRecord::SPACE,
@@ -75,6 +76,7 @@ fn account_space_constants_match_serialized_layouts() {
             credential_hash: [0; 32],
             valid_from: 0,
             valid_until: 0,
+            geo_commitment: [0; 32],
             bump: 0,
         },
         FacilityRecord::SPACE,
@@ -114,6 +116,7 @@ fn account_space_constants_match_serialized_layouts() {
             expires_at: 0,
             consumed_at: 0,
             payload_hash: [0; 32],
+            rent_payer: key,
             bump: 0,
         },
         IntentState::SPACE,
@@ -121,17 +124,10 @@ fn account_space_constants_match_serialized_layouts() {
     assert_exact_space(
         "EventAnchor",
         &EventAnchor {
-            event_id: [0; 32],
-            deployment_id: [0; 32],
-            subject_id: [0; 32],
-            source_id: [0; 32],
-            event_type: 0,
-            state_version: 0,
-            observed_at: 0,
-            expires_at: 0,
-            expected_previous_hash: [0; 32],
-            payload_hash: [0; 32],
             event_hash: [0; 32],
+            subject_id: [0; 32],
+            state_version: 0,
+            event_type: 0,
             bump: 0,
         },
         EventAnchor::SPACE,
@@ -200,6 +196,127 @@ fn asset_state_space_matches_api_decoder_layout() {
     // PURPOSE: the API decodes AssetState at the same size the program allocates.
     // FAILURE MEANS: the API would reject or misread every canonical asset.
     assert_eq!(AssetState::SPACE, 341);
+}
+
+/// The API reads the reduced EventAnchor and IntentState at fixed offsets
+/// (services/api/src/solana/rpc.rs: decode_v2_event_anchor, decode_v2_intent).
+#[test]
+fn event_anchor_and_intent_offsets_match_the_api_decoders() {
+    // PURPOSE: S4b/S1 — the program's serialized bytes sit where the API decodes them.
+    // FAILURE MEANS: the API would misread anchors on confirmation or refund the wrong payer.
+    let anchor = EventAnchor {
+        event_hash: [0x11; 32],
+        subject_id: [0x22; 32],
+        state_version: 5,
+        event_type: 18,
+        bump: 7,
+    };
+    let mut bytes = vec![0u8; 8];
+    anchor.serialize(&mut bytes).unwrap();
+    assert_eq!(bytes.len(), 83);
+    assert_eq!(&bytes[8..40], &[0x11; 32]);
+    assert_eq!(&bytes[40..72], &[0x22; 32]);
+    assert_eq!(&bytes[72..80], &5u64.to_le_bytes());
+    assert_eq!(&bytes[80..82], &18u16.to_le_bytes());
+    assert_eq!(bytes[82], 7);
+
+    let actor = Pubkey::new_from_array([0x41; 32]);
+    let rent_payer = Pubkey::new_from_array([0x61; 32]);
+    let intent = IntentState {
+        intent_id: [0x31; 32],
+        subject_id: [0x32; 32],
+        intent_type: 2,
+        expected_state_version: 9,
+        nonce: 3,
+        actor,
+        status: 1,
+        expires_at: 100,
+        consumed_at: 0,
+        payload_hash: [0x51; 32],
+        rent_payer,
+        bump: 4,
+    };
+    let mut bytes = vec![0u8; 8];
+    intent.serialize(&mut bytes).unwrap();
+    assert_eq!(bytes.len(), 204);
+    assert_eq!(&bytes[8..40], &[0x31; 32]);
+    assert_eq!(&bytes[40..72], &[0x32; 32]);
+    assert_eq!(&bytes[74..82], &9u64.to_le_bytes());
+    assert_eq!(&bytes[90..122], actor.as_ref());
+    assert_eq!(&bytes[171..203], rent_payer.as_ref());
+    assert_eq!(bytes[203], 4);
+}
+
+/// API and browser decode SessionGrant (208) and BatchAnchor (201) at these offsets.
+#[test]
+fn session_and_batch_offsets_match_the_off_chain_decoders() {
+    // PURPOSE: S3/S4a — off-chain readers find every session term where the program wrote it.
+    // FAILURE MEANS: the verifier would check observations against the wrong window or Station.
+    let custodian = Pubkey::new_from_array([0x41; 32]);
+    let rent_payer = Pubkey::new_from_array([0x61; 32]);
+    let session = SessionGrant {
+        session_id: [0x11; 32],
+        custodian,
+        station_id: [0x22; 32],
+        allowed_actions: 1,
+        max_events: 2_000,
+        events_used: 7,
+        batch_count: 2,
+        valid_from: 100,
+        expires_at: 200,
+        revoked_at: 150,
+        status: 2,
+        rent_payer,
+        facility_id: [0xfa; 32],
+        bump: 9,
+    };
+    let mut bytes = vec![0u8; 8];
+    session.serialize(&mut bytes).unwrap();
+    assert_eq!(bytes.len(), SessionGrant::SPACE);
+    assert_eq!(bytes.len(), 208);
+    assert_eq!(&bytes[8..40], &[0x11; 32]);
+    assert_eq!(&bytes[40..72], custodian.as_ref());
+    assert_eq!(&bytes[72..104], &[0x22; 32]);
+    assert_eq!(&bytes[104..106], &1u16.to_le_bytes());
+    assert_eq!(&bytes[106..110], &2_000u32.to_le_bytes());
+    assert_eq!(&bytes[110..114], &7u32.to_le_bytes());
+    assert_eq!(&bytes[114..118], &2u32.to_le_bytes());
+    assert_eq!(&bytes[118..126], &100i64.to_le_bytes());
+    assert_eq!(&bytes[126..134], &200i64.to_le_bytes());
+    assert_eq!(&bytes[134..142], &150i64.to_le_bytes());
+    assert_eq!(bytes[142], 2);
+    assert_eq!(&bytes[143..175], rent_payer.as_ref());
+    assert_eq!(&bytes[175..207], &[0xfa; 32]);
+    assert_eq!(bytes[207], 9);
+
+    let batch = BatchAnchor {
+        session_id: [0x11; 32],
+        batch_index: 3,
+        custodian,
+        station_id: [0x22; 32],
+        merkle_root: [0x33; 32],
+        leaf_count: 500,
+        first_observed_at: 110,
+        last_observed_at: 190,
+        anchored_at: 300,
+        facility_id: [0xfa; 32],
+        bump: 4,
+    };
+    let mut bytes = vec![0u8; 8];
+    batch.serialize(&mut bytes).unwrap();
+    assert_eq!(bytes.len(), BatchAnchor::SPACE);
+    assert_eq!(bytes.len(), 201);
+    assert_eq!(&bytes[8..40], &[0x11; 32]);
+    assert_eq!(&bytes[40..44], &3u32.to_le_bytes());
+    assert_eq!(&bytes[44..76], custodian.as_ref());
+    assert_eq!(&bytes[76..108], &[0x22; 32]);
+    assert_eq!(&bytes[108..140], &[0x33; 32]);
+    assert_eq!(&bytes[140..144], &500u32.to_le_bytes());
+    assert_eq!(&bytes[144..152], &110i64.to_le_bytes());
+    assert_eq!(&bytes[152..160], &190i64.to_le_bytes());
+    assert_eq!(&bytes[160..168], &300i64.to_le_bytes());
+    assert_eq!(&bytes[168..200], &[0xfa; 32]);
+    assert_eq!(bytes[200], 4);
 }
 
 fn asset() -> AssetState {

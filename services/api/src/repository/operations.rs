@@ -7,7 +7,7 @@ use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::{error::ApiError, model::LotAssetInput};
+use crate::{error::ApiError, model::LotAssetInput, repository::db_error};
 
 #[derive(Clone, Debug)]
 pub struct PartyRecord {
@@ -68,6 +68,8 @@ pub struct CustodyTransferRecord {
     pub tx_signature: Option<String>,
     pub created_by_party_id: Option<[u8; 32]>,
     pub accepted_by_party_id: Option<[u8; 32]>,
+    /// Account the on-chain proposal recorded as rent payer (read when acceptance is prepared).
+    pub intent_rent_payer: Option<[u8; 32]>,
 }
 
 #[derive(Clone, Debug)]
@@ -166,7 +168,7 @@ pub async fn find_transfer(
     transfer_id: Uuid,
 ) -> Result<Option<CustodyTransferRecord>, ApiError> {
     let row = sqlx::query(
-        "SELECT transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id FROM v2_custody_transfers WHERE deployment_id=$1 AND transfer_id=$2",
+        "SELECT transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id,intent_rent_payer FROM v2_custody_transfers WHERE deployment_id=$1 AND transfer_id=$2",
     )
     .bind(deployment_id.to_vec())
     .bind(transfer_id)
@@ -388,7 +390,7 @@ pub async fn insert_transfer_tx(
         ));
     }
     let row = sqlx::query(
-        "INSERT INTO v2_custody_transfers(transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,created_by_party_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PROPOSED',$9) RETURNING transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id",
+        "INSERT INTO v2_custody_transfers(transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,created_by_party_id) VALUES($1,$2,$3,$4,$5,$6,$7,$8,'PROPOSED',$9) RETURNING transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id,intent_rent_payer",
     )
     .bind(transfer_id)
     .bind(deployment_id.to_vec())
@@ -407,6 +409,26 @@ pub async fn insert_transfer_tx(
 
 /// Records an acceptance already proven by finalized Solana state (the caller verifies the
 /// recipient-signed transaction and the canonical custodian before calling this).
+/// Records the rent payer of a still-PROPOSED transfer's on-chain intent. The value comes from
+/// canonical chain state and an intent's rent payer never changes while it is open.
+pub async fn record_intent_rent_payer(
+    pool: &PgPool,
+    deployment_id: [u8; 32],
+    transfer_id: Uuid,
+    rent_payer: [u8; 32],
+) -> Result<(), ApiError> {
+    sqlx::query(
+        "UPDATE v2_custody_transfers SET intent_rent_payer=$3 WHERE deployment_id=$1 AND transfer_id=$2 AND status='PROPOSED'",
+    )
+    .bind(deployment_id.to_vec())
+    .bind(transfer_id)
+    .bind(rent_payer.to_vec())
+    .execute(pool)
+    .await
+    .map_err(db_error)?;
+    Ok(())
+}
+
 pub async fn accept_transfer_tx(
     tx: &mut Transaction<'_, Postgres>,
     deployment_id: [u8; 32],
@@ -416,7 +438,7 @@ pub async fn accept_transfer_tx(
     state_version: u64,
 ) -> Result<CustodyTransferRecord, ApiError> {
     let row = sqlx::query(
-        "UPDATE v2_custody_transfers SET status='ACCEPTED',accepted_by_party_id=to_party_id,tx_signature=$3,accepted_at=now() WHERE deployment_id=$1 AND transfer_id=$2 AND status='PROPOSED' RETURNING transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id",
+        "UPDATE v2_custody_transfers SET status='ACCEPTED',accepted_by_party_id=to_party_id,tx_signature=$3,accepted_at=now() WHERE deployment_id=$1 AND transfer_id=$2 AND status='PROPOSED' RETURNING transfer_id,deployment_id,asset_id,from_party_id,to_party_id,from_facility_id,to_facility_id,reason,status,event_id,tx_signature,created_by_party_id,accepted_by_party_id,intent_rent_payer",
     )
     .bind(deployment_id.to_vec())
     .bind(transfer_id)
@@ -735,6 +757,7 @@ fn decode_transfer(row: &PgRow) -> Result<CustodyTransferRecord, ApiError> {
         tx_signature: row.try_get("tx_signature").map_err(db_error)?,
         created_by_party_id: optional_fixed(row, "created_by_party_id")?,
         accepted_by_party_id: optional_fixed(row, "accepted_by_party_id")?,
+        intent_rent_payer: optional_fixed(row, "intent_rent_payer")?,
     })
 }
 
@@ -803,8 +826,4 @@ fn map_constraint_error(error: sqlx::Error) -> ApiError {
         }
         _ => db_error(error),
     }
-}
-
-fn db_error(_error: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres query failed".into())
 }

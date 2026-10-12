@@ -2,7 +2,13 @@
 export type VerificationStatus = 'VALID' | 'INVALID' | 'NOT_CHECKED'
 
 export type VerificationLayerName =
-  'RFID_EVIDENCE' | 'STATION_SIGNATURE' | 'IDENTITY_CONTINUITY' | 'CUSTODY' | 'ON_CHAIN_STATE'
+  | 'RFID_EVIDENCE'
+  | 'STATION_SIGNATURE'
+  | 'IDENTITY_CONTINUITY'
+  | 'CUSTODY'
+  /** v2.1 S5: each batch's facility and the boundary its on-chain commitment hashes. */
+  | 'FACILITY_ORIGIN'
+  | 'ON_CHAIN_STATE'
 
 export interface VerificationLayerResult {
   layer: VerificationLayerName

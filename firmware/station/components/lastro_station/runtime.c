@@ -98,14 +98,21 @@ bool lastro_runtime_feed_agent(const uint8_t *bytes, size_t len)
 {
     if ((bytes == NULL && len != 0u) || g_write_bytes == NULL) return false;
     if (!flush_pending()) return false;
-    if (!lastro_transport_feed(bytes, len)) return false;
 
+    /* Every byte is consumed and every complete frame handled, even when one of them is
+     * rejected (e.g. a replayed ACK for another capture): stopping early would leave frames
+     * buffered and the parser would refuse all later input until a reboot. */
+    bool accepted = true;
+    size_t offset = 0u;
     lastro_frame_view_t frame;
-    while (lastro_transport_take(&frame)) {
-        if (!handle_inbound_frame(&frame)) return false;
-        if (g_pending_frame_len != 0u && !flush_pending()) return false;
-    }
-    return true;
+    do {
+        offset += lastro_transport_feed_some(bytes + offset, len - offset);
+        while (lastro_transport_take(&frame)) {
+            if (!handle_inbound_frame(&frame)) accepted = false;
+            if (g_pending_frame_len != 0u && !flush_pending()) return false;
+        }
+    } while (offset < len);
+    return accepted;
 }
 
 bool lastro_runtime_observe_rfid(const lastro_canonical_rfid_t *rfid)

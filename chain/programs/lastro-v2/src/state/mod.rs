@@ -8,6 +8,7 @@ pub mod lineage;
 pub mod registries;
 pub mod reservation;
 pub mod rfid_binding;
+pub mod session;
 pub mod transformation;
 
 pub use assets::AssetState;
@@ -18,4 +19,5 @@ pub use lineage::LineageAnchor;
 pub use registries::{FacilityRecord, PartyRecord, RegistryRoot, StationRecord};
 pub use reservation::TransformationReservation;
 pub use rfid_binding::RfidBinding;
+pub use session::{BatchAnchor, SessionGrant};
 pub use transformation::TransformationAnchor;

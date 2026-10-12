@@ -11,6 +11,22 @@
 #include "lastro_station/rfid.h"
 #include "lastro_station/runtime.h"
 #include "lastro_station/station.h"
+#include "sdkconfig.h"
+
+#if CONFIG_LASTRO_STATION_RELEASE
+#include "esp_flash_encrypt.h"
+#include "esp_secure_boot.h"
+/* A production Station must not be reflashable, readable or debuggable over USB (C3). */
+#if !CONFIG_SECURE_BOOT_V2_ENABLED || !CONFIG_SECURE_FLASH_ENC_ENABLED \
+    || !CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE \
+    || !(CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE || CONFIG_SECURE_DISABLE_ROM_DL_MODE)
+#error "LASTRO_STATION_RELEASE requires Secure Boot v2, release flash encryption and a secure or disabled ROM download mode"
+#endif
+#if CONFIG_SECURE_BOOT_ALLOW_JTAG || CONFIG_SECURE_FLASH_UART_BOOTLOADER_ALLOW_ENC \
+    || CONFIG_SECURE_FLASH_UART_BOOTLOADER_ALLOW_DEC || CONFIG_SECURE_FLASH_UART_BOOTLOADER_ALLOW_CACHE
+#error "LASTRO_STATION_RELEASE must not re-enable JTAG or plaintext UART flash access"
+#endif
+#endif
 
 #define LASTRO_AGENT_USB_BUFFER_SIZE 1024u
 #define LASTRO_AGENT_READ_CHUNK_SIZE 512u
@@ -50,6 +66,14 @@ void app_main(void)
     uint8_t agent_bytes[LASTRO_AGENT_READ_CHUNK_SIZE];
     int64_t last_tick_us = esp_timer_get_time();
 
+#if CONFIG_LASTRO_STATION_RELEASE
+    if (!esp_secure_boot_enabled() || !esp_flash_encryption_enabled()) {
+        fail_closed("Production Station requires Secure Boot and flash encryption to be active.");
+        return;
+    }
+#else
+    ESP_LOGW(TAG, "Development Station build: firmware is reflashable over USB; do not deploy.");
+#endif
     if (usb_serial_jtag_driver_install(&usb_config) != ESP_OK) {
         fail_closed("Cannot initialize the native USB Serial/JTAG Agent transport.");
         return;

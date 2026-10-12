@@ -44,4 +44,8 @@ pub enum ProtocolError {
     MassOverflow,
     #[error("mass balance is invalid")]
     InvalidMassBalance,
+    #[error("observation batch is invalid")]
+    InvalidBatch,
+    #[error("facility boundary is invalid")]
+    InvalidBoundary,
 }

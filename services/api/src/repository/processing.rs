@@ -12,6 +12,7 @@ use time::OffsetDateTime;
 use crate::{
     error::ApiError,
     model::{ProcessingItemInput, ShipmentItemInput},
+    repository::db_error,
 };
 
 #[derive(Clone, Debug)]
@@ -788,7 +789,4 @@ fn map_constraint_error(error: sqlx::Error) -> ApiError {
         }
         _ => db_error(error),
     }
-}
-fn db_error(_: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres query failed".into())
 }

@@ -7,6 +7,7 @@ interface ImportMetaEnv {
   readonly VITE_LASTRO_PROGRAM_ID: string
   readonly VITE_LASTRO_DEPLOYMENT_ID_HEX: string
   readonly VITE_LASTRO_AUTHORITY?: string
+  readonly VITE_LASTRO_SPONSOR?: string
 }
 
 interface ImportMeta {

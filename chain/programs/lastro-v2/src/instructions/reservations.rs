@@ -8,7 +8,8 @@ use crate::{
         ASSET_SEED, ASSET_STATUS_ACTIVE, ASSET_STATUS_IN_TRANSIT, CONFIG_V2_SEED,
         FACILITY_REGISTRY_SEED, FACILITY_SEED, TRANSFORMATION_RESERVATION_SEED,
         TRANSFORMATION_SEED, TRANSFORMATION_STATUS_ABORTED, TRANSFORMATION_STATUS_EXPIRED,
-        TRANSFORMATION_STATUS_FINALIZED, TRANSFORMATION_STATUS_OPEN,
+        TRANSFORMATION_STATUS_FINALIZED, TRANSFORMATION_STATUS_FINALIZING,
+        TRANSFORMATION_STATUS_OPEN,
     },
     error::LastroV2Error,
     instructions::transformations::{require_lineage_leaf, require_operating_facility},
@@ -130,8 +131,12 @@ pub fn release_handler(
     asset_id: [u8; 32],
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
+    // Once consumption has started every remaining input is committed to the manifest (A2).
     require!(
-        ctx.accounts.transformation.status != TRANSFORMATION_STATUS_FINALIZED,
+        !matches!(
+            ctx.accounts.transformation.status,
+            TRANSFORMATION_STATUS_FINALIZED | TRANSFORMATION_STATUS_FINALIZING
+        ),
         LastroV2Error::InvalidReservation
     );
     require!(
@@ -140,7 +145,8 @@ pub fn release_handler(
             && ctx.accounts.reservation.consumed_at == 0,
         LastroV2Error::InvalidReservation
     );
-    let lapsed = now >= ctx.accounts.reservation.reserved_until
+    // Strictly after the deadline: at `reserved_until` itself consumption is still allowed.
+    let lapsed = now > ctx.accounts.reservation.reserved_until
         || matches!(
             ctx.accounts.transformation.status,
             TRANSFORMATION_STATUS_ABORTED | TRANSFORMATION_STATUS_EXPIRED

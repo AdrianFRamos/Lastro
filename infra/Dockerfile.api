@@ -9,6 +9,9 @@ FROM debian:bookworm-20260918-slim@sha256:3783cc01769c7b2b1b83a5c5ad96c815348e28
 COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=builder /src/target/release/lastro-api /usr/local/bin/lastro-api
 COPY services/api/migrations /app/migrations
+# Never run as root: key files in /run/secrets/lastro are owned by this uid (mode 0400).
+RUN useradd --system --uid 10001 --no-create-home --shell /usr/sbin/nologin lastro
+USER 10001:10001
 WORKDIR /app
 EXPOSE 8080
 ENTRYPOINT ["lastro-api"]

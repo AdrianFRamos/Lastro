@@ -22,11 +22,13 @@ pub struct StationRecord {
     pub valid_from: i64,
     pub valid_until: i64,
     pub firmware_hash: [u8; 32],
+    /// Facility the Station is installed at (S5); all zero until the authority binds it.
+    pub facility_id: [u8; 32],
     pub bump: u8,
 }
 
 impl StationRecord {
-    pub const SPACE: usize = 8 + 32 + 32 + 33 + 1 + 8 + 8 + 32 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 33 + 1 + 8 + 8 + 32 + 32 + 1;
 }
 
 #[account]
@@ -38,11 +40,14 @@ pub struct FacilityRecord {
     pub credential_hash: [u8; 32],
     pub valid_from: i64,
     pub valid_until: i64,
+    /// SHA-256("LASTRO_V2_GEO\0" || CAR code || 0x00 || canonical GeoJSON); zero when the
+    /// facility has no registered boundary. Immutable: past evidence keeps its meaning.
+    pub geo_commitment: [u8; 32],
     pub bump: u8,
 }
 
 impl FacilityRecord {
-    pub const SPACE: usize = 8 + 32 + 32 + 1 + 1 + 32 + 8 + 8 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 1 + 1 + 32 + 8 + 8 + 32 + 1;
 }
 
 #[account]

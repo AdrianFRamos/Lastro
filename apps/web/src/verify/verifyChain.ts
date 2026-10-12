@@ -15,7 +15,9 @@ import {
 } from '../solana/constants'
 import {
   assetPda,
+  batchPda,
   configPda,
+  facilityPda,
   discriminator,
   eventPda,
   rfidBindingPda,
@@ -54,6 +56,12 @@ interface Rpc {
 
 const SYSTEM_PROGRAM_ID = '11111111111111111111111111111111'
 const INSTRUCTIONS_SYSVAR_ID = 'Sysvar1nstructions1111111111111111111111111'
+/** EventAnchor (v2.1): discriminator, event_hash, subject_id, state_version, event_type, bump. */
+const EVENT_ANCHOR_LENGTH = 83
+/** BatchAnchor (v2.1): session_id, batch_index, custodian, station_id, root, count, window. */
+const BATCH_ANCHOR_LENGTH = 201
+/** FacilityRecord (v2.1): ..., geo_commitment 122..154, bump 154. */
+const FACILITY_RECORD_LENGTH = 155
 const DEFAULT_RPC_TIMEOUT_MS = 10_000
 // Sized for MAX_PACKAGE_EVENTS with bounded parallel RPC; unreachable RPC still ends NOT_CHECKED.
 const MAX_VERIFICATION_DURATION_MS = 120_000
@@ -156,16 +164,17 @@ export async function verifyCanonicalChainState(
       }
 
       eventChecks.push(async () => {
+        // The PDA binds deployment and event id; event_hash (recomputed locally from the 220
+        // envelope bytes) commits to every other field, so the 83-byte anchor needs no copies.
         const [anchorAddress, anchorBump] = await eventPda(programId, deployment, eventId)
-        const anchor = await getAccount(rpc, anchorAddress, 'EventAnchor', 259)
+        const anchor = await getAccount(rpc, anchorAddress, 'EventAnchor', EVENT_ANCHOR_LENGTH)
+        const anchorView = new DataView(anchor.buffer, anchor.byteOffset, anchor.byteLength)
         if (
-          !equalBytes(anchor.subarray(8, 40), eventId) ||
-          !equalBytes(anchor.subarray(40, 72), deployment) ||
-          !equalBytes(anchor.subarray(72, 104), assetId) ||
-          !equalBytes(anchor.subarray(104, 136), fromHex(envelope.sourceId, 32)) ||
-          !equalBytes(anchor.subarray(194, 226), fromHex(envelope.payloadHash, 32)) ||
-          !equalBytes(anchor.subarray(226, 258), fromHex(evidence.eventHash, 32)) ||
-          anchor[258] !== anchorBump
+          !equalBytes(anchor.subarray(8, 40), fromHex(evidence.eventHash, 32)) ||
+          !equalBytes(anchor.subarray(40, 72), assetId) ||
+          anchorView.getBigUint64(72, true) !== BigInt(envelope.stateVersion) ||
+          anchorView.getUint16(80, true) !== envelope.eventType ||
+          anchor[82] !== anchorBump
         )
           return `${label} is not the EventAnchor Solana finalized`
         if (retiredRfid) {
@@ -193,14 +202,15 @@ export async function verifyCanonicalChainState(
           envelopeBytes,
           ...rfidArgs,
         )
-        await verifyFinalizedTransaction(rpc, evidence.txSignature, label, (signer) => {
+        await verifyFinalizedTransaction(rpc, evidence.txSignature, label, (signer, feePayer) => {
           return [
             { programId: SECP256R1_PROGRAM_ID, accounts: [], data: secp },
             {
               programId,
               data: lastroData,
               accounts: [
-                meta(signer, true, rfidArgs.length > 0),
+                meta(signer, true, false),
+                meta(feePayer, true, true),
                 meta(configAddress, false, false),
                 meta(registry, false, false),
                 meta(stationAccount, false, false),
@@ -225,6 +235,9 @@ export async function verifyCanonicalChainState(
         return invalid('Canonical current RfidBinding is not ACTIVE for this asset')
     }
 
+    const batchFailure = await verifyAnchoredBatches(pkg, rpc, deployment)
+    if (batchFailure) return invalid(batchFailure)
+
     const acceptDiscriminator = await discriminator('global', 'accept_custody_transfer')
     for (const [index, transfer] of pkg.custodyTransfers.entries()) {
       const recipient = getAddressDecoder().decode(fromHex(transfer.newCustodian, 32))
@@ -232,7 +245,7 @@ export async function verifyCanonicalChainState(
         rpc,
         transfer.txSignature,
         `Custody transfer ${index + 1}`,
-        (signer, message) => {
+        (signer, _feePayer, message) => {
           if (signer !== recipient)
             throw new Error(`Custody transfer ${index + 1} was not accepted by its recipient`)
           const accepted = acceptInstruction(message, programId, acceptDiscriminator)
@@ -258,14 +271,20 @@ export async function verifyCanonicalChainState(
 }
 
 /**
- * Fetch a finalized, successful single-signer transaction and compare it with the expected
- * instructions (or, when `expect` returns null, leave the instruction check to the caller).
+ * Fetch a finalized, successful transaction and compare it with the expected instructions
+ * (or, when `expect` returns null, leave the instruction check to the caller). A transaction
+ * has one signer that authorizes and pays, or two: a fee payer (the platform sponsor, which
+ * pays fee and rent but grants nothing) followed by the authorizing signer.
  */
 async function verifyFinalizedTransaction(
   rpc: Rpc,
   txSignature: string,
   label: string,
-  expect: (signer: string, message: Record<string, unknown>) => ExpectedInstruction[] | null,
+  expect: (
+    signer: string,
+    feePayer: string,
+    message: Record<string, unknown>,
+  ) => ExpectedInstruction[] | null,
 ): Promise<void> {
   decodeCanonicalBase58(txSignature, 64, 'transaction signature')
   const result = await rpcResult(rpc, 'getTransaction', [
@@ -281,16 +300,94 @@ async function verifyFinalizedTransaction(
   if (
     !isRecord(transaction) ||
     !Array.isArray(transaction.signatures) ||
-    transaction.signatures.length !== 1 ||
+    (transaction.signatures.length !== 1 && transaction.signatures.length !== 2) ||
     transaction.signatures[0] !== txSignature ||
     !isRecord(transaction.message)
   )
     throw new Error(`${label} transaction signature does not match the package`)
   const message = transaction.message
-  if (!Array.isArray(message.accountKeys) || typeof message.accountKeys[0] !== 'string')
+  const signatureCount = transaction.signatures.length
+  if (
+    !Array.isArray(message.accountKeys) ||
+    message.accountKeys.length < signatureCount ||
+    !message.accountKeys.slice(0, signatureCount).every((key) => typeof key === 'string')
+  )
     throw new Error(`${label} transaction account keys are invalid`)
-  const expected = expect(message.accountKeys[0], message)
-  if (expected) verifyCompiledMessage(message, message.accountKeys[0], expected, label)
+  const feePayer = message.accountKeys[0] as string
+  const signer = message.accountKeys[signatureCount - 1] as string
+  const expected = expect(signer, feePayer, message)
+  if (expected) verifyCompiledMessage(message, signer, feePayer, expected, label)
+}
+
+/**
+ * Every batch the package's presence proofs claim must exist as a finalized BatchAnchor with
+ * the same root and size, for the Station that signed the proofs, and each proof must fall in
+ * the anchored observation window (the program saw the window, not the leaves). The batch
+ * transaction must be a finalized Lastro transaction that wrote that BatchAnchor.
+ */
+async function verifyAnchoredBatches(
+  pkg: EvidencePackage,
+  rpc: Rpc,
+  deployment: Uint8Array,
+): Promise<string | null> {
+  const anchors = new Map<string, Uint8Array>()
+  for (const [index, observation] of (pkg.batchedObservations ?? []).entries()) {
+    const label = `Batched observation ${index + 1}`
+    const key = `${observation.sessionId}:${observation.batchIndex}`
+    let anchor = anchors.get(key)
+    if (!anchor) {
+      const [address, bump] = await batchPda(
+        rpc.programId,
+        deployment,
+        fromHex(observation.sessionId, 32),
+        observation.batchIndex,
+      )
+      anchor = await getAccount(rpc, address, 'BatchAnchor', BATCH_ANCHOR_LENGTH)
+      if (anchor[200] !== bump) return `${label} BatchAnchor does not match its PDA`
+      await verifyFinalizedTransaction(
+        rpc,
+        observation.txSignature,
+        label,
+        (_signer, _payer, message) => {
+          if (!(message.accountKeys as string[]).includes(String(address)))
+            throw new Error(`${label} transaction did not write its BatchAnchor`)
+          if (!(message.accountKeys as string[]).includes(rpc.programId))
+            throw new Error(`${label} transaction does not invoke the Lastro program`)
+          return null
+        },
+      )
+      anchors.set(key, anchor)
+    }
+    const view = new DataView(anchor.buffer, anchor.byteOffset, anchor.byteLength)
+    const envelope = decodeV2DomainEvent(fromBase64(observation.envelopeBytesBase64, 220))
+    if (
+      !equalBytes(anchor.subarray(8, 40), fromHex(observation.sessionId, 32)) ||
+      view.getUint32(40, true) !== observation.batchIndex ||
+      !equalBytes(anchor.subarray(76, 108), fromHex(envelope.sourceId, 32)) ||
+      !equalBytes(anchor.subarray(108, 140), fromHex(observation.merkleRoot, 32)) ||
+      view.getUint32(140, true) !== observation.leafCount ||
+      !equalBytes(anchor.subarray(168, 200), fromHex(observation.facilityId, 32))
+    )
+      return `${label} differs from its finalized BatchAnchor`
+    const observedAt = envelope.observedAt
+    if (observedAt < view.getBigInt64(144, true) || observedAt > view.getBigInt64(152, true))
+      return `${label} lies outside the anchored observation window`
+  }
+  for (const facility of pkg.facilities ?? []) {
+    const [address, bump] = await facilityPda(
+      rpc.programId,
+      deployment,
+      fromHex(facility.facilityId, 32),
+    )
+    const record = await getAccount(rpc, address, 'FacilityRecord', FACILITY_RECORD_LENGTH)
+    if (
+      record[154] !== bump ||
+      !equalBytes(record.subarray(8, 40), fromHex(facility.facilityId, 32)) ||
+      !equalBytes(record.subarray(122, 154), fromHex(facility.geoCommitment, 32))
+    )
+      return `Facility ${facility.facilityId} boundary differs from its on-chain commitment`
+  }
+  return null
 }
 
 /** Accounts of the one Lastro `accept_custody_transfer` instruction in `message`. */
@@ -357,6 +454,7 @@ async function getAccount(
 function verifyCompiledMessage(
   message: Record<string, unknown>,
   requiredSigner: string,
+  feePayer: string,
   expectedInstructions: readonly ExpectedInstruction[],
   label: string,
 ): void {
@@ -386,12 +484,13 @@ function verifyCompiledMessage(
     message.header.numReadonlyUnsignedAccounts,
     'numReadonlyUnsignedAccounts',
   )
+  const expectedSignatures = feePayer === requiredSigner ? 1 : 2
   if (
-    requiredSignatures !== 1 ||
+    requiredSignatures !== expectedSignatures ||
     readonlySigned > requiredSignatures ||
-    accountKeys[0] !== requiredSigner
+    accountKeys[0] !== feePayer
   ) {
-    throw new Error(`${label} transaction signer header does not match a single Lastro signer`)
+    throw new Error(`${label} transaction signer header does not match its Lastro signers`)
   }
   if (readonlyUnsigned > accountKeys.length - requiredSignatures) {
     throw new Error(`${label} transaction account header is inconsistent`)
@@ -410,7 +509,8 @@ function verifyCompiledMessage(
   }
 
   const roles = new Map<string, { signer: boolean; writable: boolean }>()
-  roles.set(requiredSigner, { signer: true, writable: true })
+  roles.set(feePayer, { signer: true, writable: true })
+  mergeRole(roles, requiredSigner, true, false)
   if (trailingCount > 0) mergeRole(roles, COMPUTE_BUDGET_PROGRAM_ID, false, false)
   for (const instruction of expectedInstructions) {
     mergeRole(roles, instruction.programId, false, false)

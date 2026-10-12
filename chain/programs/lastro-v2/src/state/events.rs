@@ -2,22 +2,19 @@
 
 use anchor_lang::prelude::*;
 
+/// Minimal on-chain commitment to one Station event. The PDA seeds bind the deployment and
+/// event id, and `event_hash` commits to every other envelope field, so a verifier holding the
+/// 220 envelope bytes recomputes the hash and compares it here instead of reading copies of
+/// each field.
 #[account]
 pub struct EventAnchor {
-    pub event_id: [u8; 32],
-    pub deployment_id: [u8; 32],
-    pub subject_id: [u8; 32],
-    pub source_id: [u8; 32],
-    pub event_type: u16,
-    pub state_version: u64,
-    pub observed_at: i64,
-    pub expires_at: i64,
-    pub expected_previous_hash: [u8; 32],
-    pub payload_hash: [u8; 32],
     pub event_hash: [u8; 32],
+    pub subject_id: [u8; 32],
+    pub state_version: u64,
+    pub event_type: u16,
     pub bump: u8,
 }
 
 impl EventAnchor {
-    pub const SPACE: usize = 8 + (32 * 7) + 2 + 8 + 8 + 8 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 8 + 2 + 1;
 }

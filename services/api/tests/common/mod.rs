@@ -187,6 +187,7 @@ impl SolanaRpc for TestRpc {
             status: STATION_STATUS_ACTIVE,
             valid_from: 0,
             valid_until: i64::MAX,
+            facility_id: [0xfa; 32],
         }))
     }
 
@@ -232,8 +233,14 @@ pub fn app_state(pool: PgPool, rpc: Arc<dyn SolanaRpc>) -> AppState {
             lastro_program_id: PROGRAM_ID.into(),
             cors_allowed_origins: Vec::new(),
             priority_fee_micro_lamports: None,
+            sponsor_keypair_path: None,
+            sponsor_limits: lastro_api::sponsor::SponsorLimits::default(),
+            org_key_encryption_key: None,
+            otp_log_delivery: false,
         }),
         rpc,
+        sponsor: None,
+        vault: None,
     }
 }
 

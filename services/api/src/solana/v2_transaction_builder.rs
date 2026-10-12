@@ -2,8 +2,10 @@
 //!
 //! Station events use two instructions: Solana's Secp256r1 precompile, then the Lastro v2
 //! instruction that anchors the envelope (`record_observation`, `bind_identifier` or
-//! `replace_identifier`). Asset registration is a single `register_asset`. The wallet is the
-//! only signer; this module never handles private keys.
+//! `replace_identifier`). Asset registration is a single `register_asset`. Every instruction
+//! that creates accounts names a separate `payer` right after its authorizing signer: the
+//! wallet itself, or the platform fee sponsor, which pays fee and rent but never authorizes.
+//! This module never handles private keys.
 
 use std::{collections::HashSet, str::FromStr};
 
@@ -47,12 +49,14 @@ pub struct IdentityArgs {
     pub new_rfid_hash: [u8; 32],
 }
 
-/// Station-event transaction. `signer` is the config authority for observations and the
-/// asset's current custodian for identity events (the program enforces both).
+/// Station-event transaction. `signer` is the config authority or current custodian for
+/// observations and the current custodian for identity events (the program enforces both);
+/// `payer` funds the event anchor (and RFID binding) and the network fee.
 pub fn build_transaction_data(
     lastro_program_id: &str,
     record: &DomainAnchorRecord,
     signer: Pubkey,
+    payer: Pubkey,
     station_registry: Pubkey,
     identity: Option<IdentityArgs>,
 ) -> Result<TransactionDataResponse, ApiError> {
@@ -110,11 +114,8 @@ pub fn build_transaction_data(
     let (event_anchor, _) =
         v2_event_anchor_address(&program_id, deployment, &record.envelope.event_id);
     let mut accounts = vec![
-        meta(
-            signer.to_string(),
-            true,
-            instruction_name != "record_observation",
-        ),
+        meta(signer.to_string(), true, false),
+        meta(payer.to_string(), true, true),
         meta(config.to_string(), false, false),
         meta(station_registry.to_string(), false, false),
         meta(
@@ -151,14 +152,16 @@ pub fn build_transaction_data(
             data_base64: BASE64_STANDARD.encode(lastro_data),
         },
     ];
-    finish(program_id, signer, instructions, "v2 Station event")
+    finish(program_id, signer, payer, instructions, "v2 Station event")
 }
 
-/// `register_asset`, signed by the deployment authority.
+/// `register_asset`, signed by the deployment authority and funded by `payer`.
+#[allow(clippy::too_many_arguments)]
 pub fn build_register_asset(
     lastro_program_id: &str,
     deployment_id: &[u8; 32],
     authority: Pubkey,
+    payer: Pubkey,
     asset_id: [u8; 32],
     asset_type: u8,
     custodian: Pubkey,
@@ -175,7 +178,8 @@ pub fn build_register_asset(
     let instructions = vec![InstructionDto {
         program_id: program_id.to_string(),
         accounts: vec![
-            meta(authority.to_string(), true, true),
+            meta(authority.to_string(), true, false),
+            meta(payer.to_string(), true, true),
             meta(
                 v2_protocol_config_address(&program_id, deployment_id)
                     .0
@@ -194,16 +198,23 @@ pub fn build_register_asset(
         ],
         data_base64: BASE64_STANDARD.encode(data),
     }];
-    finish(program_id, authority, instructions, "v2 asset registration")
+    finish(
+        program_id,
+        authority,
+        payer,
+        instructions,
+        "v2 asset registration",
+    )
 }
 
-fn finish(
+pub(crate) fn finish(
     program_id: Pubkey,
     signer: Pubkey,
+    fee_payer: Pubkey,
     instructions: Vec<InstructionDto>,
     label: &str,
 ) -> Result<TransactionDataResponse, ApiError> {
-    let measured_serialized_bytes = measure_legacy_transaction(&instructions, &signer);
+    let measured_serialized_bytes = measure_legacy_transaction(&instructions, &fee_payer);
     if measured_serialized_bytes > MAX_LEGACY_TRANSACTION_BYTES {
         return Err(ApiError::Conflict(format!(
             "{label} transaction requires {measured_serialized_bytes} bytes, exceeding the 1232-byte Solana limit"
@@ -211,6 +222,7 @@ fn finish(
     }
     Ok(TransactionDataResponse {
         required_signer: signer.to_string(),
+        fee_payer: fee_payer.to_string(),
         lastro_program_id: program_id.to_string(),
         instructions,
         measured_serialized_bytes,
@@ -239,8 +251,8 @@ pub fn with_priority_fee(
             data_base64: BASE64_STANDARD.encode(bytes),
         });
     }
-    let signer = Pubkey::from_str(&data.required_signer).map_err(|_| ApiError::Internal)?;
-    data.measured_serialized_bytes = measure_legacy_transaction(&data.instructions, &signer);
+    let fee_payer = Pubkey::from_str(&data.fee_payer).map_err(|_| ApiError::Internal)?;
+    data.measured_serialized_bytes = measure_legacy_transaction(&data.instructions, &fee_payer);
     if data.measured_serialized_bytes > MAX_LEGACY_TRANSACTION_BYTES {
         return Err(ApiError::Conflict(
             "priority fee instructions exceed the 1232-byte Solana limit".into(),
@@ -361,6 +373,7 @@ pub fn build_finalize_transformation(
     let measured_serialized_bytes = measure_legacy_transaction(&instructions, &operator);
     TransactionDataResponse {
         required_signer: operator.to_string(),
+        fee_payer: operator.to_string(),
         lastro_program_id: program_id.to_string(),
         instructions,
         measured_serialized_bytes,
@@ -388,16 +401,25 @@ fn meta(address: String, is_signer: bool, is_writable: bool) -> AccountMetaDto {
     }
 }
 
-fn measure_legacy_transaction(instructions: &[InstructionDto], fee_payer: &Pubkey) -> usize {
+/// Exact legacy wire size: one 64-byte signature per distinct signer (fee payer included).
+pub(crate) fn measure_legacy_transaction(
+    instructions: &[InstructionDto],
+    fee_payer: &Pubkey,
+) -> usize {
     let mut keys = HashSet::new();
+    let mut signers = HashSet::new();
     keys.insert(fee_payer.to_string());
+    signers.insert(fee_payer.to_string());
     for instruction in instructions {
         keys.insert(instruction.program_id.clone());
         for account in &instruction.accounts {
             keys.insert(account.address.clone());
+            if account.is_signer {
+                signers.insert(account.address.clone());
+            }
         }
     }
-    let signatures = 1 + 64;
+    let signatures = shortvec_len(signers.len()) + 64 * signers.len();
     let message_header = 3;
     let account_keys = shortvec_len(keys.len()) + 32 * keys.len();
     let recent_blockhash = 32;
@@ -477,6 +499,7 @@ mod tests {
             "11111111111111111111111111111111",
             &record(),
             Pubkey::new_from_array([5; 32]),
+            Pubkey::new_from_array([5; 32]),
             Pubkey::new_from_array([6; 32]),
             None,
         )
@@ -495,8 +518,9 @@ mod tests {
     #[test]
     fn identity_events_carry_rfid_hashes_after_the_envelope_and_need_matching_args() {
         // PURPOSE: bind/replace transactions match the on-chain argument and account layout.
-        // ASSERT: replace appends old+new hashes after the envelope, adds both RFID PDAs, and
-        // makes the custodian a writable signer; mismatched args are rejected.
+        // ASSERT: replace appends old+new hashes after the envelope, adds both RFID PDAs, keeps
+        // the custodian a read-only signer and funds rent through the writable payer that
+        // follows it; mismatched args are rejected.
         // FAILURE MEANS: the wallet would sign a transaction the program rejects.
         let mut value = record();
         let mut envelope = value.envelope;
@@ -512,6 +536,7 @@ mod tests {
             "11111111111111111111111111111111",
             &value,
             custodian,
+            custodian,
             Pubkey::new_from_array([6; 32]),
             Some(args),
         )
@@ -522,21 +547,70 @@ mod tests {
         assert_eq!(data.len(), RECORD_OBSERVATION_DATA_LEN + 64);
         assert_eq!(&data[..8], &discriminator("replace_identifier"));
         assert_eq!(&data[data.len() - 64..data.len() - 32], &[8; 32]);
-        assert_eq!(tx.instructions[1].accounts.len(), 10);
-        assert!(
-            tx.instructions[1].accounts[0].is_signer && tx.instructions[1].accounts[0].is_writable
-        );
+        assert_eq!(tx.instructions[1].accounts.len(), 11);
+        let accounts = &tx.instructions[1].accounts;
+        assert!(accounts[0].is_signer && !accounts[0].is_writable);
+        assert!(accounts[1].is_signer && accounts[1].is_writable);
+        assert_eq!(accounts[0].address, accounts[1].address);
+        assert_eq!(tx.fee_payer, tx.required_signer);
         assert!(tx.measured_serialized_bytes <= 1232);
         assert!(
             build_transaction_data(
                 "11111111111111111111111111111111",
                 &value,
                 custodian,
+                custodian,
                 Pubkey::new_from_array([6; 32]),
                 None,
             )
             .is_err()
         );
+    }
+
+    #[test]
+    fn the_largest_sponsored_transaction_fits_the_legacy_size_limit() {
+        // PURPOSE: S1 adds a second signer (the sponsor) to every sponsored transaction.
+        // ASSERT: a sponsored replace_identifier with both priority-fee instructions is
+        // measured with two signatures and still fits in 1232 bytes.
+        // FAILURE MEANS: sponsored RFID replacement could never be broadcast.
+        let mut value = record();
+        let mut envelope = value.envelope;
+        envelope.event_type = EventType::IdentifierReplaced as u16;
+        value.envelope = envelope;
+        value.envelope_bytes = envelope.encode().unwrap();
+        let custodian = Pubkey::new_from_array([7; 32]);
+        let sponsor = Pubkey::new_from_array([10; 32]);
+        let args = IdentityArgs {
+            old_rfid_hash: [8; 32],
+            new_rfid_hash: [9; 32],
+        };
+        let self_paid = build_transaction_data(
+            "11111111111111111111111111111111",
+            &value,
+            custodian,
+            custodian,
+            Pubkey::new_from_array([6; 32]),
+            Some(args),
+        )
+        .unwrap();
+        let sponsored = build_transaction_data(
+            "11111111111111111111111111111111",
+            &value,
+            custodian,
+            sponsor,
+            Pubkey::new_from_array([6; 32]),
+            Some(args),
+        )
+        .unwrap();
+        assert_eq!(sponsored.fee_payer, sponsor.to_string());
+        assert_eq!(sponsored.required_signer, custodian.to_string());
+        // One more signature (64) and one more account key (32).
+        assert_eq!(
+            sponsored.measured_serialized_bytes,
+            self_paid.measured_serialized_bytes + 64 + 32
+        );
+        let priced = with_priority_fee(sponsored, Some(1_000_000)).unwrap();
+        assert!(priced.measured_serialized_bytes <= MAX_LEGACY_TRANSACTION_BYTES);
     }
 
     #[test]

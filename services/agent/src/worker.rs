@@ -72,6 +72,12 @@ pub async fn run<T: StationTransport>(
                 sleep(poll_interval).await;
                 continue;
             }
+            // A malformed command is that command's problem, not the Agent's: keep serving.
+            Err(AgentError::Contract(message)) => {
+                tracing::error!(error = %message, "API returned an invalid capture command; skipping");
+                sleep(poll_interval).await;
+                continue;
+            }
             Err(error) => return Err(error),
         };
         let Some(command) = command else {
@@ -91,6 +97,24 @@ pub async fn run<T: StationTransport>(
             Ok(()) => {}
             Err(AgentError::Serial(message)) | Err(AgentError::Station(message)) => {
                 tracing::warn!(error = %message, "Station capture did not complete; polling for recovery");
+                // A Station still waiting for a lost ACK answers BUSY: release it with the
+                // durable ACKs instead of waiting for a reconnect.
+                // Best effort: when the serial link itself failed, the replay fails too and the
+                // reconnect path (main.rs) takes over.
+                if let Err(error) =
+                    replay_durable_acks(&mut transport, spool, &expected_station_pubkey33).await
+                {
+                    tracing::warn!(error = %error, "ACK replay after a failed capture did not complete");
+                    if matches!(error, AgentError::Serial(_)) {
+                        return Err(error);
+                    }
+                }
+                sleep(poll_interval).await;
+            }
+            // One capture that breaks the contract (an invalid command, a late frame of an
+            // earlier capture) fails alone; the Agent must not crash-loop on it.
+            Err(AgentError::Contract(message)) => {
+                tracing::error!(error = %message, "capture violated the Station contract; skipping it");
                 sleep(poll_interval).await;
             }
             Err(error) => return Err(error),

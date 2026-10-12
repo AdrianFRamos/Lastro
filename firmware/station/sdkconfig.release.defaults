@@ -1,0 +1,13 @@
+# Production overlay for a provisioned ESP32-C5 Station (review finding C3).
+# Build with: -DSDKCONFIG_DEFAULTS="sdkconfig.defaults;sdkconfig.efuse.defaults;sdkconfig.release.defaults"
+# Requires the Secure Boot v2 signing key (secure_boot_signing_key.pem, kept offline and out of
+# this repository). Enabling these options burns eFuses on first boot and is irreversible.
+CONFIG_SECURE_BOOT=y
+CONFIG_SECURE_BOOT_V2_ENABLED=y
+CONFIG_SECURE_BOOT_BUILD_SIGNED_BINARIES=y
+CONFIG_SECURE_BOOT_SIGNING_KEY="secure_boot_signing_key.pem"
+CONFIG_SECURE_FLASH_ENC_ENABLED=y
+CONFIG_SECURE_FLASH_ENCRYPTION_MODE_RELEASE=y
+CONFIG_SECURE_ENABLE_SECURE_ROM_DL_MODE=y
+CONFIG_COMPILER_OPTIMIZATION_SIZE=y
+CONFIG_LASTRO_STATION_RELEASE=y

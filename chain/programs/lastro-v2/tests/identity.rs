@@ -8,7 +8,7 @@ use lastro_protocol::{
     crypto::derive_station_id,
     v2::{DomainEventEnvelope, EventType, identifier_payload_hash},
 };
-use lastro_v2::state::{AssetState, RfidBinding};
+use lastro_v2::state::{AssetState, EventAnchor, RfidBinding};
 use p256::ecdsa::{Signature, SigningKey, signature::Signer as _};
 use solana_instruction::{AccountMeta, Instruction};
 use solana_keypair::Keypair;
@@ -105,6 +105,33 @@ fn send_identity(
     new: [u8; 32],
     signed_payload: ([u8; 32], [u8; 32]),
 ) -> TestResult {
+    send_identity_paid_by(
+        h,
+        custodian,
+        None,
+        station,
+        asset_id,
+        event_id,
+        old,
+        new,
+        signed_payload,
+    )
+}
+
+/// Identity transition authorized by `custodian`; `sponsor`, when given, pays fee and rent.
+#[allow(clippy::too_many_arguments)]
+fn send_identity_paid_by(
+    h: &mut Harness,
+    custodian: &Keypair,
+    sponsor: Option<&Keypair>,
+    station: &Station,
+    asset_id: [u8; 32],
+    event_id: [u8; 32],
+    old: Option<[u8; 32]>,
+    new: [u8; 32],
+    signed_payload: ([u8; 32], [u8; 32]),
+) -> TestResult {
+    let payer = sponsor.unwrap_or(custodian).pubkey();
     let event_type = if old.is_some() {
         EventType::IdentifierReplaced
     } else {
@@ -120,7 +147,8 @@ fn send_identity(
         signed_payload.1,
     );
     let mut accounts = vec![
-        AccountMeta::new(custodian.pubkey(), true),
+        AccountMeta::new_readonly(custodian.pubkey(), true),
+        AccountMeta::new(payer, true),
         AccountMeta::new_readonly(config_pda(&h.deployment_id).0, false),
         AccountMeta::new_readonly(station_registry_pda(&h.deployment_id).0, false),
         AccountMeta::new_readonly(station_pda(&h.deployment_id, &station.id).0, false),
@@ -164,7 +192,15 @@ fn send_identity(
         data,
     };
     h.svm.expire_blockhash();
-    send_instructions(&mut h.svm, vec![secp(station, &event), lastro], custodian)
+    match sponsor {
+        Some(sponsor) => send_sponsored(
+            &mut h.svm,
+            vec![secp(station, &event), lastro],
+            sponsor,
+            &[custodian],
+        ),
+        None => send_instructions(&mut h.svm, vec![secp(station, &event), lastro], custodian),
+    }
 }
 
 fn setup() -> (Harness, Station, Keypair) {
@@ -349,6 +385,18 @@ fn send_observation(
     event_id: [u8; 32],
     tag: [u8; 32],
 ) -> TestResult {
+    send_observation_paid_by(h, signer, None, station, event_id, tag)
+}
+
+fn send_observation_paid_by(
+    h: &mut Harness,
+    signer: &Keypair,
+    sponsor: Option<&Keypair>,
+    station: &Station,
+    event_id: [u8; 32],
+    tag: [u8; 32],
+) -> TestResult {
+    let payer = sponsor.unwrap_or(signer).pubkey();
     let event = envelope(
         h,
         station,
@@ -361,7 +409,8 @@ fn send_observation(
     let lastro = Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(signer.pubkey(), true),
+            AccountMeta::new_readonly(signer.pubkey(), true),
+            AccountMeta::new(payer, true),
             AccountMeta::new_readonly(config_pda(&h.deployment_id).0, false),
             AccountMeta::new_readonly(station_registry_pda(&h.deployment_id).0, false),
             AccountMeta::new_readonly(station_pda(&h.deployment_id, &station.id).0, false),
@@ -382,7 +431,15 @@ fn send_observation(
         .data(),
     };
     h.svm.expire_blockhash();
-    send_instructions(&mut h.svm, vec![secp(station, &event), lastro], signer)
+    match sponsor {
+        Some(sponsor) => send_sponsored(
+            &mut h.svm,
+            vec![secp(station, &event), lastro],
+            sponsor,
+            &[signer],
+        ),
+        None => send_instructions(&mut h.svm, vec![secp(station, &event), lastro], signer),
+    }
 }
 
 #[test]
@@ -420,4 +477,138 @@ fn presence_proofs_are_signed_by_the_custodian_or_the_authority_only() {
     let asset: AssetState = account(&h.svm, &asset_pda(&h.deployment_id, &ASSET).0);
     assert_eq!(asset.state_version, 3);
     // FAILURE MEANS: presence evidence could be forged by anyone, or needs a hot authority key.
+}
+
+#[test]
+fn a_custodian_with_zero_lamports_completes_identity_and_presence_when_sponsored() {
+    // PURPOSE: S1 — the custodian authorizes, the platform sponsor pays fee and rent.
+    // ARRANGE: an asset whose custodian wallet holds no lamports, plus a funded sponsor.
+    let mut h = Harness::new();
+    h.initialize();
+    set_unix_timestamp(&mut h.svm, NOW);
+    h.svm.expire_blockhash();
+    let station = station(&mut h);
+    let custodian = Keypair::new();
+    let sponsor = funded_sponsor(&mut h.svm);
+    assert_success(send_register_asset_sponsored(
+        &mut h.svm,
+        &h.authority,
+        &sponsor,
+        h.deployment_id,
+        ASSET,
+        custodian.pubkey(),
+        500_000,
+    ));
+    let sponsor_before = h.svm.get_balance(&sponsor.pubkey()).unwrap_or(0);
+
+    // ACTION: bind TAG_1 and record a presence proof, both paid by the sponsor.
+    assert_success(send_identity_paid_by(
+        &mut h,
+        &custodian,
+        Some(&sponsor),
+        &station,
+        ASSET,
+        [1; 32],
+        None,
+        TAG_1,
+        (ZERO, TAG_1),
+    ));
+    assert_success(send_observation_paid_by(
+        &mut h,
+        &custodian,
+        Some(&sponsor),
+        &station,
+        [2; 32],
+        TAG_1,
+    ));
+
+    // ASSERT: state advanced, the custodian still holds nothing, the sponsor funded the rent,
+    // and the reduced EventAnchor commits to the exact event.
+    let asset: AssetState = account(&h.svm, &asset_pda(&h.deployment_id, &ASSET).0);
+    assert_eq!(asset.custodian, custodian.pubkey());
+    assert_eq!(asset.state_version, 2);
+    assert_eq!(asset.current_rfid_hash, TAG_1);
+    assert_eq!(h.svm.get_balance(&custodian.pubkey()).unwrap_or(0), 0);
+    let anchor_rent = h.svm.minimum_balance_for_rent_exemption(EventAnchor::SPACE);
+    let binding_rent = h.svm.minimum_balance_for_rent_exemption(RfidBinding::SPACE);
+    let sponsor_after = h.svm.get_balance(&sponsor.pubkey()).unwrap_or(0);
+    assert!(sponsor_before - sponsor_after >= 2 * anchor_rent + binding_rent);
+    let anchor: EventAnchor = account(&h.svm, &event_pda(&h, &[2; 32]));
+    assert_eq!(anchor.subject_id, ASSET);
+    assert_eq!(anchor.state_version, 2);
+    assert_eq!(anchor.event_type, EventType::ObservationRecorded as u16);
+    assert_eq!(anchor.event_hash, asset.last_event_hash);
+    // FAILURE MEANS: field users would still need SOL, or the anchor would not commit to the event.
+}
+
+#[test]
+fn paying_for_a_transition_grants_no_authority_over_it() {
+    // PURPOSE: I7 — a sponsor that pays cannot act as the custodian.
+    // ARRANGE: asset custodied by `other`; a funded sponsor with no protocol role.
+    let (mut h, station, _custodian) = setup();
+    let sponsor = funded_sponsor(&mut h.svm);
+    // ACTION: the sponsor signs as both authorizer and payer.
+    assert_failure(send_identity_paid_by(
+        &mut h,
+        &sponsor.insecure_clone(),
+        Some(&sponsor),
+        &station,
+        ASSET,
+        [1; 32],
+        None,
+        TAG_1,
+        (ZERO, TAG_1),
+    ));
+    assert_failure(send_observation_paid_by(
+        &mut h,
+        &sponsor.insecure_clone(),
+        Some(&sponsor),
+        &station,
+        [2; 32],
+        TAG_1,
+    ));
+    // ASSERT: nothing advanced.
+    let asset: AssetState = account(&h.svm, &asset_pda(&h.deployment_id, &ASSET).0);
+    assert_eq!(asset.state_version, 0);
+    assert_eq!(asset.current_rfid_hash, ZERO);
+    // FAILURE MEANS: whoever funds the fee could rewrite identity or forge presence.
+}
+
+#[test]
+fn a_reserved_input_accepts_no_station_event() {
+    // PURPOSE: L5 — while an asset is reserved by a transformation, no Station event (even from
+    // the deployment authority) may bump its state and silently break the reservation.
+    // ARRANGE: a bound asset, then marked as reserved by a transformation.
+    let (mut h, station, custodian) = setup();
+    assert_success(send_identity(
+        &mut h,
+        &custodian,
+        &station,
+        ASSET,
+        [1; 32],
+        None,
+        TAG_1,
+        (ZERO, TAG_1),
+    ));
+    let address = asset_pda(&h.deployment_id, &ASSET).0;
+    let mut stored = h.svm.get_account(&address).unwrap();
+    let mut asset: AssetState =
+        anchor_lang::AccountDeserialize::try_deserialize(&mut stored.data.as_slice()).unwrap();
+    asset.reserved_by = [0xe1; 32];
+    let mut data = Vec::new();
+    anchor_lang::AccountSerialize::try_serialize(&asset, &mut data).unwrap();
+    stored.data[..data.len()].copy_from_slice(&data);
+    h.svm.set_account(address, stored).unwrap();
+
+    // ACTION/ASSERT: custodian and authority presence proofs are refused.
+    assert_failure(send_observation(
+        &mut h, &custodian, &station, [5; 32], TAG_1,
+    ));
+    let authority = h.authority.insecure_clone();
+    assert_failure(send_observation(
+        &mut h, &authority, &station, [6; 32], TAG_1,
+    ));
+    let after: AssetState = account(&h.svm, &address);
+    assert_eq!(after.state_version, asset.state_version);
+    // FAILURE MEANS: a Station event could invalidate a transformation input mid-flight.
 }

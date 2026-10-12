@@ -41,6 +41,24 @@ export interface CustodyProof {
   txSignature: string
 }
 
+/** A presence proof anchored in a handling-session batch (v2.1). */
+export interface BatchedObservation {
+  eventHash: string
+  envelopeBytesBase64: string
+  observedRfidHex: string
+  stationPubkeyHex: string
+  stationSignatureHex: string
+  sessionId: string
+  /** Facility the batch's Station was installed at (S5). */
+  facilityId: string
+  batchIndex: number
+  leafIndex: number
+  leafCount: number
+  merkleRoot: string
+  merkleProof: string[]
+  txSignature: string
+}
+
 export interface EvidencePackage {
   schema: typeof EVIDENCE_PACKAGE_SCHEMA
   deploymentId: string
@@ -48,6 +66,19 @@ export interface EvidencePackage {
   asset: EvidenceAsset
   events: EvidenceEvent[]
   custodyTransfers: CustodyProof[]
+  /** Absent in packages exported before v2.1 (kept absent, so proof bytes round-trip). */
+  batchedObservations?: BatchedObservation[]
+  /** Boundaries of the facilities batched observations were made at (v2.1, S5). */
+  facilities?: FacilityBoundaryProof[]
+}
+
+/** A facility's registered boundary: canonical bytes its on-chain geo_commitment hashes. */
+export interface FacilityBoundaryProof {
+  facilityId: string
+  /** Null when the facility registered no boundary (its on-chain commitment is zero). */
+  carCode: string | null
+  boundaryBase64: string | null
+  geoCommitment: string
 }
 
 const PACKAGE_KEYS = [
@@ -58,6 +89,36 @@ const PACKAGE_KEYS = [
   'lastroProgramId',
   'schema',
 ]
+const PACKAGE_KEYS_V2_1 = [
+  'asset',
+  'batchedObservations',
+  'custodyTransfers',
+  'deploymentId',
+  'events',
+  'facilities',
+  'lastroProgramId',
+  'schema',
+]
+const FACILITY_KEYS = ['boundaryBase64', 'carCode', 'facilityId', 'geoCommitment']
+/** Largest canonical boundary: 100-byte CAR, 64 rings, 10 000 vertices. */
+const MAX_BOUNDARY_BYTES = 100 + 1 + 4 + 64 * 4 + 10_000 * 8
+const BATCHED_KEYS = [
+  'batchIndex',
+  'envelopeBytesBase64',
+  'eventHash',
+  'facilityId',
+  'leafCount',
+  'leafIndex',
+  'merkleProof',
+  'merkleRoot',
+  'observedRfidHex',
+  'sessionId',
+  'stationPubkeyHex',
+  'stationSignatureHex',
+  'txSignature',
+]
+/** A 1 024-leaf batch has a 10-level proof. */
+const MAX_BATCH_PROOF_DEPTH = 10
 const ASSET_KEYS = [
   'assetId',
   'assetType',
@@ -183,6 +244,53 @@ function parseCustodyProof(value: unknown): CustodyProof {
   }
 }
 
+function parseBatchedObservation(value: unknown): BatchedObservation {
+  const entry = record(value, BATCHED_KEYS, 'BatchedObservation')
+  if (
+    typeof entry.envelopeBytesBase64 !== 'string' ||
+    !/^[A-Za-z0-9+/]{294}==$/.test(entry.envelopeBytesBase64)
+  )
+    throw new Error('BatchedObservation envelope must be base64 of exactly 220 bytes')
+  if (!Array.isArray(entry.merkleProof) || entry.merkleProof.length > MAX_BATCH_PROOF_DEPTH)
+    throw new Error(`merkleProof must hold at most ${MAX_BATCH_PROOF_DEPTH} hashes`)
+  return {
+    eventHash: hex(entry.eventHash, 32, 'eventHash'),
+    envelopeBytesBase64: entry.envelopeBytesBase64,
+    observedRfidHex: hex(entry.observedRfidHex, 8, 'observed RFID'),
+    stationPubkeyHex: hex(entry.stationPubkeyHex, 33, 'Station public key'),
+    stationSignatureHex: hex(entry.stationSignatureHex, 64, 'Station signature'),
+    sessionId: hex(entry.sessionId, 32, 'sessionId'),
+    facilityId: hex(entry.facilityId, 32, 'facilityId'),
+    batchIndex: uint(entry.batchIndex, 'batchIndex'),
+    leafIndex: uint(entry.leafIndex, 'leafIndex'),
+    leafCount: uint(entry.leafCount, 'leafCount'),
+    merkleRoot: hex(entry.merkleRoot, 32, 'merkleRoot'),
+    merkleProof: entry.merkleProof.map((node) => hex(node, 32, 'merkleProof node')),
+    txSignature: base58(entry.txSignature, 64, 88, 'transaction signature'),
+  }
+}
+
+function parseFacility(value: unknown): FacilityBoundaryProof {
+  const entry = record(value, FACILITY_KEYS, 'FacilityBoundaryProof')
+  const both = entry.carCode !== null && entry.boundaryBase64 !== null
+  const neither = entry.carCode === null && entry.boundaryBase64 === null
+  if (!both && !neither) throw new Error('facility boundary must carry both CAR code and bytes')
+  if (
+    both &&
+    (typeof entry.carCode !== 'string' ||
+      !/^[\x21-\x7e]{1,100}$/.test(entry.carCode) ||
+      typeof entry.boundaryBase64 !== 'string' ||
+      entry.boundaryBase64.length > Math.ceil(MAX_BOUNDARY_BYTES / 3) * 4)
+  )
+    throw new Error('facility boundary is malformed or too large')
+  return {
+    facilityId: hex(entry.facilityId, 32, 'facilityId'),
+    carCode: both ? (entry.carCode as string) : null,
+    boundaryBase64: both ? (entry.boundaryBase64 as string) : null,
+    geoCommitment: hex(entry.geoCommitment, 32, 'geoCommitment'),
+  }
+}
+
 function list<T>(value: unknown, parse: (entry: unknown) => T, name: string): T[] {
   if (!Array.isArray(value) || value.length > MAX_PACKAGE_EVENTS)
     throw new Error(`EvidencePackage ${name} must be an array of at most ${MAX_PACKAGE_EVENTS}`)
@@ -190,7 +298,8 @@ function list<T>(value: unknown, parse: (entry: unknown) => T, name: string): T[
 }
 
 export function parseEvidencePackage(value: unknown): EvidencePackage {
-  const pkg = record(value, PACKAGE_KEYS, 'EvidencePackage')
+  const batched = typeof value === 'object' && value !== null && 'batchedObservations' in value
+  const pkg = record(value, batched ? PACKAGE_KEYS_V2_1 : PACKAGE_KEYS, 'EvidencePackage')
   if (pkg.schema !== EVIDENCE_PACKAGE_SCHEMA) throw new Error('unsupported EvidencePackage schema')
   return {
     schema: EVIDENCE_PACKAGE_SCHEMA,
@@ -199,5 +308,15 @@ export function parseEvidencePackage(value: unknown): EvidencePackage {
     asset: parseAsset(pkg.asset),
     events: list(pkg.events, parseEvent, 'events'),
     custodyTransfers: list(pkg.custodyTransfers, parseCustodyProof, 'custodyTransfers'),
+    ...(batched
+      ? {
+          batchedObservations: list(
+            pkg.batchedObservations,
+            parseBatchedObservation,
+            'batchedObservations',
+          ),
+          facilities: list(pkg.facilities, parseFacility, 'facilities'),
+        }
+      : {}),
   }
 }

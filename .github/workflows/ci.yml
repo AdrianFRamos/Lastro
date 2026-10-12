@@ -47,6 +47,10 @@ jobs:
       - run: python scripts/check_vectors.py --verify-only
       - name: Run deterministic Python repository and system-harness tests
         run: python -m pytest -q tests/repository tests/system/test_support.py
+      # Host-side gates that need no hardware: the simulator, the firmware host protocol and a
+      # host build of the Station serial parser (cc ships with ubuntu-latest).
+      - name: Run hardware simulator and firmware host tests
+        run: python -m pytest -q hardware-simulator/tests firmware/station/pytest
       - run: cargo fmt --all -- --check
       - run: cargo clippy --locked --workspace --all-targets --all-features -- -D warnings
       - run: cargo test --locked --workspace

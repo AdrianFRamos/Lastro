@@ -7,7 +7,9 @@ import { fromHex } from '../../src/protocol/hash'
 import { SECP256R1_PROGRAM_ID } from '../../src/solana/constants'
 import {
   assetPda,
+  batchPda,
   configPda,
+  facilityPda,
   discriminator,
   eventPda,
   rfidBindingPda,
@@ -16,6 +18,7 @@ import {
 } from '../../src/solana/pda'
 import { secpHeader } from '../../src/solana/transaction'
 import { verifyCanonicalChainState } from '../../src/verify/verifyChain'
+import { FARM_ID, SESSION_ID, batchedObservation, farmBoundary } from './batchedFixture'
 
 vi.mock('../../src/config', () => ({
   webConfig: {
@@ -33,6 +36,7 @@ const INSTRUCTIONS_SYSVAR_ID = 'Sysvar1nstructions1111111111111111111111111'
 const AUTHORITY_BYTES = new Uint8Array(32).fill(0xaa)
 const AUTHORITY = getAddressDecoder().decode(AUTHORITY_BYTES)
 const CUSTODIAN = getAddressDecoder().decode(new Uint8Array(32).fill(0xc1))
+const SPONSOR = getAddressDecoder().decode(new Uint8Array(32).fill(0x5b))
 const deployment = fromHex(vectors.deployment_id_hex, 32)
 const assetId = fromHex(vectors.asset_id_hex, 32)
 const station = fromHex(vectors.station.station_id_hex, 32)
@@ -67,10 +71,13 @@ async function account(name: string, length: number, fill: (data: Uint8Array) =>
   return { owner: PROGRAM_ID, executable: false, data: [base64(data), 'base64'] }
 }
 
-/** Legacy compiled message for one signer, as `getTransaction(encoding: json)` returns it. */
-function compile(signer: string, instructions: Ix[]) {
+/**
+ * Legacy compiled message as `getTransaction(encoding: json)` returns it: the fee payer first
+ * (the signer itself, or a sponsor), then writable and read-only signers, then the rest.
+ */
+function compile(signer: string, instructions: Ix[], feePayer = signer) {
   const roles = new Map<string, { signer: boolean; writable: boolean }>([
-    [signer, { signer: true, writable: true }],
+    [feePayer, { signer: true, writable: true }],
   ])
   const merge = (key: string, s: boolean, w: boolean) => {
     const current = roles.get(key) ?? { signer: false, writable: false }
@@ -82,14 +89,15 @@ function compile(signer: string, instructions: Ix[]) {
   }
   const keys = [...roles.entries()]
   const order = [
-    ...keys.filter(([, r]) => r.signer),
+    ...keys.filter(([, r]) => r.signer && r.writable),
+    ...keys.filter(([, r]) => r.signer && !r.writable),
     ...keys.filter(([, r]) => !r.signer && r.writable),
     ...keys.filter(([, r]) => !r.signer && !r.writable),
   ].map(([key]) => key)
   return {
     header: {
-      numRequiredSignatures: 1,
-      numReadonlySignedAccounts: 0,
+      numRequiredSignatures: keys.filter(([, r]) => r.signer).length,
+      numReadonlySignedAccounts: keys.filter(([, r]) => r.signer && !r.writable).length,
       numReadonlyUnsignedAccounts: keys.filter(([, r]) => !r.signer && !r.writable).length,
     },
     accountKeys: order,
@@ -102,7 +110,11 @@ function compile(signer: string, instructions: Ix[]) {
   }
 }
 
-async function stationTransaction(name: 'bind' | 'replace' | 'observe', signer: string) {
+async function stationTransaction(
+  name: 'bind' | 'replace' | 'observe',
+  signer: string,
+  feePayer = signer,
+) {
   const capture = vectors.captures[name]
   const envelope = fromHex(capture.envelope_hex, 220)
   const eventId = envelope.slice(68, 100)
@@ -122,31 +134,36 @@ async function stationTransaction(name: 'bind' | 'replace' | 'observe', signer: 
       async (hash) => (await rfidBindingPda(PROGRAM_ID, deployment, hash))[0],
     ),
   )
-  return compile(signer, [
-    { programId: SECP256R1_PROGRAM_ID, accounts: [], data: secp },
-    {
-      programId: PROGRAM_ID,
-      data: concat(
-        await discriminator('global', instruction as string),
-        assetId,
-        eventId,
-        station,
-        envelope,
-        ...(rfids as Uint8Array[]),
-      ),
-      accounts: [
-        meta(signer, true, (rfids as Uint8Array[]).length > 0),
-        meta((await configPda(PROGRAM_ID, deployment))[0], false, false),
-        meta((await stationRegistryPda(PROGRAM_ID, deployment))[0], false, false),
-        meta((await stationPda(PROGRAM_ID, deployment, station))[0], false, false),
-        meta((await assetPda(PROGRAM_ID, deployment, assetId))[0], false, true),
-        meta((await eventPda(PROGRAM_ID, deployment, eventId))[0], false, true),
-        ...bindings.map((binding) => meta(binding, false, true)),
-        meta(INSTRUCTIONS_SYSVAR_ID, false, false),
-        meta(SYSTEM_PROGRAM_ID, false, false),
-      ],
-    },
-  ])
+  return compile(
+    signer,
+    [
+      { programId: SECP256R1_PROGRAM_ID, accounts: [], data: secp },
+      {
+        programId: PROGRAM_ID,
+        data: concat(
+          await discriminator('global', instruction as string),
+          assetId,
+          eventId,
+          station,
+          envelope,
+          ...(rfids as Uint8Array[]),
+        ),
+        accounts: [
+          meta(signer, true, false),
+          meta(feePayer, true, true),
+          meta((await configPda(PROGRAM_ID, deployment))[0], false, false),
+          meta((await stationRegistryPda(PROGRAM_ID, deployment))[0], false, false),
+          meta((await stationPda(PROGRAM_ID, deployment, station))[0], false, false),
+          meta((await assetPda(PROGRAM_ID, deployment, assetId))[0], false, true),
+          meta((await eventPda(PROGRAM_ID, deployment, eventId))[0], false, true),
+          ...bindings.map((binding) => meta(binding, false, true)),
+          meta(INSTRUCTIONS_SYSVAR_ID, false, false),
+          meta(SYSTEM_PROGRAM_ID, false, false),
+        ],
+      },
+    ],
+    feePayer,
+  )
 }
 
 /** Finalized canonical state that matches the fixture exactly; tests override single entries. */
@@ -179,14 +196,13 @@ async function canonicalState() {
     const [anchor, bump] = await eventPda(PROGRAM_ID, deployment, eventId)
     accounts.set(
       String(anchor),
-      await account('EventAnchor', 259, (data) => {
-        data.set(eventId, 8)
-        data.set(deployment, 40)
-        data.set(assetId, 72)
-        data.set(fromHex(event.sourceId, 32), 104)
-        data.set(fromHex(event.payloadHash, 32), 194)
-        data.set(fromHex(event.eventHash, 32), 226)
-        data[258] = bump
+      await account('EventAnchor', 83, (data) => {
+        const view = new DataView(data.buffer)
+        data.set(fromHex(event.eventHash, 32), 8)
+        data.set(assetId, 40)
+        view.setBigUint64(72, BigInt(event.stateVersion), true)
+        view.setUint16(80, event.eventType, true)
+        data[82] = bump
       }),
     )
   }
@@ -340,6 +356,121 @@ describe('verify/final canonical Solana comparison', () => {
       CUSTODIAN,
     )
     await expect(verify(pkg(), rpc(state))).resolves.toMatchObject({ status: 'VALID' })
+  })
+
+  /**
+   * ARRANGE: every Station event was paid by the platform sponsor (two signatures: sponsor as
+   *          fee payer, then the authorizing wallet); then the sponsor slot is claimed by the
+   *          authorizer itself while the instruction still names the sponsor as payer.
+   * ACTION: verify.
+   * ASSERT: the sponsored history is VALID; the inconsistent one is INVALID.
+   * FAILURE MEANS: sponsored evidence could never verify, or payer roles could be forged.
+   */
+  it('accepts history whose fee and rent were paid by a sponsor', async () => {
+    const state = await canonicalState()
+    const names = ['bind', 'replace', 'observe'] as const
+    for (const [index, event] of validFixture.events.entries()) {
+      const signer = names[index] === 'observe' ? AUTHORITY : CUSTODIAN
+      state.transactions.set(event.txSignature, {
+        meta: { err: null },
+        transaction: {
+          signatures: [event.txSignature, base58(new Uint8Array(64).fill(index + 1))],
+          message: await stationTransaction(names[index]!, signer, SPONSOR),
+        },
+      })
+    }
+    await expect(verify(pkg(), rpc(state))).resolves.toMatchObject({ status: 'VALID' })
+
+    const forged = await canonicalState()
+    const txSignature = validFixture.events[0]!.txSignature
+    const message = await stationTransaction('bind', CUSTODIAN, SPONSOR)
+    ;(forged.transactions.get(txSignature) as any).transaction.message = message
+    await expect(verify(pkg(), rpc(forged))).resolves.toMatchObject({ status: 'INVALID' })
+  })
+
+  /**
+   * ARRANGE: a package with one batched presence proof and the finalized BatchAnchor and
+   *          batch transaction it claims; then an anchor with another root, and a proof
+   *          observed outside the anchored window.
+   * ACTION: verify.
+   * ASSERT: VALID with the matching anchor; INVALID for each mismatch.
+   * FAILURE MEANS: a batched proof could claim an anchoring the chain never recorded.
+   */
+  it('binds batched presence proofs to their finalized BatchAnchor', async () => {
+    const batchTx = base58(new Uint8Array(64).fill(0x77))
+    const fixtureProof = await batchedObservation()
+    const { root, observedAt } = fixtureProof
+    const observation = { ...fixtureProof.observation, txSignature: batchTx }
+    const farm = await farmBoundary()
+    const withBatch = () => {
+      const value = pkg()
+      value.batchedObservations = [observation]
+      value.facilities = [farm]
+      return value
+    }
+    const [batchAddress, batchBump] = await batchPda(
+      PROGRAM_ID,
+      deployment,
+      fromHex(SESSION_ID, 32),
+      0,
+    )
+    const anchorAccount = (anchoredRoot: Uint8Array, first: bigint, last: bigint) =>
+      account('BatchAnchor', 201, (data) => {
+        const view = new DataView(data.buffer)
+        data.set(fromHex(SESSION_ID, 32), 8)
+        view.setUint32(40, 0, true)
+        data.set(new Uint8Array(32).fill(0xc1), 44)
+        data.set(station, 76)
+        data.set(anchoredRoot, 108)
+        view.setUint32(140, 2, true)
+        view.setBigInt64(144, first, true)
+        view.setBigInt64(152, last, true)
+        view.setBigInt64(160, last + 60n, true)
+        data.set(fromHex(FARM_ID, 32), 168)
+        data[200] = batchBump
+      })
+    const state = await canonicalState()
+    state.accounts.set(String(batchAddress), await anchorAccount(root, observedAt, observedAt))
+    const [farmAddress, farmBump] = await facilityPda(PROGRAM_ID, deployment, fromHex(FARM_ID, 32))
+    const farmRecord = (commitment: string) =>
+      account('FacilityRecord', 155, (data) => {
+        data.set(fromHex(FARM_ID, 32), 8)
+        data.set(fromHex(commitment, 32), 122)
+        data[154] = farmBump
+      })
+    state.accounts.set(String(farmAddress), await farmRecord(farm.geoCommitment))
+    // The batch transaction: finalized, signed, writing the BatchAnchor through Lastro.
+    state.transactions.set(batchTx, {
+      meta: { err: null },
+      transaction: {
+        signatures: [batchTx],
+        message: { accountKeys: [CUSTODIAN, String(batchAddress), PROGRAM_ID] },
+      },
+    })
+    await expect(verify(withBatch(), rpc(state))).resolves.toMatchObject({ status: 'VALID' })
+
+    // The chain registered another polygon for the farm.
+    state.accounts.set(String(farmAddress), await farmRecord('9e'.repeat(32)))
+    await expect(verify(withBatch(), rpc(state))).resolves.toMatchObject({
+      status: 'INVALID',
+      detail: expect.stringContaining('on-chain commitment'),
+    })
+    state.accounts.set(String(farmAddress), await farmRecord(farm.geoCommitment))
+
+    state.accounts.set(
+      String(batchAddress),
+      await anchorAccount(new Uint8Array(32).fill(0x99), observedAt, observedAt),
+    )
+    await expect(verify(withBatch(), rpc(state))).resolves.toMatchObject({ status: 'INVALID' })
+
+    state.accounts.set(
+      String(batchAddress),
+      await anchorAccount(root, observedAt + 1n, observedAt + 10n),
+    )
+    await expect(verify(withBatch(), rpc(state))).resolves.toMatchObject({
+      status: 'INVALID',
+      detail: expect.stringContaining('window'),
+    })
   })
 
   /**

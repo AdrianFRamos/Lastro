@@ -58,6 +58,23 @@ impl AgentConfig {
                 "LASTRO_AGENT_API_URL must use http or https".into(),
             ));
         }
+        // The bearer token travels with every request: plain http only on loopback, or when
+        // the operator explicitly accepts it for a private network (simulator, compose).
+        let loopback = parsed_url.host_str().is_some_and(|host| {
+            host == "localhost"
+                || host
+                    .trim_start_matches('[')
+                    .trim_end_matches(']')
+                    .parse::<std::net::IpAddr>()
+                    .is_ok_and(|ip| ip.is_loopback())
+        });
+        let insecure_allowed = lookup("LASTRO_AGENT_ALLOW_INSECURE_HTTP").as_deref() == Some("1");
+        if parsed_url.scheme() == "http" && !loopback && !insecure_allowed {
+            return Err(AgentError::Config(
+                "LASTRO_AGENT_API_URL must use https outside loopback (set LASTRO_AGENT_ALLOW_INSECURE_HTTP=1 only on a private network)"
+                    .into(),
+            ));
+        }
 
         let agent_token = required(&mut lookup, "LASTRO_AGENT_TOKEN")?;
         if agent_token.len() < 32 {

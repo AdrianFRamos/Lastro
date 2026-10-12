@@ -9,7 +9,7 @@ use crate::{
         TRANSFORMATION_STATUS_OPEN,
     },
     error::LastroV2Error,
-    instructions::transformations::require_operating_facility,
+    instructions::transformations::require_facility_for_step,
     state::{
         AssetState, FacilityRecord, ProtocolConfigV2, TransformationAnchor,
         TransformationReservation,
@@ -23,18 +23,37 @@ pub fn consume_handler(
     expected_state_version: u64,
 ) -> Result<()> {
     let now = Clock::get()?.unix_timestamp;
-    require_operating_facility(&ctx.accounts.facility, ctx.accounts.operator.key(), now)?;
-    require!(
-        matches!(
-            ctx.accounts.transformation.status,
-            TRANSFORMATION_STATUS_OPEN | TRANSFORMATION_STATUS_FINALIZING
-        ),
-        LastroV2Error::TransformationNotOpen
-    );
-    require!(
-        now <= ctx.accounts.transformation.expires_at,
-        LastroV2Error::TransformationExpired
-    );
+    require_facility_for_step(
+        &ctx.accounts.facility,
+        ctx.accounts.transformation.status,
+        ctx.accounts.operator.key(),
+        now,
+    )?;
+    // Chain order (A2): the first consumption needs every committed input locked by a
+    // reservation and happens inside the window; once consumption has started the facility
+    // must finish it, so later steps are no longer bounded by the window and cannot be aborted.
+    let transformation = &ctx.accounts.transformation;
+    match transformation.status {
+        TRANSFORMATION_STATUS_OPEN => {
+            require!(
+                now <= transformation.expires_at,
+                LastroV2Error::TransformationExpired
+            );
+            require!(
+                transformation.reserved_input_count == transformation.input_count
+                    && transformation.reserved_input_weight_grams
+                        == transformation.input_weight_grams,
+                LastroV2Error::TransformationOutOfOrder
+            );
+        }
+        TRANSFORMATION_STATUS_FINALIZING => {
+            require!(
+                transformation.created_output_count == 0,
+                LastroV2Error::TransformationOutOfOrder
+            );
+        }
+        _ => return err!(LastroV2Error::TransformationNotOpen),
+    }
     require!(
         ctx.accounts.reservation.transformation_id == transformation_id
             && ctx.accounts.reservation.asset_id == asset_id

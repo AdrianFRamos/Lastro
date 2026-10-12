@@ -202,12 +202,53 @@ pub fn send_register_asset(
     custodian: Pubkey,
     weight: u64,
 ) -> TestResult {
+    let ix = register_asset_ix(
+        authority.pubkey(),
+        authority.pubkey(),
+        deployment_id,
+        asset_id,
+        custodian,
+        weight,
+    );
+    send_instructions(svm, vec![ix], authority)
+}
+
+/// `register_asset` whose rent and fee are paid by `sponsor`, not by the authority.
+pub fn send_register_asset_sponsored(
+    svm: &mut LiteSVM,
+    authority: &Keypair,
+    sponsor: &Keypair,
+    deployment_id: [u8; 32],
+    asset_id: [u8; 32],
+    custodian: Pubkey,
+    weight: u64,
+) -> TestResult {
+    let ix = register_asset_ix(
+        authority.pubkey(),
+        sponsor.pubkey(),
+        deployment_id,
+        asset_id,
+        custodian,
+        weight,
+    );
+    send_sponsored(svm, vec![ix], sponsor, &[authority])
+}
+
+pub fn register_asset_ix(
+    authority: Pubkey,
+    payer: Pubkey,
+    deployment_id: [u8; 32],
+    asset_id: [u8; 32],
+    custodian: Pubkey,
+    weight: u64,
+) -> Instruction {
     let (config, _) = config_pda(&deployment_id);
     let (asset, _) = asset_pda(&deployment_id, &asset_id);
-    let ix = Instruction {
+    Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(authority.pubkey(), true),
+            AccountMeta::new_readonly(authority, true),
+            AccountMeta::new(payer, true),
             AccountMeta::new_readonly(config, false),
             AccountMeta::new(asset, false),
             AccountMeta::new_readonly(system_program_id(), false),
@@ -221,8 +262,7 @@ pub fn send_register_asset(
             available_weight_grams: weight,
         }
         .data(),
-    };
-    send_instructions(svm, vec![ix], authority)
+    }
 }
 
 pub fn send_register_station(
@@ -313,13 +353,42 @@ pub fn send_create_typed_intent(
     expires_at: i64,
     payload_hash: [u8; 32],
 ) -> TestResult {
+    let ix = create_intent_ix(
+        actor.pubkey(),
+        actor.pubkey(),
+        deployment_id,
+        subject_id,
+        intent_id,
+        intent_type,
+        expected_state_version,
+        nonce,
+        expires_at,
+        payload_hash,
+    );
+    send_instructions(svm, vec![ix], actor)
+}
+
+#[allow(clippy::too_many_arguments)]
+pub fn create_intent_ix(
+    actor: Pubkey,
+    payer: Pubkey,
+    deployment_id: [u8; 32],
+    subject_id: [u8; 32],
+    intent_id: [u8; 32],
+    intent_type: u16,
+    expected_state_version: u64,
+    nonce: u64,
+    expires_at: i64,
+    payload_hash: [u8; 32],
+) -> Instruction {
     let (config, _) = config_pda(&deployment_id);
     let (asset, _) = asset_pda(&deployment_id, &subject_id);
     let (intent, _) = intent_pda(&deployment_id, &subject_id, &intent_id);
-    let ix = Instruction {
+    Instruction {
         program_id: program_id(),
         accounts: vec![
-            AccountMeta::new(actor.pubkey(), true),
+            AccountMeta::new_readonly(actor, true),
+            AccountMeta::new(payer, true),
             AccountMeta::new_readonly(config, false),
             AccountMeta::new_readonly(asset, false),
             AccountMeta::new(intent, false),
@@ -335,8 +404,7 @@ pub fn send_create_typed_intent(
             payload_hash,
         }
         .data(),
-    };
-    send_instructions(svm, vec![ix], actor)
+    }
 }
 
 pub fn send_accept_custody_transfer(
@@ -357,6 +425,10 @@ pub fn send_accept_custody_transfer(
             AccountMeta::new_readonly(config, false),
             AccountMeta::new(asset, false),
             AccountMeta::new(intent, false),
+            AccountMeta::new(
+                intent_rent_payer(svm, &intent, new_custodian.pubkey()),
+                false,
+            ),
         ],
         data: lastro_v2::instruction::AcceptCustodyTransfer {
             expected_state_version,
@@ -381,6 +453,7 @@ pub fn send_cancel_intent(
             AccountMeta::new_readonly(actor.pubkey(), true),
             AccountMeta::new_readonly(config, false),
             AccountMeta::new(intent, false),
+            AccountMeta::new(intent_rent_payer(svm, &intent, actor.pubkey()), false),
         ],
         data: lastro_v2::instruction::CancelIntent {}.data(),
     };
@@ -405,6 +478,7 @@ pub fn send_consume_intent(
             AccountMeta::new_readonly(config, false),
             AccountMeta::new_readonly(asset, false),
             AccountMeta::new(intent, false),
+            AccountMeta::new(intent_rent_payer(svm, &intent, actor.pubkey()), false),
         ],
         data: lastro_v2::instruction::ConsumeIntent {
             expected_state_version: 0,
@@ -423,6 +497,42 @@ pub fn send_instructions(
     let message = Message::new(&instructions, Some(&payer.pubkey()));
     let tx = Transaction::new(&[payer], message, svm.latest_blockhash());
     svm.send_transaction(tx).map_err(Box::new)
+}
+
+/// `sponsor` pays the fee (and is the instruction's `payer`); `signers` authorize.
+pub fn send_sponsored(
+    svm: &mut LiteSVM,
+    instructions: Vec<Instruction>,
+    sponsor: &Keypair,
+    signers: &[&Keypair],
+) -> TestResult {
+    let message = Message::new(&instructions, Some(&sponsor.pubkey()));
+    let mut all: Vec<&Keypair> = vec![sponsor];
+    all.extend_from_slice(signers);
+    let tx = Transaction::new(&all, message, svm.latest_blockhash());
+    svm.send_transaction(tx).map_err(Box::new)
+}
+
+/// Rent payer recorded in an intent, or `fallback` when the intent no longer exists (the
+/// transaction is then expected to fail on the missing intent, not on this account).
+pub fn intent_rent_payer(svm: &LiteSVM, intent: &Pubkey, fallback: Pubkey) -> Pubkey {
+    svm.get_account(intent)
+        .filter(|value| !value.data.is_empty())
+        .map(|value| {
+            let mut bytes = value.data.as_slice();
+            lastro_v2::state::IntentState::try_deserialize(&mut bytes)
+                .expect("intent must deserialize")
+                .rent_payer
+        })
+        .unwrap_or(fallback)
+}
+
+/// A funded keypair with no protocol role, standing in for the platform fee sponsor.
+pub fn funded_sponsor(svm: &mut LiteSVM) -> Keypair {
+    let sponsor = Keypair::new();
+    svm.airdrop(&sponsor.pubkey(), LAMPORTS_PER_TEST_WALLET)
+        .expect("sponsor airdrop must succeed");
+    sponsor
 }
 
 pub fn signing_key() -> SigningKey {
@@ -528,6 +638,7 @@ pub fn send_register_facility(
             credential_hash: [0xc3; 32],
             valid_from: 1,
             valid_until: 86_400,
+            geo_commitment: [0x9e; 32],
         }
         .data(),
     };
@@ -553,4 +664,25 @@ pub fn send_transfer_config_authority(
     let message = Message::new(&[ix], Some(&authority.pubkey()));
     let tx = Transaction::new(&[authority, new_authority], message, svm.latest_blockhash());
     svm.send_transaction(tx).map_err(Box::new)
+}
+
+/// Installs `station_id` at `facility_id` (authority only).
+pub fn send_set_station_facility(
+    svm: &mut LiteSVM,
+    authority: &Keypair,
+    deployment_id: [u8; 32],
+    station_id: [u8; 32],
+    facility_id: [u8; 32],
+) -> TestResult {
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new_readonly(authority.pubkey(), true),
+            AccountMeta::new_readonly(config_pda(&deployment_id).0, false),
+            AccountMeta::new(station_pda(&deployment_id, &station_id).0, false),
+            AccountMeta::new_readonly(facility_pda(&deployment_id, &facility_id).0, false),
+        ],
+        data: lastro_v2::instruction::SetStationFacility {}.data(),
+    };
+    send_instructions(svm, vec![ix], authority)
 }

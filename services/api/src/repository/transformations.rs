@@ -4,7 +4,7 @@ use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64};
 use lastro_protocol::v2::{constants::HASH_DOMAIN_TRANSFORMATION, hash::domain_hash};
 use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 
-use crate::error::ApiError;
+use crate::{error::ApiError, repository::db_error};
 
 #[derive(Clone, Debug)]
 pub struct TransformationRecord {
@@ -284,8 +284,4 @@ fn unsigned_i64(row: &PgRow, column: &str) -> Result<u64, ApiError> {
 
 pub fn manifest_base64(record: &TransformationRecord) -> String {
     BASE64.encode(record.manifest_bytes)
-}
-
-fn db_error(_error: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres query failed".into())
 }

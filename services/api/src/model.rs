@@ -168,6 +168,21 @@ pub struct EvidencePackageV2 {
     pub events: Vec<DomainEventAnchorResponse>,
     /// Accepted custody transfers: the verifier re-checks each finalized transaction.
     pub custody_transfers: Vec<CustodyProofResponse>,
+    /// Presence proofs anchored in session batches (v2.1), oldest first.
+    pub batched_observations: Vec<BatchedObservationProof>,
+    /// Boundaries of every facility the batched observations were made at (S5).
+    pub facilities: Vec<FacilityBoundaryProof>,
+}
+
+/// A facility's registered boundary: the canonical bytes its on-chain geo_commitment hashes.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FacilityBoundaryProof {
+    pub facility_id: Hex32,
+    /// Null when the facility has no registered boundary (on-chain commitment is zero).
+    pub car_code: Option<String>,
+    pub boundary_base64: Option<String>,
+    pub geo_commitment: Hex32,
 }
 
 /// Minimal public proof of one custody change (no reasons or internal party ids).
@@ -228,6 +243,9 @@ pub enum TransactionVersionDto {
 pub struct TransactionDataResponse {
     /// Wallet that must authorize this state transition.
     pub required_signer: String,
+    /// Account that pays the network fee and the rent of created accounts: the required
+    /// signer itself, or the platform fee sponsor (which co-signs and never authorizes).
+    pub fee_payer: String,
     /// The program id the browser must independently compare with VITE_LASTRO_PROGRAM_ID.
     pub lastro_program_id: String,
     /// Protocol instructions (Secp256r1 then Lastro for Station events), optionally followed
@@ -517,6 +535,176 @@ pub struct AcceptCustodyTransferRequest {
 pub enum CustodyTransferPhase {
     Propose,
     Accept,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct CreateSessionRequest {
+    /// Custodian wallet that authorizes the session (32-byte lowercase hex).
+    pub custodian: Hex32,
+    /// Presence proofs the session may anchor (1..=2000).
+    pub max_events: u32,
+    /// Window length in seconds (1..=43200).
+    pub duration_seconds: i64,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionResponse {
+    pub session_id: Hex32,
+    pub custodian: Hex32,
+    pub station_id: Hex32,
+    pub facility_id: Hex32,
+    pub max_events: u32,
+    pub valid_from: i64,
+    pub expires_at: i64,
+    pub revoked_at: Option<i64>,
+    pub status: String,
+    pub open_tx_signature: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedSessionResponse {
+    pub session: SessionResponse,
+    pub transaction: TransactionDataResponse,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionManifestAsset {
+    pub asset_id: Hex32,
+    pub rfid_hash: Hex32,
+    pub state_version: u64,
+    pub last_event_hash: Hex32,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionManifestResponse {
+    pub session_id: Hex32,
+    pub deployment_id: Hex32,
+    pub station_id: Hex32,
+    pub valid_from: i64,
+    pub expires_at: i64,
+    pub assets: Vec<SessionManifestAsset>,
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SessionObservationRequest {
+    pub envelope_base64: String,
+    pub observed_rfid_hex: String,
+    pub station_pubkey_hex: String,
+    pub station_signature_hex: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionObservationResponse {
+    pub event_hash: Hex32,
+    pub asset_id: Hex32,
+    pub status: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SessionBatchResponse {
+    pub session_id: Hex32,
+    pub batch_index: u32,
+    pub merkle_root: Hex32,
+    pub leaf_count: u32,
+    pub first_observed_at: i64,
+    pub last_observed_at: i64,
+    pub status: String,
+    pub tx_signature: Option<String>,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreparedBatchResponse {
+    pub batch: SessionBatchResponse,
+    pub transaction: TransactionDataResponse,
+}
+
+/// One presence proof anchored in a session batch, with everything needed to verify it
+/// without the API: the signed bytes, the Merkle path to the on-chain root and the batch tx.
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BatchedObservationProof {
+    pub event_hash: Hex32,
+    pub envelope_bytes_base64: String,
+    pub observed_rfid_hex: String,
+    pub station_pubkey_hex: String,
+    pub station_signature_hex: String,
+    pub session_id: Hex32,
+    /// Facility the batch's Station was installed at (S5); see `facilities`.
+    pub facility_id: Hex32,
+    pub batch_index: u32,
+    pub leaf_index: u32,
+    pub leaf_count: u32,
+    pub merkle_root: Hex32,
+    pub merkle_proof: Vec<Hex32>,
+    pub tx_signature: String,
+}
+
+/// What a sponsored transaction is for: the API re-derives the exact transaction from this
+/// and co-signs only when the submitted bytes equal it.
+#[derive(Clone, Debug, Deserialize)]
+#[serde(tag = "kind", rename_all = "SCREAMING_SNAKE_CASE", deny_unknown_fields)]
+pub enum SponsorPurpose {
+    #[serde(rename_all = "camelCase")]
+    StationEvent { event_hash: Hex32 },
+    #[serde(rename_all = "camelCase")]
+    RegisterAsset {
+        asset_id: Hex32,
+        custodian: Hex32,
+        asset_type: u8,
+        available_weight_grams: u64,
+    },
+    #[serde(rename_all = "camelCase")]
+    CustodyPropose { transfer_id: Uuid },
+    #[serde(rename_all = "camelCase")]
+    CustodyAccept { transfer_id: Uuid },
+    #[serde(rename_all = "camelCase")]
+    SessionOpen { session_id: Hex32 },
+    #[serde(rename_all = "camelCase")]
+    SessionBatch { session_id: Hex32, batch_index: u32 },
+    #[serde(rename_all = "camelCase")]
+    SessionRevoke { session_id: Hex32 },
+}
+
+impl SponsorPurpose {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::StationEvent { .. } => "STATION_EVENT",
+            Self::RegisterAsset { .. } => "REGISTER_ASSET",
+            Self::CustodyPropose { .. } => "CUSTODY_PROPOSE",
+            Self::CustodyAccept { .. } => "CUSTODY_ACCEPT",
+            Self::SessionOpen { .. } => "SESSION_OPEN",
+            Self::SessionBatch { .. } => "SESSION_BATCH",
+            Self::SessionRevoke { .. } => "SESSION_REVOKE",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Deserialize)]
+#[serde(rename_all = "camelCase", deny_unknown_fields)]
+pub struct SponsorSubmitRequest {
+    pub purpose: SponsorPurpose,
+    /// Legacy wire transaction signed by the authorizing wallet, sponsor slot left empty.
+    pub transaction_base64: String,
+}
+
+#[derive(Clone, Debug, Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct SponsorSubmitResponse {
+    pub tx_signature: String,
+    pub fee_payer: String,
+    /// Upper bound of what this transaction may cost the sponsor (fee + created rent).
+    pub reserved_lamports: u64,
+    /// The fully signed wire transaction, so the client can rebroadcast it unchanged.
+    pub signed_transaction_base64: String,
 }
 
 #[derive(Clone, Debug, Deserialize)]

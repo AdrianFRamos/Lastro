@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
 import yaml
@@ -38,6 +39,28 @@ def test_openapi_contains_exact_v2_surface_and_no_v1_or_compliance_endpoint():
         '/api/v2/transformations/{transformationId}/sync',
         '/api/v2/custody-transfers/{transferId}/transaction-data',
         '/api/v2/custody-transfers/{transferId}/accept',
+        '/api/v2/sponsor/submit',
+        '/api/v2/sessions',
+        '/api/v2/sessions/{sessionId}',
+        '/api/v2/sessions/{sessionId}/confirm',
+        '/api/v2/sessions/{sessionId}/manifest',
+        '/api/v2/sessions/{sessionId}/observations',
+        '/api/v2/sessions/{sessionId}/batches',
+        '/api/v2/sessions/{sessionId}/batches/{batchIndex}/confirm',
+        '/api/v2/sessions/{sessionId}/revoke',
+        '/api/v2/sessions/{sessionId}/sync',
+        '/api/v2/facilities/{facilityId}/boundary',
+        '/api/v2/facilities/{facilityId}/transaction-data',
+        '/api/v2/stations/{stationId}/facility/transaction-data',
+        '/api/v2/organizations',
+        '/api/v2/organizations/{orgId}/users',
+        '/api/v2/organizations/{orgId}/export',
+        '/api/v2/organizations/{orgId}/users/{userId}/disable',
+        '/api/v2/auth/logout',
+        '/api/v2/auth/otp/request',
+        '/api/v2/auth/otp/verify',
+        '/api/v2/me',
+        '/api/v2/org/sign',
     }
     assert paths == expected
     lowered = '\n'.join(paths).lower()
@@ -96,3 +119,49 @@ def test_openapi_freezes_http_and_protocol_resource_bounds():
     assert schemas['AgentEvidence']['properties']['observedRfidHex']['pattern'] == '^[0-9a-f]{16}$'
     assert schemas['EvidencePackage']['properties']['schema']['const'] == 'lastro.evidence-package.v2'
     assert spec['components']['responses']['PayloadTooLarge']['description'].startswith('JSON request exceeds')
+
+
+# Operator-only routes that exist in the router but are not yet described in OpenAPI. This list
+# may only shrink: a new route must be documented in schemas/openapi.yaml.
+UNDOCUMENTED_OPERATOR_ROUTES = {
+    '/api/v2/audit',
+    '/api/v2/authority-grants',
+    '/api/v2/authority-grants/{grantId}/revoke',
+    '/api/v2/custody-transfers',
+    '/api/v2/custody-transfers/{transferId}',
+    '/api/v2/facilities',
+    '/api/v2/facilities/{facilityId}',
+    '/api/v2/facilities/{facilityId}/status',
+    '/api/v2/lots',
+    '/api/v2/lots/{lotId}',
+    '/api/v2/parties',
+    '/api/v2/parties/{partyId}',
+    '/api/v2/parties/{partyId}/status',
+    '/api/v2/processing',
+    '/api/v2/processing/{operationId}',
+    '/api/v2/processing/{operationId}/finalize',
+    '/api/v2/processing/{operationId}/ready',
+    '/api/v2/recalls',
+    '/api/v2/recalls/{recallId}',
+    '/api/v2/recalls/{recallId}/close',
+    '/api/v2/shipments',
+    '/api/v2/shipments/{shipmentId}',
+    '/api/v2/shipments/{shipmentId}/status',
+}
+
+
+def test_openapi_and_the_router_describe_the_same_routes():
+    """
+    PURPOSE: the published contract and the served routes cannot drift apart silently.
+    ASSERT: every OpenAPI path is served, and every served path is documented except the frozen
+            operator backlog above (which may only shrink).
+    FAILURE MEANS: clients integrate against routes that do not exist, or new routes ship
+                   undocumented.
+    """
+    router = (ROOT / 'services/api/src/routes/mod.rs').read_text(encoding='utf-8')
+    served = set(re.findall(r'\.route\(\s*"([^"]+)"', router))
+    documented = set(yaml.safe_load((ROOT / 'schemas/openapi.yaml').read_text(encoding='utf-8'))['paths'])
+    assert documented <= served, sorted(documented - served)
+    assert served - documented == UNDOCUMENTED_OPERATOR_ROUTES, sorted(
+        (served - documented) ^ UNDOCUMENTED_OPERATOR_ROUTES
+    )

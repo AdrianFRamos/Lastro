@@ -358,6 +358,8 @@ class LastroFlow:
             )
         if transaction_data["lastroProgramId"] != self.env.program_id:
             raise SystemContractError("API prepared a transaction for a different program")
+        if transaction_data["feePayer"] != wallet.address:
+            raise SystemContractError("the system harness signs self-paid transactions only")
         message = compile_legacy_message(wallet.public_key, self.rpc.latest_blockhash(), transaction_data["instructions"])
         signature = wallet.private_key.sign(message)
         wire = encode_shortvec(1) + signature + message
@@ -598,8 +600,10 @@ def verify_package_on_chain(package: dict, rpc: SolanaRpcClient, program_id: str
 
     previous_rfid = ZERO32
     for index, event in enumerate(package["events"], start=1):
-        anchor = account([b"event", deployment, bytes.fromhex(event["eventId"])], "EventAnchor", 259)
-        if anchor[226:258].hex() != event["eventHash"] or anchor[72:104] != asset_id:
+        # v2.1 EventAnchor (83 bytes): event_hash 8..40, subject_id 40..72, state_version,
+        # event_type, bump. The PDA seeds bind deployment and event id.
+        anchor = account([b"event", deployment, bytes.fromhex(event["eventId"])], "EventAnchor", 83)
+        if anchor[8:40].hex() != event["eventHash"] or anchor[40:72] != asset_id:
             problems.append(f"event {index}: EventAnchor differs from the package")
         if event["observedRfidHex"] is not None:
             observed = rfid_hash(bytes.fromhex(event["observedRfidHex"]))
@@ -616,7 +620,9 @@ def verify_package_on_chain(package: dict, rpc: SolanaRpcClient, program_id: str
     for index, transfer in enumerate(package["custodyTransfers"], start=1):
         problems.extend(_finalized_success(rpc, transfer["txSignature"], program_id, f"custody {index}"))
         tx = rpc.finalized_transaction(transfer["txSignature"])
-        if tx and tx["transaction"]["message"]["accountKeys"][0] != b58encode(bytes.fromhex(transfer["newCustodian"])):
+        # The recipient is the last signer: alone when self-paid, after the sponsor otherwise.
+        signers = len(tx["transaction"]["signatures"]) if tx else 0
+        if tx and tx["transaction"]["message"]["accountKeys"][signers - 1] != b58encode(bytes.fromhex(transfer["newCustodian"])):
             problems.append(f"custody {index}: not signed by the recipient")
     return problems
 

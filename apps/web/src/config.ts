@@ -14,6 +14,11 @@ export interface WebConfig {
   lastroProgramId: string
   lastroDeploymentId: string
   lastroAuthority: string | null
+  /**
+   * Platform fee sponsor the API may name as fee payer. Pinned at build time so a compromised
+   * API cannot make the wallet sign a transaction paid by (and attributed to) another key.
+   */
+  lastroSponsor: string | null
 }
 
 function required(name: keyof ImportMetaEnv): string {
@@ -63,4 +68,5 @@ export const webConfig: WebConfig = Object.freeze({
   // This public trust anchor must be provisioned independently of the API and RPC.
   // Verification cannot return VALID when it is absent.
   lastroAuthority: import.meta.env.VITE_LASTRO_AUTHORITY || null,
+  lastroSponsor: import.meta.env.VITE_LASTRO_SPONSOR || null,
 })

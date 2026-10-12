@@ -10,7 +10,7 @@ use lastro_protocol::v2::{
 use lastro_v2::{
     constants::{
         ASSET_STATUS_ACTIVE, ASSET_STATUS_CONSUMED, FACILITY_TYPE_PROCESSING_FACILITY,
-        INTENT_STATUS_CONSUMED, INTENT_TYPE_CUSTODY_TRANSFER, TRANSFORMATION_STATUS_FINALIZED,
+        INTENT_STATUS_OPEN, INTENT_TYPE_CUSTODY_TRANSFER, TRANSFORMATION_STATUS_FINALIZED,
     },
     state::{AssetState, IntentState, ProtocolConfigV2, TransformationAnchor},
 };
@@ -50,6 +50,115 @@ fn propose_transfer(
         NOW + 600,
         payload,
     )
+}
+
+/// The accept instruction with an explicit (possibly wrong) rent recipient.
+fn accept_with_rent_recipient(
+    h: &mut Harness,
+    new_custodian: &Keypair,
+    asset_id: [u8; 32],
+    intent_id: [u8; 32],
+    rent_recipient: Pubkey,
+) -> TestResult {
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new_readonly(new_custodian.pubkey(), true),
+            AccountMeta::new_readonly(config_pda(&h.deployment_id).0, false),
+            AccountMeta::new(asset_pda(&h.deployment_id, &asset_id).0, false),
+            AccountMeta::new(intent_pda(&h.deployment_id, &asset_id, &intent_id).0, false),
+            AccountMeta::new(rent_recipient, false),
+        ],
+        data: lastro_v2::instruction::AcceptCustodyTransfer {
+            expected_state_version: 0,
+        }
+        .data(),
+    };
+    send_instructions(&mut h.svm, vec![ix], new_custodian)
+}
+
+#[test]
+fn a_sponsored_custody_proposal_refunds_its_rent_to_the_sponsor_only() {
+    // PURPOSE: S1 — the sponsor funds the proposal and gets the rent back on acceptance;
+    //          no other account can capture that refund.
+    // ARRANGE: asset custodied by the authority; proposal to `other` funded by a sponsor.
+    let mut h = Harness::new();
+    h.initialize();
+    set_unix_timestamp(&mut h.svm, NOW);
+    let asset_id = [0xb1; 32];
+    let intent_id = [0xb2; 32];
+    let sponsor = funded_sponsor(&mut h.svm);
+    assert_success(send_register_asset(
+        &mut h.svm,
+        &h.authority,
+        h.deployment_id,
+        asset_id,
+        h.authority.pubkey(),
+        500_000,
+    ));
+    let receiver = h.other.insecure_clone();
+    let payload = custody_transfer_payload_hash(
+        h.deployment_id,
+        asset_id,
+        receiver.pubkey().to_bytes(),
+        0,
+        7,
+    );
+    let ix = create_intent_ix(
+        h.authority.pubkey(),
+        sponsor.pubkey(),
+        h.deployment_id,
+        asset_id,
+        intent_id,
+        INTENT_TYPE_CUSTODY_TRANSFER,
+        0,
+        7,
+        NOW + 600,
+        payload,
+    );
+    h.svm.expire_blockhash();
+    let authority = h.authority.insecure_clone();
+    assert_success(send_sponsored(
+        &mut h.svm,
+        vec![ix],
+        &sponsor,
+        &[&authority],
+    ));
+    let address = intent_pda(&h.deployment_id, &asset_id, &intent_id).0;
+    let intent: IntentState = account(&h.svm, &address);
+    assert_eq!(intent.rent_payer, sponsor.pubkey());
+    assert_eq!(intent.actor, h.authority.pubkey());
+    assert_eq!(intent.status, INTENT_STATUS_OPEN);
+
+    // ACTION: accepting while directing the refund elsewhere fails; the correct one succeeds.
+    h.svm.expire_blockhash();
+    assert_failure(accept_with_rent_recipient(
+        &mut h,
+        &receiver,
+        asset_id,
+        intent_id,
+        receiver.pubkey(),
+    ));
+    let sponsor_before = h.svm.get_balance(&sponsor.pubkey()).unwrap_or(0);
+    h.svm.expire_blockhash();
+    assert_success(accept_with_rent_recipient(
+        &mut h,
+        &receiver,
+        asset_id,
+        intent_id,
+        sponsor.pubkey(),
+    ));
+
+    // ASSERT: custody moved, the intent is gone and its full rent went back to the sponsor.
+    let asset: AssetState = account(&h.svm, &asset_pda(&h.deployment_id, &asset_id).0);
+    assert_eq!(asset.custodian, receiver.pubkey());
+    assert!(!account_exists(&h.svm, &address));
+    let rent = h.svm.minimum_balance_for_rent_exemption(IntentState::SPACE);
+    assert_eq!(
+        h.svm.get_balance(&sponsor.pubkey()).unwrap_or(0),
+        sponsor_before + rent
+    );
+    // FAILURE MEANS: sponsored rent would be locked forever or redirected to a third party.
 }
 
 #[test]
@@ -98,11 +207,11 @@ fn custody_transfer_requires_the_named_receiver_to_sign_and_is_one_shot() {
     let asset: AssetState = account(&h.svm, &asset_pda(&h.deployment_id, &asset_id).0);
     assert_eq!(asset.custodian, h.other.pubkey());
     assert_eq!(asset.state_version, 1);
-    let intent: IntentState = account(
+    // Accepting closes the proposal; its rent returns to the proposer that funded it.
+    assert!(!account_exists(
         &h.svm,
         &intent_pda(&h.deployment_id, &asset_id, &intent_id).0,
-    );
-    assert_eq!(intent.status, INTENT_STATUS_CONSUMED);
+    ));
 
     // Replay of the consumed proposal fails, and the former custodian lost authority.
     h.svm.expire_blockhash();
@@ -535,4 +644,165 @@ fn inputs_outside_the_operator_custody_cannot_be_reserved() {
     h.svm.expire_blockhash();
     let proof = merkle_proof(&plan.inputs, 0).unwrap();
     assert_failure(reserve(&mut h, &operator, &plan, 0, proof));
+}
+
+fn abort(h: &mut Harness, operator: &Keypair, plan: &Plan) -> TestResult {
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new_readonly(operator.pubkey(), true),
+            AccountMeta::new_readonly(config_pda(&h.deployment_id).0, false),
+            AccountMeta::new_readonly(facility_pda(&h.deployment_id, &plan.facility_id).0, false),
+            AccountMeta::new(
+                transformation_pda(&h.deployment_id, &plan.transformation_id).0,
+                false,
+            ),
+        ],
+        data: lastro_v2::instruction::AbortTransformation {}.data(),
+    };
+    send_instructions(&mut h.svm, vec![ix], operator)
+}
+
+fn expire(h: &mut Harness, caller: &Keypair, plan: &Plan) -> TestResult {
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new_readonly(caller.pubkey(), true),
+            AccountMeta::new_readonly(config_pda(&h.deployment_id).0, false),
+            AccountMeta::new(
+                transformation_pda(&h.deployment_id, &plan.transformation_id).0,
+                false,
+            ),
+        ],
+        data: lastro_v2::instruction::ExpireTransformation {}.data(),
+    };
+    send_instructions(&mut h.svm, vec![ix], caller)
+}
+
+/// A facility with the plan's inputs in its custody and the transformation begun.
+fn begun_plan(h: &mut Harness) -> (Keypair, Plan) {
+    set_unix_timestamp(&mut h.svm, NOW);
+    let operator = Keypair::new();
+    fund(h, &operator);
+    let plan = plan();
+    assert_success(send_register_facility(
+        &mut h.svm,
+        &h.authority,
+        h.deployment_id,
+        plan.facility_id,
+        operator.pubkey(),
+        FACILITY_TYPE_PROCESSING_FACILITY,
+    ));
+    for input in &plan.inputs {
+        h.svm.expire_blockhash();
+        assert_success(send_register_asset(
+            &mut h.svm,
+            &h.authority,
+            h.deployment_id,
+            input.asset_id,
+            operator.pubkey(),
+            input.weight_grams,
+        ));
+    }
+    h.svm.expire_blockhash();
+    assert_success(begin(h, &operator, &plan));
+    (operator, plan)
+}
+
+#[test]
+fn a_transformation_follows_the_chain_order_inputs_then_outputs() {
+    // PURPOSE: A2 — no asset can come out of a transformation before every committed input
+    // went in, and consumed inputs can never be orphaned by an abort or an expiry.
+    // ARRANGE: a begun transformation with both inputs in the facility's custody.
+    let mut h = Harness::new();
+    h.initialize();
+    let (operator, plan) = begun_plan(&mut h);
+
+    // ASSERT: outputs are refused before any consumption, even with a valid leaf proof.
+    h.svm.expire_blockhash();
+    assert_failure(create_output(&mut h, &operator, &plan, 0));
+
+    // ASSERT: the first consumption needs every input locked by a reservation.
+    h.svm.expire_blockhash();
+    let proof = merkle_proof(&plan.inputs, 0).unwrap();
+    assert_success(reserve(&mut h, &operator, &plan, 0, proof));
+    h.svm.expire_blockhash();
+    assert_failure(consume(&mut h, &operator, &plan, 0));
+    h.svm.expire_blockhash();
+    let proof = merkle_proof(&plan.inputs, 1).unwrap();
+    assert_success(reserve(&mut h, &operator, &plan, 1, proof));
+
+    // ACTION: one input consumed.
+    h.svm.expire_blockhash();
+    assert_success(consume(&mut h, &operator, &plan, 0));
+
+    // ASSERT: from here the work can only be finished: no output yet, no abort, no expiry
+    // (even past the deadline), no release of the remaining input.
+    h.svm.expire_blockhash();
+    assert_failure(create_output(&mut h, &operator, &plan, 0));
+    h.svm.expire_blockhash();
+    assert_failure(abort(&mut h, &operator, &plan));
+    set_unix_timestamp(&mut h.svm, plan.manifest.expires_at + 10);
+    h.svm.expire_blockhash();
+    let stranger = h.other.insecure_clone();
+    assert_failure(expire(&mut h, &stranger, &plan));
+
+    // ACTION: the facility is suspended mid-way; past the deadline it still completes the
+    // committed manifest, because the inputs it consumed are already gone (M3).
+    let ix = Instruction {
+        program_id: program_id(),
+        accounts: vec![
+            AccountMeta::new_readonly(h.authority.pubkey(), true),
+            AccountMeta::new_readonly(config_pda(&h.deployment_id).0, false),
+            AccountMeta::new_readonly(facility_registry_pda(&h.deployment_id).0, false),
+            AccountMeta::new(facility_pda(&h.deployment_id, &plan.facility_id).0, false),
+        ],
+        data: lastro_v2::instruction::SetFacilityStatus {
+            status: lastro_v2::constants::FACILITY_STATUS_SUSPENDED,
+        }
+        .data(),
+    };
+    h.svm.expire_blockhash();
+    let authority = h.authority.insecure_clone();
+    assert_success(send_instructions(&mut h.svm, vec![ix], &authority));
+    h.svm.expire_blockhash();
+    assert_success(consume(&mut h, &operator, &plan, 1));
+    for index in 0..plan.outputs.len() {
+        h.svm.expire_blockhash();
+        assert_success(create_output(&mut h, &operator, &plan, index));
+    }
+    h.svm.expire_blockhash();
+    assert_success(finalize(&mut h, &operator, &plan));
+    let transformation: TransformationAnchor = account(
+        &h.svm,
+        &transformation_pda(&h.deployment_id, &plan.transformation_id).0,
+    );
+    assert_eq!(transformation.status, TRANSFORMATION_STATUS_FINALIZED);
+    // FAILURE MEANS: a facility could mint assets from nothing or destroy inputs while keeping
+    // the outputs, breaking the custody chain the evidence relies on.
+}
+
+#[test]
+fn a_transformation_can_be_abandoned_only_before_anything_is_consumed() {
+    // PURPOSE: A2 — abort and expiry stay available while nothing moved, and then release
+    // the reserved inputs back to their owner.
+    let mut h = Harness::new();
+    h.initialize();
+    let (operator, plan) = begun_plan(&mut h);
+    h.svm.expire_blockhash();
+    let proof = merkle_proof(&plan.inputs, 0).unwrap();
+    assert_success(reserve(&mut h, &operator, &plan, 0, proof));
+
+    // ACTION: the owner aborts while nothing has been consumed.
+    h.svm.expire_blockhash();
+    assert_success(abort(&mut h, &operator, &plan));
+
+    // ASSERT: nothing can continue an aborted transformation.
+    h.svm.expire_blockhash();
+    assert_failure(consume(&mut h, &operator, &plan, 0));
+    h.svm.expire_blockhash();
+    assert_failure(create_output(&mut h, &operator, &plan, 0));
+    h.svm.expire_blockhash();
+    assert_failure(finalize(&mut h, &operator, &plan));
+    // FAILURE MEANS: an abandoned transformation could still move or create assets.
 }

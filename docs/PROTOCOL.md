@@ -104,10 +104,12 @@ discriminator(8) | subject_id(32) | event_id(32) | station_id(32) | envelope(220
 rfid args: bind = new_rfid_hash(32); replace = old(32) || new(32); observation = none
 ```
 
-Accounts: signer, ProtocolConfigV2, station registry, StationRecord, AssetState (w), EventAnchor
-(w), one RfidBinding per RFID argument (w), instructions sysvar, system program. The signer is the
-asset's current custodian; observations may also be signed by the deployment authority (for
-capture-less relays), so day-to-day operation never needs the authority key.
+Accounts: signer, payer (w, signer), ProtocolConfigV2, station registry, StationRecord,
+AssetState (w), EventAnchor (w), one RfidBinding per RFID argument (w), instructions sysvar,
+system program. The signer is the asset's current custodian; observations may also be signed by
+the deployment authority (for capture-less relays), so day-to-day operation never needs the
+authority key. The payer funds the rent of the created accounts: it is the signer itself or the
+platform fee sponsor (v2.1, S1) and grants no authority.
 
 Secp256r1 descriptor (instruction 0, all `u16` little-endian):
 
@@ -134,14 +136,48 @@ index 1 other than ComputeBudget. The runtime reads ComputeBudget from any posit
 
 Wallet-only instructions (`register_asset`, custody `create_intent` / `accept_custody_transfer`)
 are single Lastro instructions, optionally followed by the same ComputeBudget pair.
+`register_asset` and `create_intent` also take the `payer` right after their signer;
+`accept_custody_transfer` (and `cancel_intent`, `expire_intent`, `consume_intent`) take the
+intent's recorded `rent_payer` last, because every terminal transition closes the intent and
+refunds its rent.
 
 ## Canonical state
 
 - `AssetState.current_rfid_hash` is the active tag (zero before the first bind).
 - `RfidBinding` (PDA `["rfid", deployment, rfid_hash]`) is **ACTIVE** or **RETIRED** and is never
   closed: a retired tag still resolves to the asset it identified and cannot be bound again.
-- `EventAnchor` (PDA `["event", deployment, event_id]`) stores the event hash, payload hash and
-  source of every anchored event.
+- `EventAnchor` (PDA `["event", deployment, event_id]`, v2.1: 83 bytes) stores `event_hash`,
+  `subject_id`, `state_version` and `event_type`. The seeds bind deployment and event id and
+  `event_hash` commits to every other envelope field, so verifiers recompute it from the 220
+  envelope bytes instead of reading copies of each field.
+- `IntentState` records its `rent_payer`. Accepting, cancelling or expiring it closes the
+  account and refunds the rent; an accepted proposal cannot be replayed because custody moved
+  and `state_version` changed. Consuming an intent of another type changes no asset state, so
+  the account stays as a CONSUMED tombstone and the same intent can never be created again.
+- `SessionGrant` (PDA `["session", deployment, session_id]`, 208 bytes): custodian, Station,
+  facility, `allowed_actions` (OBSERVE only), `max_events` ≤ 2 000, window ≤ 12 h, counters,
+  revocation and rent payer. Identity changes and custody transfers never run under a session.
+  `open_session` accepts only `session_id = SHA-256("LASTRO_V2_SESSION_ID\0" || deployment_id ||
+  custodian || station_id || valid_from i64 LE || expires_at i64 LE || max_events u32 LE)`, so no
+  other wallet can occupy the id the Station signs presence proofs for.
+- `BatchAnchor` (PDA `["batch", deployment, session_id, batch_index_le32]`, 201 bytes): Merkle
+  root of up to 1 024 presence proofs plus the session terms (custodian, Station, facility) and the
+  observed window. Leaf = `SHA-256("LASTRO_V2_BATCH_LEAF\0" || envelope[220] || signature[64])`;
+  node = `SHA-256("LASTRO_V2_BATCH_NODE\0" || left || right)`, an unpaired node pairs with
+  itself. The program checks the window, capacity, revocation, that the session's Station is
+  still ACTIVE (a suspended or revoked Station anchors nothing more) and that it is anchored
+  within 7 days of the last observation; it does not check leaves. Batched proofs do not advance
+  `AssetState`: each extends the head the frozen manifest gave it.
+- Transformations follow the chain order: every committed input is reserved, then consumed
+  (the first consumption needs all of them reserved and happens inside the window), and only
+  then are outputs created and the transformation finalized. Abort and expiry are possible only
+  before anything is consumed; once consumption started the facility can only finish the
+  committed manifest, without a time bound, and remaining reservations cannot be released.
+- Stations: REVOKED is terminal; EXPIRED is left only through `extend_station_validity`, which
+  reactivates the Station. The deployment's account-layout schema is `SCHEMA_VERSION = 2`
+  (v2.1); layouts are not migrated in place, a new schema is a new deployment. The initial
+  config is bounded (`max_event_age_seconds` ≤ 86 400, mass tolerance ≤ 1 000 bps) because it
+  cannot be changed later.
 - Custody changes in two phases (custodian proposes, recipient accepts) and bumps
   `state_version` without an event; a capture is therefore bound to `state_version ≥ 1` and to
   the asset's `last_event_hash`, not to a fixed version sequence.

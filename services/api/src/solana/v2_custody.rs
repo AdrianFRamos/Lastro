@@ -4,6 +4,8 @@
 //! custodian and commits to the recipient wallet. Phase 2 (`accept_custody_transfer`) is
 //! signed by the recipient. The API only prepares descriptors; wallets sign, and the
 //! projection is updated after the finalized chain state shows the new custodian.
+//! A `payer` (the custodian itself or the fee sponsor) funds the intent; acceptance closes it
+//! and returns that rent to the payer the intent recorded.
 
 use lastro_protocol::v2::custody_transfer_payload_hash;
 use sha2::{Digest, Sha256};
@@ -12,8 +14,8 @@ use uuid::Uuid;
 
 use crate::{
     error::ApiError,
-    model::{AccountMetaDto, InstructionDto, TransactionDataResponse, TransactionVersionDto},
-    solana::v2_transaction_builder::{v2_asset_address, v2_protocol_config_address},
+    model::{AccountMetaDto, InstructionDto, TransactionDataResponse},
+    solana::v2_transaction_builder::{finish, v2_asset_address, v2_protocol_config_address},
 };
 
 use base64::{Engine as _, engine::general_purpose::STANDARD as BASE64_STANDARD};
@@ -69,10 +71,11 @@ impl CustodyTransferPlan {
         .0
     }
 
-    /// Phase 1, signed by `current_custodian`.
+    /// Phase 1, signed by `current_custodian`; `payer` funds the intent and the fee.
     pub fn propose(
         &self,
         current_custodian: Pubkey,
+        payer: Pubkey,
         expires_at: i64,
     ) -> Result<TransactionDataResponse, ApiError> {
         if current_custodian == self.recipient {
@@ -97,7 +100,8 @@ impl CustodyTransferPlan {
         data.extend_from_slice(&expires_at.to_le_bytes());
         data.extend_from_slice(&payload);
         let accounts = vec![
-            meta(current_custodian, true, true),
+            meta(current_custodian, true, false),
+            meta(payer, true, true),
             meta(self.config(), false, false),
             meta(self.asset(), false, false),
             meta(self.intent(), false, true),
@@ -107,11 +111,16 @@ impl CustodyTransferPlan {
                 is_writable: false,
             },
         ];
-        Ok(self.single(current_custodian, accounts, data))
+        self.single(current_custodian, payer, accounts, data)
     }
 
-    /// Phase 2, signed by the recipient wallet.
-    pub fn accept(&self) -> TransactionDataResponse {
+    /// Phase 2, signed by the recipient wallet; `fee_payer` pays the network fee and
+    /// `rent_payer` (recorded in the intent at proposal) receives the closed intent's rent.
+    pub fn accept(
+        &self,
+        fee_payer: Pubkey,
+        rent_payer: Pubkey,
+    ) -> Result<TransactionDataResponse, ApiError> {
         let mut data = discriminator("accept_custody_transfer").to_vec();
         data.extend_from_slice(&self.expected_state_version.to_le_bytes());
         let accounts = vec![
@@ -119,8 +128,9 @@ impl CustodyTransferPlan {
             meta(self.config(), false, false),
             meta(self.asset(), false, true),
             meta(self.intent(), false, true),
+            meta(rent_payer, false, true),
         ];
-        self.single(self.recipient, accounts, data)
+        self.single(self.recipient, fee_payer, accounts, data)
     }
 
     fn config(&self) -> Pubkey {
@@ -134,42 +144,23 @@ impl CustodyTransferPlan {
     fn single(
         &self,
         signer: Pubkey,
+        fee_payer: Pubkey,
         accounts: Vec<AccountMetaDto>,
         data: Vec<u8>,
-    ) -> TransactionDataResponse {
-        let data_len = data.len();
-        let account_count = accounts.len();
+    ) -> Result<TransactionDataResponse, ApiError> {
         let instructions = vec![InstructionDto {
             program_id: self.program_id.to_string(),
             accounts,
             data_base64: BASE64_STANDARD.encode(data),
         }];
-        // signatures + header + keys (accounts + program; signer is one of the accounts)
-        // + blockhash + one compiled instruction (program index, accounts, data).
-        let keys = account_count + 1;
-        let measured_serialized_bytes = (1 + 64)
-            + 3
-            + (shortvec_len(keys) + 32 * keys)
-            + 32
-            + 1
-            + (1 + shortvec_len(account_count) + account_count + shortvec_len(data_len) + data_len);
-        TransactionDataResponse {
-            required_signer: signer.to_string(),
-            lastro_program_id: self.program_id.to_string(),
+        finish(
+            self.program_id,
+            signer,
+            fee_payer,
             instructions,
-            measured_serialized_bytes,
-            transaction_version: TransactionVersionDto::Legacy,
-        }
+            "v2 custody transfer",
+        )
     }
-}
-
-fn shortvec_len(mut value: usize) -> usize {
-    let mut length = 1;
-    while value >= 0x80 {
-        value >>= 7;
-        length += 1;
-    }
-    length
 }
 
 fn discriminator(name: &str) -> [u8; 8] {
@@ -208,13 +199,22 @@ mod tests {
         // FAILURE MEANS: a proposal could be accepted by another wallet or never be found.
         let plan = plan();
         let custodian = Pubkey::new_unique();
-        let propose = plan.propose(custodian, 99).unwrap();
-        let accept = plan.accept();
+        let sponsor = Pubkey::new_unique();
+        let propose = plan.propose(custodian, sponsor, 99).unwrap();
+        let accept = plan.accept(sponsor, sponsor).unwrap();
         assert_eq!(propose.required_signer, custodian.to_string());
+        assert_eq!(propose.fee_payer, sponsor.to_string());
         assert_eq!(accept.required_signer, plan.recipient.to_string());
         assert_eq!(
-            propose.instructions[0].accounts[3].address,
+            propose.instructions[0].accounts[4].address,
             accept.instructions[0].accounts[3].address
+        );
+        // The proposer authorizes read-only; the payer funds; acceptance refunds the payer.
+        assert!(!propose.instructions[0].accounts[0].is_writable);
+        assert!(propose.instructions[0].accounts[1].is_writable);
+        assert_eq!(
+            accept.instructions[0].accounts[4].address,
+            sponsor.to_string()
         );
 
         let data = BASE64_STANDARD
@@ -232,6 +232,6 @@ mod tests {
         assert_eq!(&data[data.len() - 32..], &expected_payload);
         assert!(propose.measured_serialized_bytes < 1232);
 
-        assert!(plan.propose(plan.recipient, 99).is_err());
+        assert!(plan.propose(plan.recipient, sponsor, 99).is_err());
     }
 }

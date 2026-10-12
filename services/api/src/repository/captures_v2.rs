@@ -4,7 +4,7 @@ use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use time::OffsetDateTime;
 use uuid::Uuid;
 
-use crate::error::ApiError;
+use crate::{error::ApiError, repository::db_error};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CaptureStatus {
@@ -354,8 +354,4 @@ fn budget_exhausted() -> ApiError {
     ApiError::RateLimited(
         "capture authorization challenge budget exhausted; retry after one minute".into(),
     )
-}
-
-fn db_error(_error: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres query failed".into())
 }

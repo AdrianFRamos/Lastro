@@ -6,7 +6,7 @@
 
 use sqlx::{PgPool, Row, postgres::PgRow};
 
-use crate::error::ApiError;
+use crate::{error::ApiError, repository::db_error};
 
 const LEASE_SECONDS: i64 = 30;
 
@@ -225,10 +225,6 @@ fn decode(row: &PgRow) -> Result<ReconciliationJob, ApiError> {
 
 fn truncate_error(error: &str) -> String {
     error.chars().take(1024).collect()
-}
-
-fn db_error(_error: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres query failed".into())
 }
 
 #[cfg(test)]

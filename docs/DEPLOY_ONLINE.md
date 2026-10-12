@@ -143,24 +143,29 @@ Um papel já cadastrado não muda. Para trocar o papel de uma carteira, cadastre
 
 ## Backup e restauração
 
-Crie o primeiro backup depois que o banco estiver saudável:
+O deploy automático (`deploy.yml` → SSM → `scripts/deploy_production.sh`) faz um backup antes de
+cada release, e o cron criado por `scripts/ec2_bootstrap.sh` faz um por dia às 03:30 UTC,
+sob o mesmo lock do deploy.
+
+- **Criptografia:** defina `LASTRO_BACKUP_AGE_RECIPIENT` no `.env.production` com a chave
+  pública `age` (a identidade privada fica fora da VM). O banco guarda as chaves seladas das
+  organizações; um backup sem criptografia gera um aviso.
+- **Fora da VM:** defina `LASTRO_BACKUP_S3_URI` (com o AWS CLI v2 instalado e um papel da
+  instância com acesso ao bucket); a cópia usa SSE-KMS.
+- **Atômico:** o arquivo só aparece depois que o `pg_dump` terminou; falhas não deixam backup
+  truncado.
+- **Segredos:** os arquivos em `/opt/lastro/secrets` (chave do patrocinador, chave mestra das
+  organizações) **não** entram no backup. Guarde uma cópia offline da chave mestra: sem ela,
+  todas as chaves de organização do backup ficam irrecuperáveis.
+
+Restauração (para a API, reaplica o dump e sobe a API de novo):
 
 ```bash
-chmod +x scripts/backup_production.sh
-LASTRO_PRODUCTION_ENV="$PWD/.env.production" \
-  scripts/backup_production.sh
+LASTRO_BACKUP_AGE_IDENTITY=/caminho/offline/identity.txt \
+  bash /opt/lastro/restore_production.sh /opt/lastro/backups/lastro-postgres-AAAAMMDDTHHMMSSZ.sql.gz.age
 ```
 
-Agende o script com `systemd timer` ou cron. O backup deve ser copiado para armazenamento fora da VM. O arquivo local é uma segunda camada, não o único backup.
-
-Teste restauração em uma instância PostgreSQL separada antes de considerar o backup válido:
-
-```bash
-zcat backups/lastro-postgres-YYYYMMDDTHHMMSSZ.sql.gz \
-  | docker exec -i lastro-postgres-restore psql -U lastro -d lastro
-```
-
-Adapte o nome do container ao ambiente de restauração e nunca restaure diretamente sobre o banco de produção sem uma janela operacional e uma cópia anterior.
+Teste a restauração periodicamente numa instância separada antes de considerar o backup válido.
 
 ## Atualização e rollback
 
@@ -179,7 +184,11 @@ docker compose --env-file .env.production \
   -f infra/compose.production.yml up -d
 ```
 
-A API aplica migrations no startup. Migrations destrutivas não devem ser incluídas em uma atualização sem um plano de rollback de banco. Para voltar a uma versão anterior, use um commit conhecido e restaure o backup correspondente se o schema já tiver avançado de forma incompatível.
+A API aplica migrations no startup. No deploy automático, se a release nova falhar no health
+check depois de ter migrado o schema, `deploy_production.sh` restaura o backup feito no passo 1
+antes de subir as imagens anteriores; se a restauração falhar, a API fica parada e o log diz qual
+arquivo restaurar à mão. Uma falha de `pull` não muda nada: a tag em uso só é gravada depois do
+download.
 
 ## Checklist de staging obrigatório
 

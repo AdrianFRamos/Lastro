@@ -208,6 +208,7 @@ function uncheckedLayers(): VerificationLayerResult[] {
     { layer: 'STATION_SIGNATURE', status: 'NOT_CHECKED', detail: 'No package loaded' },
     { layer: 'IDENTITY_CONTINUITY', status: 'NOT_CHECKED', detail: 'No package loaded' },
     { layer: 'CUSTODY', status: 'NOT_CHECKED', detail: 'No package loaded' },
+    { layer: 'FACILITY_ORIGIN', status: 'NOT_CHECKED', detail: 'No package loaded' },
     { layer: 'ON_CHAIN_STATE', status: 'NOT_CHECKED', detail: 'No package loaded' },
   ]
 }

@@ -7,6 +7,7 @@ const validEnvironment = {
   VITE_LASTRO_PROGRAM_ID: 'Vote111111111111111111111111111111111111111',
   VITE_LASTRO_DEPLOYMENT_ID_HEX: 'd0'.repeat(32),
   VITE_LASTRO_AUTHORITY: 'Vote111111111111111111111111111111111111111',
+  VITE_LASTRO_SPONSOR: 'Stake11111111111111111111111111111111111111',
 } as const
 
 async function loadConfig(overrides: Partial<Record<keyof typeof validEnvironment, string>> = {}) {
@@ -31,12 +32,24 @@ describe('public web deployment configuration', () => {
    */
   it('rejects every missing required VITE deployment variable independently', async () => {
     for (const name of Object.keys(validEnvironment) as Array<keyof typeof validEnvironment>) {
-      if (name === 'VITE_LASTRO_AUTHORITY') continue
+      if (name === 'VITE_LASTRO_AUTHORITY' || name === 'VITE_LASTRO_SPONSOR') continue
       await expect(loadConfig({ [name]: '' })).rejects.toThrow(
         `Missing required public build configuration: ${name}`,
       )
       vi.unstubAllEnvs()
     }
+  })
+
+  /**
+   * ARRANGE: a valid environment without VITE_LASTRO_SPONSOR.
+   * ACTION: load config.
+   * ASSERT: lastroSponsor is null, so the validator accepts only self-paid transactions.
+   * FAILURE MEANS: an unpinned API could name any fee payer for the wallet to sign with.
+   */
+  it('keeps wallets self-paid when no fee sponsor is pinned', async () => {
+    await expect(loadConfig({ VITE_LASTRO_SPONSOR: '' })).resolves.toMatchObject({
+      lastroSponsor: null,
+    })
   })
 
   it('fails closed for canonical verification when no independent authority anchor is supplied', async () => {
@@ -117,6 +130,7 @@ describe('public web deployment configuration', () => {
       lastroProgramId: validEnvironment.VITE_LASTRO_PROGRAM_ID,
       lastroDeploymentId: validEnvironment.VITE_LASTRO_DEPLOYMENT_ID_HEX,
       lastroAuthority: validEnvironment.VITE_LASTRO_AUTHORITY,
+      lastroSponsor: validEnvironment.VITE_LASTRO_SPONSOR,
     })
   })
 
@@ -133,6 +147,7 @@ describe('public web deployment configuration', () => {
       'VITE_LASTRO_AUTHORITY',
       'VITE_LASTRO_DEPLOYMENT_ID_HEX',
       'VITE_LASTRO_PROGRAM_ID',
+      'VITE_LASTRO_SPONSOR',
       'VITE_SOLANA_CHAIN',
       'VITE_SOLANA_RPC_URL',
     ])
@@ -141,6 +156,7 @@ describe('public web deployment configuration', () => {
       'lastroAuthority',
       'lastroDeploymentId',
       'lastroProgramId',
+      'lastroSponsor',
       'solanaChain',
       'solanaRpcUrl',
     ])

@@ -181,6 +181,23 @@ bool lastro_transport_feed(const uint8_t *bytes, size_t len)
     return true;
 }
 
+size_t lastro_transport_feed_some(const uint8_t *bytes, size_t len)
+{
+    if (bytes == NULL || len == 0u) return 0u;
+    if (!g_has_ready) parse_buffer();
+    size_t used = 0u;
+    while (used < len && !g_has_ready) {
+        if (g_rx_len == sizeof(g_rx)) {
+            /* A full buffer that still holds no frame is garbage: drop a byte and resync. */
+            discard_prefix(1);
+            resync_magic();
+        }
+        g_rx[g_rx_len++] = bytes[used++];
+        parse_buffer();
+    }
+    return used;
+}
+
 bool lastro_transport_take(lastro_frame_view_t *out)
 {
     if (out == NULL) return false;

@@ -19,6 +19,17 @@
 #define LASTRO_P256_UNCOMPRESSED_PUBKEY_LEN 65u
 
 /*
+ * Signing algorithm. The software development key signs deterministically (RFC 6979) when
+ * mbedTLS provides it: the same envelope then always yields the same signature (and the same
+ * batch leaf), matching the frozen test vectors. The eFuse hardware unit keeps randomized k.
+ */
+#if !CONFIG_LASTRO_STATION_USE_EFUSE_KEY && defined(CONFIG_MBEDTLS_ECDSA_DETERMINISTIC)
+#define LASTRO_STATION_SIGN_ALG PSA_ALG_DETERMINISTIC_ECDSA(PSA_ALG_SHA_256)
+#else
+#define LASTRO_STATION_SIGN_ALG PSA_ALG_ECDSA(PSA_ALG_SHA_256)
+#endif
+
+/*
  * Development signing uses a software-imported key so the complete protocol can be
  * validated before irreversible provisioning. The optional eFuse backend imports only
  * an opaque hardware key reference. This component never writes, burns, or changes
@@ -88,7 +99,7 @@ static bool import_development_key(psa_key_id_t *key_id)
     psa_set_key_type(&attributes, PSA_KEY_TYPE_ECC_KEY_PAIR(PSA_ECC_FAMILY_SECP_R1));
     psa_set_key_bits(&attributes, 256);
     psa_set_key_usage_flags(&attributes, PSA_KEY_USAGE_SIGN_HASH);
-    psa_set_key_algorithm(&attributes, PSA_ALG_ECDSA(PSA_ALG_SHA_256));
+    psa_set_key_algorithm(&attributes, LASTRO_STATION_SIGN_ALG);
 
     psa_status_t status = psa_crypto_init();
     if (status == PSA_SUCCESS) {
@@ -263,7 +274,7 @@ bool lastro_signer_sign_event(
     if (status == PSA_SUCCESS && digest_len == sizeof(digest)) {
         status = psa_sign_hash(
             key_id,
-            PSA_ALG_ECDSA(PSA_ALG_SHA_256),
+            LASTRO_STATION_SIGN_ALG,
             digest,
             digest_len,
             out_signature,

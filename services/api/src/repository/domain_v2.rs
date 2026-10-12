@@ -5,7 +5,8 @@ use sqlx::{PgPool, Postgres, Row, Transaction, postgres::PgRow};
 use uuid::Uuid;
 
 use crate::{
-    domain::v2::VerifiedDomainObservation, error::ApiError, solana::rpc::CanonicalV2AssetState,
+    domain::v2::VerifiedDomainObservation, error::ApiError, repository::db_error,
+    solana::rpc::CanonicalV2AssetState,
 };
 
 #[derive(Clone, Debug)]
@@ -390,8 +391,4 @@ fn decode(row: &PgRow) -> Result<DomainAnchorRecord, ApiError> {
 fn fixed<const N: usize>(row: &PgRow, column: &str) -> Result<[u8; N], ApiError> {
     let value: Vec<u8> = row.try_get(column).map_err(db_error)?;
     value.try_into().map_err(|_| ApiError::Internal)
-}
-
-fn db_error(_error: sqlx::Error) -> ApiError {
-    ApiError::Unavailable("postgres query failed".into())
 }

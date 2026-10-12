@@ -1,4 +1,7 @@
-//! Durable on-chain intents prevent replay and stale supersession.
+//! On-chain intents prevent replay and stale supersession.
+//!
+//! An intent account exists only while it is OPEN: accepting, consuming, cancelling or
+//! expiring it closes the account and returns its rent to `rent_payer`.
 
 use anchor_lang::prelude::*;
 
@@ -14,9 +17,11 @@ pub struct IntentState {
     pub expires_at: i64,
     pub consumed_at: i64,
     pub payload_hash: [u8; 32],
+    /// Account that funded the rent and receives it back when the intent closes.
+    pub rent_payer: Pubkey,
     pub bump: u8,
 }
 
 impl IntentState {
-    pub const SPACE: usize = 8 + 32 + 32 + 2 + 8 + 8 + 32 + 1 + 8 + 8 + 32 + 1;
+    pub const SPACE: usize = 8 + 32 + 32 + 2 + 8 + 8 + 32 + 1 + 8 + 8 + 32 + 32 + 1;
 }

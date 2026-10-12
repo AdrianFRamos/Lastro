@@ -1,12 +1,17 @@
 //! Axum router composition. Routes are explicit so authorization boundaries remain reviewable.
 
+pub(crate) mod access;
 pub mod agent;
 pub mod assets;
 pub mod captures;
 pub mod domain_v2;
+pub mod geo;
 pub mod health;
 pub mod operations;
+pub mod orgs;
 pub mod processing;
+pub mod sessions;
+pub mod sponsor;
 pub mod transformations;
 
 use crate::{error::ApiError, state::AppState};
@@ -16,7 +21,18 @@ use axum::{
     http::Method,
     routing::{get, post},
 };
-use tower_http::cors::{AllowOrigin, Any, CorsLayer};
+use std::time::Duration;
+use tower::limit::GlobalConcurrencyLimitLayer;
+use tower_http::{
+    cors::{AllowOrigin, Any, CorsLayer},
+    timeout::TimeoutLayer,
+};
+
+/// Requests served at once; further requests wait instead of exhausting the database pool and
+/// the Solana RPC quota.
+pub const MAX_CONCURRENT_REQUESTS: usize = 64;
+/// Upper bound of any request, RPC round-trips included (each RPC call is bounded to 10 s).
+pub const REQUEST_TIMEOUT: Duration = Duration::from_secs(30);
 
 /// Public and Agent routes carry fixed-size protocol payloads. The largest is
 /// AgentEvidenceRequest (~620 bytes of compact JSON); see docs/API.md.
@@ -25,6 +41,13 @@ pub const MAX_JSON_BODY_BYTES: usize = 1024;
 /// Operational lot admission can carry up to 512 fixed-size asset references. The
 /// body stays bounded well below Axum's generic 2 MiB buffer.
 pub const MAX_OPERATIONS_JSON_BODY_BYTES: usize = 64 * 1024;
+
+/// A sponsored submission carries one legacy transaction (at most 1232 bytes, 1644 Base64
+/// characters) plus its purpose; 4 KiB bounds it with room for the JSON envelope.
+pub const MAX_SPONSOR_JSON_BODY_BYTES: usize = 4 * 1024;
+
+/// A facility boundary of up to 10 000 vertices as `[lon, lat]` decimal pairs (S5).
+pub const MAX_BOUNDARY_JSON_BODY_BYTES: usize = 512 * 1024;
 
 pub fn router(state: AppState) -> Router {
     let origins = &state.config.cors_allowed_origins;
@@ -94,6 +117,33 @@ pub fn router(state: AppState) -> Router {
             "/api/v2/custody-transfers/{transferId}/accept",
             post(operations::accept_custody_transfer),
         )
+        .route("/api/v2/sessions", post(sessions::create))
+        .route("/api/v2/sessions/{sessionId}", get(sessions::get))
+        .route(
+            "/api/v2/sessions/{sessionId}/confirm",
+            post(sessions::confirm),
+        )
+        .route(
+            "/api/v2/sessions/{sessionId}/manifest",
+            get(sessions::manifest),
+        )
+        .route(
+            "/api/v2/sessions/{sessionId}/observations",
+            post(sessions::ingest_observation),
+        )
+        .route(
+            "/api/v2/sessions/{sessionId}/batches",
+            post(sessions::prepare_batch),
+        )
+        .route(
+            "/api/v2/sessions/{sessionId}/batches/{batchIndex}/confirm",
+            post(sessions::confirm_batch),
+        )
+        .route(
+            "/api/v2/sessions/{sessionId}/revoke",
+            post(sessions::revoke),
+        )
+        .route("/api/v2/sessions/{sessionId}/sync", post(sessions::sync))
         .layer(DefaultBodyLimit::max(MAX_JSON_BODY_BYTES));
 
     // Operator-authenticated registry and processing routes: up to 64 KiB.
@@ -121,6 +171,14 @@ pub fn router(state: AppState) -> Router {
         .route(
             "/api/v2/facilities/{facilityId}/status",
             post(operations::set_facility_status),
+        )
+        .route(
+            "/api/v2/facilities/{facilityId}/transaction-data",
+            post(geo::facility_transaction),
+        )
+        .route(
+            "/api/v2/stations/{stationId}/facility/transaction-data",
+            post(geo::station_facility_transaction),
         )
         .route("/api/v2/lots", post(operations::create_lot))
         .route("/api/v2/lots/{lotId}", get(operations::get_lot))
@@ -171,7 +229,51 @@ pub fn router(state: AppState) -> Router {
         .route("/api/v2/audit", get(operations::list_audit_entries))
         .layer(DefaultBodyLimit::max(MAX_OPERATIONS_JSON_BODY_BYTES));
 
-    protocol.merge(operations).layer(cors).with_state(state)
+    // Fee sponsorship: public (the wallet signature authorizes), bounded by the sponsor policy.
+    let sponsorship = Router::new()
+        .route("/api/v2/sponsor/submit", post(sponsor::submit))
+        .layer(DefaultBodyLimit::max(MAX_SPONSOR_JSON_BODY_BYTES));
+
+    // Organization accounts and managed signing (S2): small JSON bodies.
+    let accounts = Router::new()
+        .route("/api/v2/organizations", post(orgs::create_organization))
+        .route("/api/v2/organizations/{orgId}/users", post(orgs::add_user))
+        .route(
+            "/api/v2/organizations/{orgId}/users/{userId}/disable",
+            post(orgs::disable_user),
+        )
+        .route("/api/v2/auth/logout", post(orgs::logout))
+        .route(
+            "/api/v2/organizations/{orgId}/export",
+            post(orgs::export_key),
+        )
+        .route("/api/v2/auth/otp/request", post(orgs::request_code))
+        .route("/api/v2/auth/otp/verify", post(orgs::verify_code))
+        .route("/api/v2/me", get(orgs::me))
+        .route("/api/v2/org/sign", post(orgs::sign))
+        .layer(DefaultBodyLimit::max(MAX_JSON_BODY_BYTES));
+
+    // Facility boundaries (operator token): large polygons, bounded separately.
+    let boundaries = Router::new()
+        .route(
+            "/api/v2/facilities/{facilityId}/boundary",
+            post(geo::set_boundary),
+        )
+        .layer(DefaultBodyLimit::max(MAX_BOUNDARY_JSON_BODY_BYTES));
+
+    protocol
+        .merge(operations)
+        .merge(sponsorship)
+        .merge(boundaries)
+        .merge(accounts)
+        // The timeout wraps the limit, so waiting for a slot counts against the 30 s too.
+        .layer(GlobalConcurrencyLimitLayer::new(MAX_CONCURRENT_REQUESTS))
+        .layer(TimeoutLayer::with_status_code(
+            axum::http::StatusCode::GATEWAY_TIMEOUT,
+            REQUEST_TIMEOUT,
+        ))
+        .layer(cors)
+        .with_state(state)
 }
 
 pub(crate) fn validate_transaction_signature(signature: &str) -> Result<(), ApiError> {

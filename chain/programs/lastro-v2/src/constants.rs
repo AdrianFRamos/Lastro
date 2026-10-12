@@ -12,13 +12,18 @@ pub const TRANSFORMATION_SEED: &[u8] = b"transformation";
 pub const TRANSFORMATION_CHUNK_SEED: &[u8] = b"transformation-chunk";
 pub const TRANSFORMATION_RESERVATION_SEED: &[u8] = b"transformation-reservation";
 pub const RFID_BINDING_SEED: &[u8] = b"rfid";
+pub const SESSION_SEED: &[u8] = b"session";
+pub const BATCH_SEED: &[u8] = b"batch";
 
 pub const STATION_REGISTRY_SEED: &[u8] = b"station-registry";
 pub const FACILITY_REGISTRY_SEED: &[u8] = b"facility-registry";
 pub const PARTY_REGISTRY_SEED: &[u8] = b"party-registry";
 pub const DOCUMENT_REGISTRY_SEED: &[u8] = b"document-registry";
 
-pub const SCHEMA_VERSION: u16 = 1;
+/// Account-layout schema of a deployment. 2 = v2.1 (StationRecord.facility_id,
+/// FacilityRecord.geo_commitment, 83-byte EventAnchor, IntentState.rent_payer, sessions).
+/// Layouts are not migrated in place: a new schema is a new deployment.
+pub const SCHEMA_VERSION: u16 = 2;
 
 pub const STATION_STATUS_ACTIVE: u8 = 1;
 pub const STATION_STATUS_SUSPENDED: u8 = 2;
@@ -37,6 +42,9 @@ pub const ASSET_STATUS_CLOSED: u8 = 4;
 pub const ASSET_STATUS_QUALITY_HOLD: u8 = 5;
 pub const ASSET_STATUS_RECALLED: u8 = 6;
 pub const ASSET_STATUS_RETIRED: u8 = 7;
+
+pub const SESSION_STATUS_OPEN: u8 = 1;
+pub const SESSION_STATUS_REVOKED: u8 = 2;
 
 pub const INTENT_STATUS_OPEN: u8 = 1;
 pub const INTENT_STATUS_CANCELLED: u8 = 2;

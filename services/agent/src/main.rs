@@ -4,6 +4,10 @@ use lastro_agent::{
 };
 use tokio::time::sleep;
 
+/// How long the Station firmware waits for a tag after a command (station.c,
+/// LASTRO_RFID_WAIT_TIMEOUT_MS).
+const STATION_RFID_WAIT: std::time::Duration = std::time::Duration::from_secs(180);
+
 #[tokio::main]
 async fn main() -> anyhow::Result<()> {
     tracing_subscriber::fmt()
@@ -11,6 +15,13 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let config = AgentConfig::from_env()?;
+    if config.station_response_timeout < STATION_RFID_WAIT + std::time::Duration::from_secs(5) {
+        tracing::warn!(
+            timeout_ms = config.station_response_timeout.as_millis() as u64,
+            "LASTRO_AGENT_STATION_RESPONSE_TIMEOUT_MS is shorter than the Station's 180 s RFID wait; \
+             a late tag read can arrive while the next command runs"
+        );
+    }
     let spool = Spool::connect_and_migrate(&config.sqlite_url).await?;
     let api = ApiClient::new(
         config.api_base_url.clone(),

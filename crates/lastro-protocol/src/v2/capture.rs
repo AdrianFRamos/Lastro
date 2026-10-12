@@ -109,8 +109,16 @@ pub fn capture_envelope(
     observed_rfid: &CanonicalRfid,
     station_id: [u8; 32],
 ) -> Result<DomainEventEnvelope, ProtocolError> {
+    capture_envelope_for_hash(command, hash_canonical_rfid(observed_rfid), station_id)
+}
+
+/// [`capture_envelope`] for an already hashed observed RFID (what verifiers hold).
+pub fn capture_envelope_for_hash(
+    command: &CaptureCommand,
+    observed: [u8; 32],
+    station_id: [u8; 32],
+) -> Result<DomainEventEnvelope, ProtocolError> {
     command.validate()?;
-    let observed = hash_canonical_rfid(observed_rfid);
     let expected = command.expected_rfid_hash;
     let (old, new) = match command.event_type {
         EventType::IdentifierBound => (ZERO32, observed),

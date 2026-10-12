@@ -85,6 +85,8 @@ export interface InstructionDto {
 }
 export interface TransactionData {
   requiredSigner: string
+  /** The required signer itself, or the pinned platform sponsor (pays fee and rent only). */
+  feePayer: string
   lastroProgramId: string
   /**
    * Station events: Secp256r1 at 0, Lastro at 1. Wallet-only instructions: Lastro at 0.
@@ -93,6 +95,30 @@ export interface TransactionData {
   instructions: [InstructionDto, ...InstructionDto[]]
   measuredSerializedBytes: number
   transactionVersion: 'legacy' | 'v0'
+}
+
+/** What a sponsored transaction is for; the API re-derives the exact transaction from it. */
+export type SponsorPurpose =
+  | { kind: 'STATION_EVENT'; eventHash: Hex32 }
+  | {
+      kind: 'REGISTER_ASSET'
+      assetId: Hex32
+      custodian: Hex32
+      assetType: number
+      availableWeightGrams: number
+    }
+  | { kind: 'CUSTODY_PROPOSE'; transferId: string }
+  | { kind: 'CUSTODY_ACCEPT'; transferId: string }
+  | { kind: 'SESSION_OPEN'; sessionId: Hex32 }
+  | { kind: 'SESSION_BATCH'; sessionId: Hex32; batchIndex: number }
+  | { kind: 'SESSION_REVOKE'; sessionId: Hex32 }
+
+export interface SponsoredTransaction {
+  txSignature: string
+  feePayer: string
+  reservedLamports: number
+  /** Fully signed wire bytes, kept so an ambiguous broadcast can be retried unchanged. */
+  signedTransactionBase64: string
 }
 
 export type TransformationStatus = 'OPEN' | 'FINALIZING' | 'FINALIZED' | 'ABORTED' | 'EXPIRED'

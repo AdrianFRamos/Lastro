@@ -99,4 +99,14 @@ pub enum LastroV2Error {
     UnauthorizedInitializer,
     #[msg("identifier transition is inconsistent with the asset's active RFID")]
     InvalidIdentifierTransition,
+    #[msg("rent must return to the account that funded the intent")]
+    InvalidRentPayer,
+    #[msg("handling session terms are invalid")]
+    InvalidSession,
+    #[msg("handling session is not open")]
+    SessionNotOpen,
+    #[msg("observation batch is outside the session terms")]
+    InvalidBatch,
+    #[msg("transformation steps must follow the chain order: inputs, then outputs")]
+    TransformationOutOfOrder,
 }

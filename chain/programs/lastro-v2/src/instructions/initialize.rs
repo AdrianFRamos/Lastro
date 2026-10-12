@@ -31,11 +31,18 @@ pub fn handler(
         LastroV2Error::UnsupportedSchemaVersion
     );
     require!(max_asset_weight_grams > 0, LastroV2Error::InvalidWeight);
+    // The config cannot be changed later, so out-of-range values would be permanent (and an
+    // age above i64::MAX would turn negative in the window arithmetic).
     require!(
-        mass_tolerance_basis_points <= 10_000,
+        mass_tolerance_basis_points
+            <= lastro_protocol::v2::constants::MAX_MASS_TOLERANCE_BASIS_POINTS,
         LastroV2Error::InvalidWeight
     );
-    require!(max_event_age_seconds > 0, LastroV2Error::InvalidTimeWindow);
+    require!(
+        (1..=lastro_protocol::v2::constants::MAX_EVENT_AGE_SECONDS)
+            .contains(&max_event_age_seconds),
+        LastroV2Error::InvalidTimeWindow
+    );
 
     let config = &mut ctx.accounts.config;
     config.authority = ctx.accounts.authority.key();

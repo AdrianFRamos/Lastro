@@ -207,3 +207,49 @@ fn startup_accepts_one_complete_valid_environment_without_rewriting_values() {
     // ASSERT: typed bytes and endpoint/address strings equal the declared inputs exactly.
     // FAILURE MEANS: configuration normalization can point the API at a different deployment.
 }
+
+#[test]
+fn one_time_codes_never_go_to_the_log_of_a_public_deployment() {
+    // PURPOSE: S2 — log delivery hands login codes to whoever reads logs; it is development-only.
+    let mut values = valid_values();
+    values.insert("LASTRO_OTP_DELIVERY", "log".into());
+    assert!(parse(&values).unwrap().otp_log_delivery);
+    values.insert(
+        "LASTRO_CORS_ALLOWED_ORIGINS",
+        "https://lastro.example".into(),
+    );
+    assert!(config_message(parse(&values)).contains("LASTRO_OTP_DELIVERY"));
+    values.insert("LASTRO_OTP_DELIVERY", "email".into());
+    assert!(config_message(parse(&values)).contains("LASTRO_OTP_DELIVERY"));
+    // FAILURE MEANS: login codes would reach log aggregation in production.
+}
+
+#[test]
+fn the_organization_master_key_comes_from_exactly_one_source() {
+    // PURPOSE: S2 — the master key is read from a mounted file (or hex for development), never
+    // both, and a weak constant key is refused.
+    let dir = std::env::temp_dir().join(format!("lastro-key-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let file = dir.join("org-master-key.hex");
+    let key = "3c910e5ab72268f419d3408e7b05c62f935de10a76b834cf611ea9570df2843b";
+    std::fs::write(&file, format!("{key}\n")).unwrap();
+
+    let mut values = valid_values();
+    values.insert(
+        "LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE",
+        file.to_string_lossy().into_owned(),
+    );
+    let config = parse(&values).unwrap();
+    assert_eq!(
+        hex::encode(config.org_key_encryption_key.unwrap()),
+        key,
+        "trailing newline is ignored"
+    );
+    values.insert("LASTRO_ORG_KEY_ENCRYPTION_KEY_HEX", key.into());
+    assert!(config_message(parse(&values)).contains("only one"));
+    values.remove("LASTRO_ORG_KEY_ENCRYPTION_KEY_FILE");
+    values.insert("LASTRO_ORG_KEY_ENCRYPTION_KEY_HEX", "11".repeat(32));
+    assert!(config_message(parse(&values)).contains("random"));
+    std::fs::remove_dir_all(&dir).unwrap();
+    // FAILURE MEANS: the vault could start with an ambiguous or guessable master key.
+}

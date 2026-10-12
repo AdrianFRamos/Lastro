@@ -123,9 +123,38 @@ impl StationTransport for StopAfterRecoveredPollTransport {
     }
 
     async fn receive(&mut self) -> Result<Frame, AgentError> {
-        Err(AgentError::Contract(
+        // A local durability failure is still fatal, so it ends the worker for the assertion.
+        Err(AgentError::Spool(
             "test stop after recovered command poll".into(),
         ))
+    }
+}
+
+/// First capture fails with a contract violation (e.g. a late frame of an earlier capture),
+/// the second ends the worker with a fatal local error.
+struct ContractThenStopTransport {
+    sent: usize,
+    received: usize,
+}
+
+#[async_trait]
+impl StationTransport for ContractThenStopTransport {
+    async fn send(&mut self, _frame: Frame) -> Result<(), AgentError> {
+        self.sent += 1;
+        Ok(())
+    }
+
+    async fn receive(&mut self) -> Result<Frame, AgentError> {
+        self.received += 1;
+        if self.received == 1 {
+            Err(AgentError::Contract(
+                "late frame of an earlier capture".into(),
+            ))
+        } else {
+            Err(AgentError::Spool(
+                "test stop after the second capture".into(),
+            ))
+        }
     }
 }
 
@@ -188,6 +217,14 @@ async fn spawn_capture_server() -> (String, Arc<Mutex<Vec<u8>>>, JoinHandle<()>)
 }
 
 async fn spawn_poll_recovery_server(command: &StationCommand) -> (String, JoinHandle<()>) {
+    spawn_command_server(command, &["500 Internal Server Error", "200 OK"]).await
+}
+
+/// Answers successive command polls with `statuses`; every 200 carries `command`.
+async fn spawn_command_server(
+    command: &StationCommand,
+    statuses: &'static [&'static str],
+) -> (String, JoinHandle<()>) {
     let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
     let address = listener.local_addr().unwrap();
     let inner = command.0;
@@ -210,13 +247,12 @@ async fn spawn_poll_recovery_server(command: &StationCommand) -> (String, JoinHa
     .to_string();
 
     let task = tokio::spawn(async move {
-        for (index, (status, response_body)) in [
-            ("500 Internal Server Error", String::new()),
-            ("200 OK", body.clone()),
-        ]
-        .into_iter()
-        .enumerate()
-        {
+        for (index, status) in statuses.iter().enumerate() {
+            let response_body = if status.starts_with("200") {
+                body.clone()
+            } else {
+                String::new()
+            };
             let (mut socket, _) = listener.accept().await.unwrap();
             let mut request = [0u8; 4096];
             let count = socket.read(&mut request).await.unwrap();
@@ -230,7 +266,7 @@ async fn spawn_poll_recovery_server(command: &StationCommand) -> (String, JoinHa
             );
             socket.write_all(wire.as_bytes()).await.unwrap();
             socket.shutdown().await.unwrap();
-            assert!(index < 2);
+            assert!(index < statuses.len());
         }
     });
     (format!("http://{address}/"), task)
@@ -595,9 +631,9 @@ async fn worker_replays_ack_for_server_evidence_after_restart() {
 async fn transient_command_poll_failure_does_not_terminate_worker() {
     // PURPOSE: A temporary API outage while polling commands must not kill the long-running Agent.
     // ARRANGE: The loopback API returns HTTP 500 once, then one valid command.
-    //          The transport deliberately returns a Contract error only after that recovered command is sent.
+    //          The transport deliberately returns a (fatal) Spool error only after that recovered command is sent.
     // ACTION: Run the production worker with zero poll delay.
-    // ASSERT: The returned error is the deliberate post-recovery Contract error, not the first transient API error,
+    // ASSERT: The returned error is the deliberate post-recovery Spool error, not the first transient API error,
     //         and exactly one Station COMMAND was sent after recovery.
     // FAILURE MEANS: one transient polling failure still requires process supervision/restart for recovery.
     let (url, path) = database_url();
@@ -727,6 +763,48 @@ async fn worker_refuses_to_ack_durable_evidence_from_an_unexpected_station_key()
     assert!(transport.sent.is_empty());
     assert_eq!(spool.pending().await.unwrap().len(), 1);
 
+    drop(spool);
+    let _ = fs::remove_file(path);
+}
+
+#[tokio::test]
+async fn one_capture_breaking_the_contract_does_not_stop_the_agent() {
+    // PURPOSE: M1/M4 — a capture that violates the Station contract (an invalid command, a late
+    // frame of an earlier capture) fails alone instead of crash-looping the Agent.
+    // ARRANGE: two identical commands; the first capture fails with a Contract error.
+    // ACTION: run the production worker.
+    // ASSERT: the worker polls and sends the second command; only the fatal error stops it.
+    // FAILURE MEANS: one bad command from the API would take the corral's Agent down for good.
+    let (url, path) = database_url();
+    let spool = Spool::connect_and_migrate(&url).await.unwrap();
+    let expected = command();
+    let (base_url, server) = spawn_command_server(&expected, &["200 OK", "200 OK"]).await;
+    let api = ApiClient::new(base_url, TOKEN.into(), Duration::from_secs(1)).unwrap();
+    let transport = ContractThenStopTransport {
+        sent: 0,
+        received: 0,
+    };
+
+    let error = tokio::time::timeout(
+        Duration::from_secs(5),
+        run(
+            transport,
+            &spool,
+            &api,
+            station_pubkey(),
+            Duration::ZERO,
+            Duration::from_secs(1),
+        ),
+    )
+    .await
+    .expect("the worker must keep serving after a contract violation")
+    .unwrap_err();
+    assert!(
+        error
+            .to_string()
+            .contains("test stop after the second capture")
+    );
+    server.await.unwrap();
     drop(spool);
     let _ = fs::remove_file(path);
 }
