@@ -1,6 +1,6 @@
 #include "lastro_station/rfid.h"
 
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 /*
  * The reader parser intentionally remains unimplemented until docs/HARDWARE.md contains
@@ -28,18 +28,19 @@ bool lastro_rfid_take(lastro_canonical_rfid_t *out)
 bool lastro_rfid_hash(const lastro_canonical_rfid_t *rfid, uint8_t out_hash[32])
 {
     static const uint8_t domain[] = "LASTRO_RFID\0";
-    mbedtls_sha256_context context;
-    int status;
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
+    size_t out_len = 0;
+    psa_status_t status;
 
     if (rfid == NULL || out_hash == NULL) {
         return false;
     }
 
-    mbedtls_sha256_init(&context);
-    status = mbedtls_sha256_starts(&context, 0);
-    if (status == 0) status = mbedtls_sha256_update(&context, domain, sizeof(domain) - 1u);
-    if (status == 0) status = mbedtls_sha256_update(&context, rfid->bytes, LASTRO_CANONICAL_RFID_LEN);
-    if (status == 0) status = mbedtls_sha256_finish(&context, out_hash);
-    mbedtls_sha256_free(&context);
-    return status == 0;
+    status = psa_crypto_init();
+    if (status == PSA_SUCCESS) status = psa_hash_setup(&operation, PSA_ALG_SHA_256);
+    if (status == PSA_SUCCESS) status = psa_hash_update(&operation, domain, sizeof(domain) - 1u);
+    if (status == PSA_SUCCESS) status = psa_hash_update(&operation, rfid->bytes, LASTRO_CANONICAL_RFID_LEN);
+    if (status == PSA_SUCCESS) status = psa_hash_finish(&operation, out_hash, 32u, &out_len);
+    psa_hash_abort(&operation);
+    return status == PSA_SUCCESS && out_len == 32u;
 }

@@ -4,7 +4,7 @@
 
 #include "lastro_station/event.h"
 #include "lastro_station/signer.h"
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 static const uint8_t STATION_DOMAIN[] = "LASTRO_STATION\0";
 #define LASTRO_RFID_WAIT_TIMEOUT_MS 180000u
@@ -43,16 +43,16 @@ static bool same_command(const lastro_command_payload_t *left, const lastro_comm
 
 static bool derive_station_id(const uint8_t public_key[LASTRO_P256_PUBKEY_COMPRESSED_LEN], uint8_t out[32])
 {
-    mbedtls_sha256_context context;
-    int status;
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
+    size_t out_len = 0;
+    psa_status_t status = psa_crypto_init();
 
-    mbedtls_sha256_init(&context);
-    status = mbedtls_sha256_starts(&context, 0);
-    if (status == 0) status = mbedtls_sha256_update(&context, STATION_DOMAIN, sizeof(STATION_DOMAIN) - 1u);
-    if (status == 0) status = mbedtls_sha256_update(&context, public_key, LASTRO_P256_PUBKEY_COMPRESSED_LEN);
-    if (status == 0) status = mbedtls_sha256_finish(&context, out);
-    mbedtls_sha256_free(&context);
-    return status == 0;
+    if (status == PSA_SUCCESS) status = psa_hash_setup(&operation, PSA_ALG_SHA_256);
+    if (status == PSA_SUCCESS) status = psa_hash_update(&operation, STATION_DOMAIN, sizeof(STATION_DOMAIN) - 1u);
+    if (status == PSA_SUCCESS) status = psa_hash_update(&operation, public_key, LASTRO_P256_PUBKEY_COMPRESSED_LEN);
+    if (status == PSA_SUCCESS) status = psa_hash_finish(&operation, out, 32u, &out_len);
+    psa_hash_abort(&operation);
+    return status == PSA_SUCCESS && out_len == 32u;
 }
 
 static void clear_capture(void)

@@ -1,7 +1,7 @@
 #include "lastro_station/event.h"
 
 #include <string.h>
-#include "mbedtls/sha256.h"
+#include "psa/crypto.h"
 
 static const uint8_t CAPTURE_EVENT_DOMAIN[] = "LASTRO_V2_CAPTURE_EVENT\0";
 static const uint8_t PAYLOAD_DOMAIN[] = "LASTRO_V2_PAYLOAD\0";
@@ -27,16 +27,16 @@ static bool domain_hash(
     const uint8_t *b, size_t b_len,
     uint8_t out[32])
 {
-    mbedtls_sha256_context context;
-    int status;
-    mbedtls_sha256_init(&context);
-    status = mbedtls_sha256_starts(&context, 0);
-    if (status == 0) status = mbedtls_sha256_update(&context, domain, domain_len);
-    if (status == 0 && a_len > 0) status = mbedtls_sha256_update(&context, a, a_len);
-    if (status == 0 && b_len > 0) status = mbedtls_sha256_update(&context, b, b_len);
-    if (status == 0) status = mbedtls_sha256_finish(&context, out);
-    mbedtls_sha256_free(&context);
-    return status == 0;
+    psa_hash_operation_t operation = PSA_HASH_OPERATION_INIT;
+    size_t out_len = 0;
+    psa_status_t status = psa_crypto_init();
+    if (status == PSA_SUCCESS) status = psa_hash_setup(&operation, PSA_ALG_SHA_256);
+    if (status == PSA_SUCCESS) status = psa_hash_update(&operation, domain, domain_len);
+    if (status == PSA_SUCCESS && a_len > 0) status = psa_hash_update(&operation, a, a_len);
+    if (status == PSA_SUCCESS && b_len > 0) status = psa_hash_update(&operation, b, b_len);
+    if (status == PSA_SUCCESS) status = psa_hash_finish(&operation, out, 32u, &out_len);
+    psa_hash_abort(&operation);
+    return status == PSA_SUCCESS && out_len == 32u;
 }
 
 bool lastro_capture_event_id(const uint8_t capture_id[16], uint8_t out[32])
