@@ -27,8 +27,8 @@ defineProps<{
 .story-section-heading__kicker {
   margin: 0;
   color: var(--proof);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.16em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .story-section-heading h2 {

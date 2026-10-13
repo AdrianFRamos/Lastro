@@ -36,8 +36,8 @@ const copy = useCopy({ en: { kicker: 'NEXT' }, pt: { kicker: 'PRÓXIMO' } })
 .story-page-footer__kicker {
   margin: 0 0 12px;
   color: var(--proof);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.16em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .story-page-footer h2 {

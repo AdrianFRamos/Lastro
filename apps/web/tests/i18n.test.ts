@@ -8,6 +8,11 @@ const routerLinkStub = {
   template: '<a><slot /></a>',
 }
 
+const PageWithSwitch = {
+  components: { LanguageSwitch, LandingPage },
+  template: '<div><LanguageSwitch /><LandingPage /></div>',
+}
+
 describe('language switch', () => {
   beforeEach(() => setLocale('en'))
 
@@ -18,7 +23,7 @@ describe('language switch', () => {
    * FAILURE MEANS: the flags no longer switch the site language.
    */
   it('switches the page between English and Portuguese', async () => {
-    const wrapper = mount(LandingPage, {
+    const wrapper = mount(PageWithSwitch, {
       global: { stubs: { RouterLink: routerLinkStub } },
     })
     expect(wrapper.get('h1').text()).toBe('Verifiable identity and custody for physical livestock.')

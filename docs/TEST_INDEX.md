@@ -2,8 +2,8 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 434
-**Files containing test cases:** 83
+**Declared cases:** 439
+**Files containing test cases:** 84
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
 
@@ -95,13 +95,13 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/i18n.test.ts`
 
-- L20: `switches the page between English and Portuguese`
-- L46: `remembers the chosen language in this browser`
+- L25: `switches the page between English and Portuguese`
+- L51: `remembers the chosen language in this browser`
 
 ## `apps/web/tests/pages/ChainHistoryPage.test.ts`
 
 - L23: `renders the product journey newest stage first with the current stage marked`
-- L68: `links every stage to its detail page`
+- L67: `links every stage to its detail page`
 
 ## `apps/web/tests/pages/ChainStagePages.test.ts`
 
@@ -138,10 +138,10 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 
 ## `apps/web/tests/pages/VerifyPage.test.ts`
 
-- L63: `accepts a local evidence package and runs verification without the Lastro evidence API`
-- L89: `initial verification layers are NOT_CHECKED rather than optimistic VALID`
-- L105: `malformed or unsupported packages can never reach a canonical VALID result`
-- L138: `shows RPC unavailability separately from local evidence validity`
+- L64: `accepts a local evidence package and runs verification without the Lastro evidence API`
+- L90: `initial verification layers are NOT_CHECKED rather than optimistic VALID`
+- L106: `malformed or unsupported packages can never reach a canonical VALID result`
+- L139: `shows RPC unavailability separately from local evidence validity`
 
 ## `apps/web/tests/pages/WorkspacePage.test.ts`
 
@@ -207,6 +207,14 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L119: `enumerates public wallet choices and connects one explicitly by name`
 - L140: `signs only the exact trusted capture-authorization message`
 - L191: `never falls back to another wallet when an explicit wallet name is missing`
+
+## `apps/web/tests/system/flow.test.ts`
+
+- L21: `runs a normal capture from tag read to a valid independent verification`
+- L35: `stops a capture whose bytes were changed in transit at the API`
+- L53: `rejects evidence from an unregistered Station`
+- L65: `flags a package edited after anchoring at the independent verifier`
+- L77: `keeps the event queued while offline and still finishes valid`
 
 ## `apps/web/tests/verify/chain.test.ts`
 

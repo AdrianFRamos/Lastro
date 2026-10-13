@@ -8,7 +8,6 @@
 import { computed, onMounted, ref, watch } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { recheckWalletRole } from '../auth/walletLogin'
-import ChainHeader from '../components/chain/ChainHeader.vue'
 import ResourceManager from '../components/workspace/ResourceManager.vue'
 import { routes } from '../demo/chainHistory'
 import { findRole, participants, resourcesOf, type ParticipantId } from '../demo/roles'
@@ -133,17 +132,15 @@ function restore(): void {
 <template>
   <main v-if="role && session" class="workspace-page">
     <div class="workspace-page__frame">
-      <ChainHeader>
-        <template #default>
-          <span class="workspace-page__who">
-            <span class="sr-only">{{ copy.signedInAs }}</span>
-            {{ tr(role.label) }}
-          </span>
-          <button type="button" class="chain-header__button" data-action="sign-out" @click="leave">
-            {{ copy.signOut }}
-          </button>
-        </template>
-      </ChainHeader>
+      <div class="workspace-page__bar">
+        <span class="workspace-page__who">
+          <span class="sr-only">{{ copy.signedInAs }}</span>
+          {{ tr(role.label) }}
+        </span>
+        <button type="button" class="chain-header__button" data-action="sign-out" @click="leave">
+          {{ copy.signOut }}
+        </button>
+      </div>
 
       <section class="workspace-hero" aria-labelledby="workspace-title">
         <p class="workspace-hero__kicker">{{ copy.kicker }} · {{ tr(role.label).toUpperCase() }}</p>
@@ -204,21 +201,15 @@ function restore(): void {
 
 <style scoped>
 .workspace-page {
-  min-height: 100svh;
-  background:
-    radial-gradient(
-      circle at 50% 0%,
-      color-mix(in srgb, var(--primary) 14%, transparent),
-      transparent 42%
-    ),
-    var(--canvas);
+  min-height: 0;
+  background: var(--canvas);
   color: var(--text);
 }
 
 .workspace-page__frame {
   display: grid;
   gap: 28px;
-  width: min(100% - 64px, 1400px);
+  width: min(100% - 48px, var(--page-width));
   margin: 0 auto;
   padding: 24px 0 64px;
 }
@@ -228,8 +219,8 @@ function restore(): void {
   border: 1px solid color-mix(in srgb, var(--proof) 45%, var(--border));
   border-radius: 999px;
   color: var(--proof);
-  font: 700 12px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -242,8 +233,8 @@ function restore(): void {
 .workspace-hero__kicker {
   margin: 0;
   color: var(--proof);
-  font: 700 12px/1 var(--font-mono);
-  letter-spacing: 0.18em;
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .workspace-hero h1 {

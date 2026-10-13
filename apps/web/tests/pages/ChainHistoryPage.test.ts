@@ -55,7 +55,6 @@ describe('chain history demo page', () => {
     ])
     expect(wrapper.findAll('.chain-stage--current')).toHaveLength(1)
     expect(stages[0]?.classes()).toContain('chain-stage--current')
-    expect(wrapper.text()).toContain('Entrar')
     wrapper.unmount()
   })
 

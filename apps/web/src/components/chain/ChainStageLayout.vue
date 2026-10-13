@@ -6,7 +6,6 @@
  */
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
-import ChainHeader from './ChainHeader.vue'
 import { formatDate, formatDuration, routes, type Period } from '../../demo/chainHistory'
 import { useCopy } from '../../i18n'
 
@@ -52,9 +51,9 @@ const periodLabel = computed(() => {
 <template>
   <main class="stage-page">
     <div class="stage-page__frame">
-      <ChainHeader>
-        <slot v-if="$slots.actions" name="actions" />
-      </ChainHeader>
+      <div v-if="$slots.actions" class="stage-page__actions">
+        <slot name="actions" />
+      </div>
 
       <nav class="stage-page__crumbs" :aria-label="copy.crumbs">
         <RouterLink :to="routes.history">{{ copy.history }}</RouterLink>
@@ -104,19 +103,13 @@ const periodLabel = computed(() => {
 
 <style scoped>
 .stage-page {
-  min-height: 100vh;
-  background:
-    radial-gradient(
-      circle at 78% 12%,
-      color-mix(in srgb, var(--primary) 8%, transparent),
-      transparent 26rem
-    ),
-    var(--canvas);
+  min-height: 0;
+  background: var(--canvas);
   color: var(--text);
 }
 
 .stage-page__frame {
-  width: min(100% - 64px, 1480px);
+  width: min(100% - 48px, var(--page-width));
   margin: 0 auto;
   padding-top: 8px;
 }
@@ -147,8 +140,8 @@ const periodLabel = computed(() => {
 .stage-kicker {
   margin: 0 0 12px;
   color: var(--proof);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.16em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 /* Centered title block, as in the design: kicker, optional pre-title, title, dates. */
@@ -269,7 +262,7 @@ const periodLabel = computed(() => {
 
 @media (max-width: 700px) {
   .stage-page__frame {
-    width: min(100% - 32px, 1480px);
+    width: min(100% - 32px, var(--page-width));
   }
 
   .stage-hero {

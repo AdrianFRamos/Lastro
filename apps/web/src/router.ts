@@ -5,6 +5,12 @@ import { session } from './demo/workspace'
 
 export const router = createRouter({
   history: createWebHistory(),
+  scrollBehavior(to, _from, saved) {
+    if (saved) return saved
+    // The sticky header covers the top of an anchored section; leave room for it.
+    if (to.hash) return { el: to.hash, top: 72, behavior: 'smooth' }
+    return { top: 0 }
+  },
   routes: [
     { path: '/', name: 'landing', component: LandingPage },
     { path: '/problem', name: 'problem', component: () => import('./pages/ProblemPage.vue') },

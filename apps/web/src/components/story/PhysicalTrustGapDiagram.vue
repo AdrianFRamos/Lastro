@@ -112,8 +112,8 @@ const copy = useCopy({
   border-radius: 50%;
   color: var(--proof);
   box-shadow: inset 0 0 0 18px color-mix(in srgb, var(--proof) 5%, transparent);
-  font: 750 21px/1 var(--font-mono);
-  letter-spacing: 0.1em;
+  font: 750 21px/1 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .trust-gap__asset strong,
@@ -122,8 +122,8 @@ const copy = useCopy({
 }
 
 .trust-gap__asset strong {
-  font: 700 12px/1.2 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 12px/1.2 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .trust-gap__asset div span {
@@ -184,8 +184,8 @@ const copy = useCopy({
 .trust-gap__fragmentation > p {
   margin: 0;
   color: var(--muted);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .trust-gap__stores {
@@ -199,7 +199,7 @@ const copy = useCopy({
   border: 1px solid var(--border);
   border-left: 2px solid var(--warning);
   border-radius: var(--radius-sm);
-  background: #0d1218;
+  background: var(--surface);
   color: color-mix(in srgb, var(--text) 88%, transparent);
   font-size: 13px;
 }
@@ -218,9 +218,9 @@ const copy = useCopy({
 }
 
 .trust-gap__result strong {
-  color: #ffd36a;
-  font: 700 12px/1.4 var(--font-mono);
-  letter-spacing: 0.08em;
+  color: var(--warning);
+  font: 700 12px/1.4 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 @media (max-width: 980px) {

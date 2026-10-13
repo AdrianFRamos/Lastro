@@ -1,15 +1,7 @@
 <!-- Operator console. State shown as canonical advances only after finalized Solana confirmation. -->
 <template>
   <main class="page page--workbench">
-    <header class="app-header">
-      <RouterLink class="app-header__brand" to="/" aria-label="Lastro home">
-        <img src="/logo.svg" alt="" width="36" height="36" />
-        <span>
-          <strong>LASTRO</strong>
-          <span class="app-header__context">Operator demo</span>
-        </span>
-      </RouterLink>
-
+    <div class="page-toolbar">
       <div class="app-header__tools">
         <span class="network-pill">{{ webConfig.solanaChain }}</span>
         <WalletStatus :address="walletAddress" :connected="walletAddress !== null" />
@@ -26,7 +18,7 @@
         </select>
         <AppButton :disabled="busy" :busy="busy" @click="connectWallet">Connect wallet</AppButton>
       </div>
-    </header>
+    </div>
 
     <div class="page-intro">
       <div>

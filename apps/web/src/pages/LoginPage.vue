@@ -6,9 +6,7 @@
  * wallet, a visitor can still browse every participant's records read-only.
  */
 import { computed, onMounted, onUnmounted, ref, shallowRef } from 'vue'
-import { RouterLink, useRouter } from 'vue-router'
-import LanguageSwitch from '../components/LanguageSwitch.vue'
-import PhysicalAssetReveal from '../components/PhysicalAssetReveal.vue'
+import { useRouter } from 'vue-router'
 import {
   RECOMMENDED_WALLETS,
   connectForLogin,
@@ -125,16 +123,6 @@ async function exploreAsVisitor(): Promise<void> {
 
 <template>
   <main class="login">
-    <PhysicalAssetReveal />
-
-    <RouterLink class="login__back" to="/chain-history">
-      <span aria-hidden="true">←</span> {{ copy.back }}
-    </RouterLink>
-
-    <div class="login__language">
-      <LanguageSwitch />
-    </div>
-
     <section class="login__card" aria-labelledby="login-title">
       <h1 id="login-title">{{ copy.title }}</h1>
       <p class="login__intro">{{ copy.intro }}</p>
@@ -190,67 +178,46 @@ async function exploreAsVisitor(): Promise<void> {
 
 <style scoped>
 .login {
-  position: relative;
   display: grid;
-  min-height: 100svh;
-  /* Card on the dark left half, like the home copy, so the animal stays visible on the right. */
+  grid-template-columns: minmax(0, 440px) minmax(0, 1fr);
   align-items: center;
-  justify-items: start;
-  overflow: hidden;
-  padding: 88px max(32px, calc((100% - 1600px) / 2 + 8vw)) 48px;
-  background: var(--canvas);
+  gap: 56px;
+  width: min(100% - 48px, var(--page-width));
+  min-height: calc(100svh - var(--header-height) - 120px);
+  margin: 0 auto;
+  padding: 48px 0 64px;
   color: var(--text);
 }
 
-.login__back {
-  position: absolute;
-  top: 28px;
-  left: 32px;
-  z-index: 2;
-  display: inline-flex;
-  gap: 8px;
-  padding: 10px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--canvas);
-  color: var(--text);
-  font: 700 12px/1 var(--font-mono);
-  text-decoration: none;
-}
-
-.login__language {
-  position: absolute;
-  top: 28px;
-  right: 32px;
-  z-index: 2;
-}
-
-.login__back:hover,
-.login__back:focus-visible {
-  border-color: var(--border-strong);
+.login::after {
+  content: '';
+  align-self: stretch;
+  min-height: 420px;
+  border-radius: var(--radius-lg);
+  background: url('/lastro2.png') 72% 50% / cover no-repeat;
 }
 
 .login__card {
-  position: relative;
-  z-index: 1;
-  width: min(100%, 380px);
-  padding: 28px 28px 32px;
-  border: 1px solid var(--border-strong);
+  width: 100%;
+  padding: 28px;
+  border: 1px solid var(--border);
   border-radius: var(--radius-lg);
   background: var(--surface);
-  box-shadow:
-    0 30px 60px -20px rgb(0 0 0 / 0.85),
-    10px 12px 0 rgb(0 0 0 / 0.35);
+  box-shadow: var(--shadow-md);
 }
 
 .login__card h1 {
-  margin: 0 0 24px;
-  font-size: 24px;
-  font-style: italic;
-  font-weight: 850;
-  letter-spacing: 0.02em;
-  text-align: center;
-  text-transform: uppercase;
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.login__intro {
+  margin: 0 0 22px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.5;
 }
 
 .login__form {
@@ -258,47 +225,11 @@ async function exploreAsVisitor(): Promise<void> {
   gap: 8px;
 }
 
-.login__form label {
-  margin-top: 8px;
-  color: var(--muted);
-  font: 700 11px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
-  text-transform: uppercase;
-}
-
-.login__form input,
-.login__form select {
-  width: 100%;
-  padding: 12px 14px;
-  border: 1px solid var(--border);
-  border-radius: var(--radius-sm);
-  background: var(--canvas);
-  color: var(--text);
-  font: inherit;
-  font-size: 15px;
-}
-
-.login__form select {
-  color-scheme: dark;
-}
-
-.login__form input:focus-visible,
-.login__form select:focus-visible {
-  border-color: var(--proof);
-  outline: 2px solid color-mix(in srgb, var(--proof) 35%, transparent);
-  outline-offset: 1px;
-}
-
-.login__intro {
-  margin: -12px 0 20px;
-  color: var(--muted);
-  font-size: 14px;
-  line-height: 1.5;
-  text-align: center;
-}
-
 .login__empty {
   margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--raised);
   color: var(--text);
   font-size: 14px;
   line-height: 1.5;
@@ -306,46 +237,74 @@ async function exploreAsVisitor(): Promise<void> {
 
 .login__install {
   display: block;
-  margin-top: 8px;
-  padding: 12px 14px;
+  padding: 11px 14px;
   border: 1px dashed var(--border-strong);
   border-radius: var(--radius-sm);
-  color: var(--muted);
-  font: 700 12px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+  color: var(--primary);
+  font-size: 14px;
+  font-weight: 600;
   text-align: center;
   text-decoration: none;
-  text-transform: uppercase;
 }
 
 .login__install:hover,
 .login__install:focus-visible {
-  border-color: var(--proof);
-  color: var(--proof);
+  border-color: var(--primary);
+  background: var(--primary-soft);
 }
 
 .login__hint {
-  margin: 4px 0 0;
+  margin: 2px 0 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
+  font-size: 13px;
+  line-height: 1.45;
 }
 
-.login__form button[data-action='wallet-login'] {
+.login__form button {
   display: inline-flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
+  min-height: 44px;
+  margin-top: 4px;
+  padding: 10px 16px;
+  border: 1px solid var(--primary);
+  border-radius: var(--radius-sm);
+  background: var(--primary);
+  color: var(--on-primary);
+  font-size: 15px;
+  font-weight: 600;
+  cursor: pointer;
+}
+
+.login__form button:hover:not(:disabled) {
+  border-color: var(--primary-hover);
+  background: var(--primary-hover);
+}
+
+.login__form .login__visitor {
+  border-color: var(--border-strong);
+  background: var(--surface);
+  color: var(--text);
+}
+
+.login__form .login__visitor:hover:not(:disabled) {
+  border-color: var(--border-strong);
+  background: var(--raised);
+}
+
+.login__form button:disabled {
+  cursor: progress;
+  opacity: 0.6;
 }
 
 .login__or {
   display: flex;
   align-items: center;
   gap: 12px;
-  margin: 12px 0 0;
-  color: var(--muted);
-  font: 700 11px/1 var(--font-mono);
-  text-transform: uppercase;
+  margin: 14px 0 2px;
+  color: var(--faint);
+  font-size: 13px;
 }
 
 .login__or::before,
@@ -356,85 +315,48 @@ async function exploreAsVisitor(): Promise<void> {
   background: var(--border);
 }
 
-.login__form .login__visitor {
-  margin-top: 4px;
-  background: var(--canvas);
-  border-color: var(--border-strong);
-}
-
 .login__visitor-note {
   margin: 0;
   color: var(--muted);
-  font-size: 12px;
-  line-height: 1.4;
-  text-align: center;
-}
-
-.login__form button:disabled {
-  cursor: progress;
-  opacity: 0.6;
-}
-
-.login__form button {
-  margin-top: 8px;
-  padding: 14px 18px;
-  border: 1px solid color-mix(in srgb, var(--primary) 78%, var(--border));
-  border-radius: var(--radius-sm);
-  background: color-mix(in srgb, var(--primary) 30%, var(--canvas));
-  color: var(--text);
-  font: 700 13px/1 var(--font-mono);
-  letter-spacing: 0.08em;
-  text-transform: uppercase;
-  cursor: pointer;
-  transition: background 150ms ease;
-}
-
-.login__form button:hover,
-.login__form button:focus-visible {
-  background: color-mix(in srgb, var(--primary) 42%, var(--canvas));
+  font-size: 13px;
+  line-height: 1.45;
 }
 
 .login__error {
-  margin: 8px 0 0;
-  color: var(--warning);
-  font-size: 13px;
+  margin: 6px 0 0;
+  padding: 10px 12px;
+  border-radius: var(--radius-sm);
+  background: var(--danger-soft);
+  color: var(--danger);
+  font-size: 13.5px;
   line-height: 1.45;
 }
 
 .login__notice {
-  margin: 16px 0 0;
+  margin: 20px 0 0;
   padding: 10px 12px;
-  border: 1px solid color-mix(in srgb, var(--warning) 45%, var(--border));
-  border-radius: var(--radius-sm);
-  color: var(--warning);
+  border-left: 3px solid var(--warning);
+  border-radius: 0 var(--radius-sm) var(--radius-sm) 0;
+  background: var(--warning-soft);
+  color: var(--text);
   font-size: 13px;
-  line-height: 1.45;
+  line-height: 1.5;
 }
 
-@media (max-width: 768px) {
+@media (max-width: 860px) {
   .login {
-    justify-items: center;
-    padding: 88px 16px 48px;
+    grid-template-columns: minmax(0, 1fr);
+    width: min(100% - 32px, 480px);
+    min-height: 0;
+    padding-top: 28px;
   }
 
-  .login__back {
-    top: 20px;
-    left: 16px;
-  }
-
-  .login__language {
-    top: 22px;
-    right: 16px;
+  .login::after {
+    display: none;
   }
 
   .login__card {
-    padding: 24px 20px 28px;
-  }
-}
-
-@media (prefers-reduced-motion: reduce) {
-  .login__form button {
-    transition: none;
+    padding: 22px 18px;
   }
 }
 </style>

@@ -1,19 +1,11 @@
 <template>
   <main class="page page--verifier">
-    <header class="app-header">
-      <a class="app-header__brand" href="/" aria-label="Lastro home">
-        <img src="/logo.svg" alt="" width="36" height="36" />
-        <span>
-          <strong>LASTRO</strong>
-          <span class="app-header__context">Independent verifier</span>
-        </span>
-      </a>
+    <div class="page-toolbar">
       <div class="app-header__tools">
         <span class="network-pill">{{ webConfig.solanaChain }}</span>
-        <a class="button" href="/lineage">Explore lineage</a>
-        <a class="button" href="/demo">Open Demo</a>
+        <RouterLink class="button button--secondary" to="/lineage">Explore lineage</RouterLink>
       </div>
-    </header>
+    </div>
 
     <div class="page-intro">
       <div>
@@ -128,7 +120,7 @@
 
 <script setup lang="ts">
 import { computed, ref } from 'vue'
-import { useRoute } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { api } from '../api/client'
 import AppButton from '../components/AppButton.vue'
 import AppCard from '../components/AppCard.vue'

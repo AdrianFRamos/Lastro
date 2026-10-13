@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import LastroTrustStack from '../components/story/LastroTrustStack.vue'
-import StoryHeader from '../components/story/StoryHeader.vue'
 import StoryPageFooter from '../components/story/StoryPageFooter.vue'
 import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 import { useCopy } from '../i18n'
@@ -112,8 +111,6 @@ const copy = useCopy({
 <template>
   <main class="future-page">
     <div class="future-page__frame">
-      <StoryHeader active="future" />
-
       <section class="future-hero" aria-labelledby="future-title">
         <div>
           <p class="future-kicker">{{ copy.kicker }}</p>
@@ -213,27 +210,21 @@ const copy = useCopy({
 
 <style scoped>
 .future-page {
-  min-height: 100vh;
-  background:
-    radial-gradient(
-      circle at 78% 12%,
-      color-mix(in srgb, var(--primary) 8%, transparent),
-      transparent 26rem
-    ),
-    var(--canvas);
+  min-height: 0;
+  background: var(--canvas);
   color: var(--text);
 }
 
 .future-page__frame {
-  width: min(100% - 64px, 1480px);
+  width: min(100% - 48px, var(--page-width));
   margin: 0 auto;
 }
 
 .future-kicker {
   margin: 0 0 12px;
   color: var(--proof);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.16em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .future-hero {
@@ -257,22 +248,18 @@ const copy = useCopy({
 .future-hero__thesis {
   padding: 24px;
   border-left: 2px solid var(--primary);
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--primary) 8%, transparent),
-    transparent
-  );
+  background: var(--primary-soft);
 }
 
 .future-hero__thesis span,
 .expansion-stage__head,
 .boundary__label {
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .future-hero__thesis span {
-  color: #b8aaff;
+  color: var(--primary);
 }
 
 .future-hero__thesis p {
@@ -433,7 +420,7 @@ const copy = useCopy({
 
 @media (max-width: 700px) {
   .future-page__frame {
-    width: min(100% - 32px, 1480px);
+    width: min(100% - 32px, var(--page-width));
   }
 
   .future-hero {
@@ -471,7 +458,7 @@ const copy = useCopy({
 
 @media (max-width: 430px) {
   .future-page__frame {
-    width: min(100% - 24px, 1480px);
+    width: min(100% - 24px, var(--page-width));
   }
 
   .future-hero__thesis {

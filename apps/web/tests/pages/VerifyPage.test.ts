@@ -12,6 +12,7 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock('vue-router', () => ({
   useRoute: () => ({ params: {} }),
+  RouterLink: { props: ['to'], template: '<a :href="to"><slot /></a>' },
 }))
 
 vi.mock('../../src/api/client', () => ({

@@ -5,7 +5,6 @@
  * spine fades out below the oldest stage to show the history goes further back.
  */
 import { RouterLink } from 'vue-router'
-import ChainHeader from '../components/chain/ChainHeader.vue'
 import {
   dayAndMonth,
   formatDate,
@@ -60,8 +59,6 @@ function stepLabel(index: number): string {
 <template>
   <main class="chain-history">
     <div class="chain-history__frame">
-      <ChainHeader />
-
       <section class="chain-history__intro" aria-labelledby="chain-history-title">
         <p class="chain-history__eyebrow">{{ copy.eyebrow }}</p>
         <h1 id="chain-history-title">{{ copy.title }}</h1>
@@ -161,19 +158,13 @@ function stepLabel(index: number): string {
 
 <style scoped>
 .chain-history {
-  min-height: 100svh;
-  background:
-    radial-gradient(
-      ellipse 60% 40% at 50% 0%,
-      color-mix(in srgb, var(--primary) 14%, transparent),
-      transparent 70%
-    ),
-    var(--canvas);
+  min-height: 0;
+  background: var(--canvas);
   color: var(--text);
 }
 
 .chain-history__frame {
-  width: min(100% - 64px, 1600px);
+  width: min(100% - 48px, var(--page-width));
   margin: 0 auto;
   padding: 28px 0 0;
 }
@@ -191,8 +182,8 @@ function stepLabel(index: number): string {
 .chain-history__eyebrow {
   margin: 0 0 18px;
   color: var(--proof);
-  font: 700 11px/1.4 var(--font-mono);
-  letter-spacing: 0.18em;
+  font: 700 11px/1.4 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -265,13 +256,7 @@ function stepLabel(index: number): string {
   left: 50%;
   width: 4px;
   border-radius: 2px;
-  background: linear-gradient(
-    to bottom,
-    var(--proof) 0%,
-    var(--chain) 45%,
-    color-mix(in srgb, var(--primary) 70%, transparent) 80%,
-    transparent 100%
-  );
+  background: var(--border-strong);
   transform: translateX(-50%);
 }
 
@@ -351,7 +336,7 @@ function stepLabel(index: number): string {
 .chain-stage__date span {
   color: var(--muted);
   font-size: 12px;
-  letter-spacing: 0.12em;
+  letter-spacing: 0.04em;
 }
 
 .chain-stage--left .chain-stage__card {
@@ -392,8 +377,8 @@ function stepLabel(index: number): string {
 
 .chain-stage__step {
   color: var(--muted);
-  font: 700 11px/1 var(--font-mono);
-  letter-spacing: 0.14em;
+  font: 700 11px/1 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -402,8 +387,8 @@ function stepLabel(index: number): string {
   border: 1px solid var(--border);
   border-radius: 999px;
   color: var(--muted);
-  font: 700 10px/1 var(--font-mono);
-  letter-spacing: 0.1em;
+  font: 700 10px/1 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 

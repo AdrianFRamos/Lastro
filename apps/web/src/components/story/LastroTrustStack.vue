@@ -235,8 +235,8 @@ const layers = useCopy<{ layers: Layer[]; provenLegend: string }>({
 
 .trust-stack-diagram__phase {
   color: var(--muted);
-  font: 700 9px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 9px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .trust-stack-diagram__layer[data-tone='proof'] .trust-stack-diagram__phase {
@@ -254,8 +254,8 @@ const layers = useCopy<{ layers: Layer[]; provenLegend: string }>({
 
 .trust-stack-diagram__body h3 {
   margin: 0;
-  font: 700 14px/1.3 var(--font-mono);
-  letter-spacing: 0.08em;
+  font: 700 14px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .trust-stack-diagram__body p {
@@ -303,11 +303,7 @@ const layers = useCopy<{ layers: Layer[]; provenLegend: string }>({
 
 .trust-stack-diagram__layer[data-tone='partial'] {
   border-color: color-mix(in srgb, var(--proof) 26%, var(--border));
-  background: linear-gradient(
-    90deg,
-    color-mix(in srgb, var(--proof) 4%, var(--surface)),
-    color-mix(in srgb, var(--surface) 88%, transparent)
-  );
+  background: var(--proof-soft);
 }
 
 .trust-stack-diagram__layer[data-tone='partial'] .trust-stack-diagram__phase {

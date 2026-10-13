@@ -1,6 +1,5 @@
 <script setup lang="ts">
 import PhysicalTrustGapDiagram from '../components/story/PhysicalTrustGapDiagram.vue'
-import StoryHeader from '../components/story/StoryHeader.vue'
 import StoryPageFooter from '../components/story/StoryPageFooter.vue'
 import StorySectionHeading from '../components/story/StorySectionHeading.vue'
 import { useCopy } from '../i18n'
@@ -108,8 +107,6 @@ const copy = useCopy({
 <template>
   <main class="story-page">
     <div class="story-page__frame">
-      <StoryHeader active="problem" />
-
       <section class="problem-hero" aria-labelledby="problem-title">
         <div>
           <p class="story-kicker">{{ copy.kicker }}</p>
@@ -219,23 +216,21 @@ const copy = useCopy({
 
 <style scoped>
 .story-page {
-  min-height: 100vh;
-  background:
-    linear-gradient(to bottom, color-mix(in srgb, var(--proof) 4%, transparent), transparent 18rem),
-    var(--canvas);
+  min-height: 0;
+  background: var(--canvas);
   color: var(--text);
 }
 
 .story-page__frame {
-  width: min(100% - 64px, 1480px);
+  width: min(100% - 48px, var(--page-width));
   margin: 0 auto;
 }
 
 .story-kicker {
   margin: 0 0 12px;
   color: var(--proof);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.16em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
 }
 
 .problem-hero {
@@ -399,7 +394,7 @@ const copy = useCopy({
 
 @media (max-width: 700px) {
   .story-page__frame {
-    width: min(100% - 32px, 1480px);
+    width: min(100% - 32px, var(--page-width));
   }
 
   .problem-hero {
@@ -451,7 +446,7 @@ const copy = useCopy({
 
 @media (max-width: 430px) {
   .story-page__frame {
-    width: min(100% - 24px, 1480px);
+    width: min(100% - 24px, var(--page-width));
   }
 
   .flow-panel,

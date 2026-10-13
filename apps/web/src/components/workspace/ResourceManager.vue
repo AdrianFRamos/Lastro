@@ -377,8 +377,8 @@ const formTitle = computed(() => {
 .resource__count,
 .resource__badge {
   color: var(--muted);
-  font: 700 11px/1 var(--font-mono);
-  letter-spacing: 0.08em;
+  font: 700 11px/1 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -395,8 +395,8 @@ const formTitle = computed(() => {
   border-radius: var(--radius-sm);
   background: var(--canvas);
   color: var(--text);
-  font: 700 12px/1 var(--font-mono);
-  letter-spacing: 0.06em;
+  font: 700 12px/1 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
   cursor: pointer;
 }
@@ -439,8 +439,8 @@ const formTitle = computed(() => {
 
 .resource__fields label > span {
   color: var(--muted);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -510,8 +510,8 @@ const formTitle = computed(() => {
 .resource__table th {
   background: var(--raised);
   color: var(--muted);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
@@ -543,7 +543,7 @@ const formTitle = computed(() => {
 }
 
 .resource__link--danger {
-  color: #f87171;
+  color: var(--danger);
 }
 
 .resource__empty {

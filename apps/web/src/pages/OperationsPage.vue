@@ -1,15 +1,8 @@
 <template>
   <main class="page page--workbench operations-page">
-    <header class="app-header">
-      <RouterLink class="app-header__brand" to="/" aria-label="Lastro home">
-        <img src="/logo.svg" alt="" width="36" height="36" />
-        <span
-          ><strong>LASTRO</strong
-          ><span class="app-header__context">Operational workspace</span></span
-        >
-      </RouterLink>
-      <RouterLink class="button" to="/lineage">Public lineage</RouterLink>
-    </header>
+    <div class="page-toolbar">
+      <RouterLink class="button button--secondary" to="/lineage">Public lineage</RouterLink>
+    </div>
 
     <div class="page-intro">
       <div>

@@ -78,8 +78,8 @@ const copy = useCopy({
 .chain-list__title {
   margin: 0;
   color: var(--muted);
-  font: 700 10px/1.3 var(--font-mono);
-  letter-spacing: 0.12em;
+  font: 700 10px/1.3 var(--font-sans);
+  letter-spacing: 0.04em;
   text-transform: uppercase;
 }
 
