@@ -146,7 +146,7 @@ Solana RPC              http://127.0.0.1:8899
 Lastro API              http://127.0.0.1:8080
 ```
 
-The validator binds `0.0.0.0` only because the API container must reach the host RPC through Docker's host gateway. Agave changed the test-validator default to loopback for security; treat `make local-demo-up` as a development-only process on a trusted machine/network. Do not expose port 8899 through a public firewall/router.
+The validator binds `127.0.0.1` by default. Agave 4.x rejects an unspecified `0.0.0.0` node address, and Docker Desktop (macOS, Windows/WSL2) already forwards `host.docker.internal` from the API container to the host loopback. With a native Linux Docker Engine, set `LASTRO_LOCAL_VALIDATOR_BIND` to a host address the container can route to (for example the `docker0` gateway, usually `172.17.0.1`); unspecified addresses are refused. Treat `make local-demo-up` as a development-only process on a trusted machine/network. Do not expose port 8899 through a public firewall/router.
 
 ## Wallet behavior
 

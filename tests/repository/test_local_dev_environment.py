@@ -47,7 +47,8 @@ def test_temporary_program_identity_restores_tracked_source_on_success_and_failu
     assert source.read_text(encoding="utf-8") == original
 
 
-def test_validator_command_uses_real_test_validator_with_explicit_local_dev_bind():
+def test_validator_command_uses_real_test_validator_with_explicit_local_dev_bind(monkeypatch):
+    monkeypatch.delenv("LASTRO_LOCAL_VALIDATOR_BIND", raising=False)
     local = load_module()
     command = local.validator_command()
     assert command[0] == "solana-test-validator"
@@ -55,8 +56,23 @@ def test_validator_command_uses_real_test_validator_with_explicit_local_dev_bind
     assert "--rpc-port" in command
     assert command[command.index("--rpc-port") + 1] == "8899"
     assert "--bind-address" in command
-    assert command[command.index("--bind-address") + 1] == "0.0.0.0"
+    assert command[command.index("--bind-address") + 1] == "127.0.0.1"
+    assert int(command[command.index("--limit-ledger-size") + 1]) >= 1_000_000
     assert "--reset" not in command
+
+
+def test_validator_bind_is_overridable_but_never_unspecified(monkeypatch):
+    local = load_module()
+    monkeypatch.setenv("LASTRO_LOCAL_VALIDATOR_BIND", "172.17.0.1")
+    command = local.validator_command()
+    assert command[command.index("--bind-address") + 1] == "172.17.0.1"
+    monkeypatch.setenv("LASTRO_LOCAL_VALIDATOR_BIND", "0.0.0.0")
+    try:
+        local.validator_command()
+    except local.LocalDevError:
+        pass
+    else:
+        raise AssertionError("an unspecified validator bind address must be rejected")
 
 
 def test_local_compose_override_only_bridges_api_to_the_host_validator():

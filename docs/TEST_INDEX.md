@@ -2,7 +2,7 @@
 
 This file is generated from the repository's real test declarations. Test files are the source of truth; this index supports coverage review and navigation.
 
-**Declared cases:** 433
+**Declared cases:** 434
 **Files containing test cases:** 83
 
 Ignored or environment-gated cases are not proven by declaration alone; only an executed non-skipped run counts as validation evidence.
@@ -587,10 +587,11 @@ Ignored or environment-gated cases are not proven by declaration alone; only an 
 - L18: `test_local_env_separates_container_rpc_from_browser_rpc`
 - L29: `test_temporary_program_identity_restores_tracked_source_on_success_and_failure`
 - L50: `test_validator_command_uses_real_test_validator_with_explicit_local_dev_bind`
-- L62: `test_local_compose_override_only_bridges_api_to_the_host_validator`
-- L69: `test_local_runtime_state_is_gitignored_and_core_source_has_no_local_dev_dependency`
-- L87: `test_compose_environment_overrides_hostile_shell_deployment_values`
-- L120: `test_local_program_build_restores_anchor_files_and_removes_temporary_deploy_key`
+- L64: `test_validator_bind_is_overridable_but_never_unspecified`
+- L78: `test_local_compose_override_only_bridges_api_to_the_host_validator`
+- L85: `test_local_runtime_state_is_gitignored_and_core_source_has_no_local_dev_dependency`
+- L103: `test_compose_environment_overrides_hostile_shell_deployment_values`
+- L136: `test_local_program_build_restores_anchor_files_and_removes_temporary_deploy_key`
 
 ## `tests/repository/test_manifest.py`
 

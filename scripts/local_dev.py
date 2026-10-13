@@ -43,6 +43,13 @@ COMPOSE_FILE = ROOT / "infra/compose.yml"
 COMPOSE_OVERRIDE = ROOT / "dev-environment/localnet/compose.override.yml"
 
 HOST_RPC_URL = "http://127.0.0.1:8899"
+# Agave 4.x rejects an unspecified (0.0.0.0) node address. Docker Desktop (macOS, Windows/WSL2)
+# forwards host.docker.internal to the host loopback; a native Linux engine needs a routable
+# host address such as the docker0 gateway, set through LASTRO_LOCAL_VALIDATOR_BIND.
+DEFAULT_VALIDATOR_BIND = "127.0.0.1"
+# The test-validator default keeps only 10,000 shreds, so on slower hosts the transactions of a
+# multi-run session are purged before the verifier re-reads them at finalized commitment.
+VALIDATOR_LEDGER_SHREDS = "1000000"
 CONTAINER_RPC_URL = "http://host.docker.internal:8899"
 API_URL = "http://127.0.0.1:8080"
 WEB_URL = "http://127.0.0.1:8088"
@@ -336,6 +343,15 @@ def rpc_ready() -> bool:
     return process.returncode == 0
 
 
+def validator_bind_address() -> str:
+    address = os.environ.get("LASTRO_LOCAL_VALIDATOR_BIND", "").strip() or DEFAULT_VALIDATOR_BIND
+    if address in {"0.0.0.0", "::", "[::]"}:
+        raise LocalDevError(
+            f"LASTRO_LOCAL_VALIDATOR_BIND={address} is unspecified; solana-test-validator 4.x requires a concrete IPv4 address"
+        )
+    return address
+
+
 def validator_command() -> tuple[str, ...]:
     return (
         "solana-test-validator",
@@ -344,7 +360,9 @@ def validator_command() -> tuple[str, ...]:
         "--rpc-port",
         "8899",
         "--bind-address",
-        "0.0.0.0",
+        validator_bind_address(),
+        "--limit-ledger-size",
+        VALIDATOR_LEDGER_SHREDS,
     )
 
 

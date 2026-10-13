@@ -14,7 +14,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 COPY --from=builder /src/target/release/lastro-agent /usr/local/bin/lastro-agent
-COPY hardware-simulator/docker/agent-bridge-entrypoint.sh /usr/local/bin/lastro-hardware-agent-bridge
+COPY --chmod=0755 hardware-simulator/docker/agent-bridge-entrypoint.sh /usr/local/bin/lastro-hardware-agent-bridge
 
 RUN useradd --create-home --uid 10002 --shell /usr/sbin/nologin lastro-agent \
     && mkdir -p /data \

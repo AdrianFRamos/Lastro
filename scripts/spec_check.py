@@ -10,7 +10,7 @@ import subprocess
 import sys
 
 ROOT = Path(__file__).resolve().parents[1]
-GENERATED_DIRS = {'.git', '.pytest_cache', '__pycache__', 'node_modules', 'target', 'build', 'dist', 'coverage', 'playwright-report', 'test-results'}
+GENERATED_DIRS = {'.git', '.pytest_cache', '__pycache__', 'node_modules', 'target', 'build', 'dist', 'coverage', 'playwright-report', 'test-results', '.lastro-local', '.venv'}
 
 def is_generated(path: Path) -> bool:
     return any(part in GENERATED_DIRS for part in path.relative_to(ROOT).parts)

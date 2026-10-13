@@ -6,7 +6,7 @@ ROOT = Path(__file__).resolve().parents[2]
 
 
 def test_no_empty_files():
-    generated = {'.git', '.pytest_cache', '__pycache__', 'node_modules', 'target', 'build', 'dist', 'coverage', 'playwright-report', 'test-results'}
+    generated = {'.git', '.pytest_cache', '__pycache__', 'node_modules', 'target', 'build', 'dist', 'coverage', 'playwright-report', 'test-results', '.lastro-local', '.venv'}
     assert not [
         p for p in ROOT.rglob('*')
         if p.is_file() and p.stat().st_size == 0 and not any(part in generated for part in p.relative_to(ROOT).parts)
@@ -14,7 +14,7 @@ def test_no_empty_files():
 
 
 def test_no_nested_readmes_or_source_markdown():
-    generated = {'.git', '.pytest_cache', '__pycache__', 'node_modules', 'target', 'build', 'dist', 'coverage', 'playwright-report', 'test-results'}
+    generated = {'.git', '.pytest_cache', '__pycache__', 'node_modules', 'target', 'build', 'dist', 'coverage', 'playwright-report', 'test-results', '.lastro-local', '.venv'}
     readmes = [p for p in ROOT.rglob('README.md') if not any(part in generated for part in p.relative_to(ROOT).parts)]
     assert readmes == [ROOT / 'README.md']
     stray = [

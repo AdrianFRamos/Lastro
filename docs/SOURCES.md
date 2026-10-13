@@ -19,7 +19,7 @@ Reviewed on September 19, 2026. The project should prefer official documentation
 - Solana local RPC examples on `localhost:8899`: https://solana.com/docs/intro/quick-start/writing-to-network
 - Anchor local development and externally managed local validator: https://www.anchor-lang.com/docs/quickstart/local
 - Anchor localnet / `skip_local_validator` configuration: https://www.anchor-lang.com/docs/references/anchor-toml
-- Agave changelog — `solana-test-validator` loopback-by-default security change and explicit `--bind-address 0.0.0.0`: https://github.com/anza-xyz/agave/blob/master/CHANGELOG.md
+- Agave changelog — `solana-test-validator` loopback-by-default security change and explicit loopback `--bind-address`: https://github.com/anza-xyz/agave/blob/master/CHANGELOG.md
 - Docker Compose host access with `host.docker.internal:host-gateway`: https://docs.docker.com/compose/how-tos/networking/
 - Docker Compose environment-variable precedence: https://docs.docker.com/compose/how-tos/environment-variables/envvars-precedence/
 
